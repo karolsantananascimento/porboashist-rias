@@ -1,49 +1,170 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
-const { pool, init, STATUSES, BLOG_CHECKLIST } = require('./db');
+const { pool, init, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha, senhaTemporaria } = require('./db');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '5mb' }));
 
-// ---------- Acesso com senha única da equipe ----------
-const PASSWORD = process.env.APP_PASSWORD || '';
+const wrap = (fn) => (req, res, next) => fn(req, res, next).catch((e) => {
+  console.error(e);
+  res.status(500).json({ erro: e.message });
+});
+
+// ---------- Sessão por usuário (cookie assinado) ----------
 const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const token = () => crypto.createHmac('sha256', SECRET).update('pbh:' + PASSWORD).digest('hex');
 const COOKIE = 'pbh_sessao';
+const DURACAO = 60 * 60 * 24 * 30; // 30 dias
+
+// A assinatura inclui parte do hash da senha: trocar a senha encerra as sessões antigas.
+const assinar = (id, exp, senhaHash) =>
+  crypto.createHmac('sha256', SECRET).update(`${id}.${exp}.${senhaHash.slice(-16)}`).digest('hex');
+
+function criarSessao(res, user) {
+  const exp = Math.floor(Date.now() / 1000) + DURACAO;
+  const valor = `${user.id}.${exp}.${assinar(user.id, exp, user.senha_hash)}`;
+  res.setHeader('Set-Cookie', `${COOKIE}=${valor}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DURACAO}` +
+    (process.env.NODE_ENV === 'production' ? '; Secure' : ''));
+}
 
 function getCookie(req, name) {
   const raw = req.headers.cookie || '';
   const m = raw.split(';').map((s) => s.trim()).find((s) => s.startsWith(name + '='));
   return m ? decodeURIComponent(m.slice(name.length + 1)) : null;
 }
-const authed = (req) => !PASSWORD || getCookie(req, COOKIE) === token();
 
-app.post('/api/login', (req, res) => {
-  const ok = PASSWORD && typeof req.body.senha === 'string' &&
-    req.body.senha.length === PASSWORD.length &&
-    crypto.timingSafeEqual(Buffer.from(req.body.senha), Buffer.from(PASSWORD));
-  if (!PASSWORD || ok) {
-    res.setHeader('Set-Cookie',
-      `${COOKIE}=${token()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}` +
-      (process.env.NODE_ENV === 'production' ? '; Secure' : ''));
-    return res.json({ ok: true });
+async function usuarioDaSessao(req) {
+  const [id, exp, sig] = (getCookie(req, COOKIE) || '').split('.');
+  if (!id || !exp || !sig || Number(exp) < Date.now() / 1000) return null;
+  const { rows: [u] } = await pool.query('SELECT * FROM users WHERE id=$1 AND ativo', [id]);
+  if (!u) return null;
+  const esperado = assinar(u.id, exp, u.senha_hash);
+  if (esperado.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(esperado), Buffer.from(sig))) return null;
+  return u;
+}
+
+const publico = (u) => ({ id: u.id, email: u.email, nome: u.nome, papel: u.papel, ativo: u.ativo, trocar_senha: u.trocar_senha, created_at: u.created_at });
+const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+// Limite simples de tentativas de login por IP
+const tentativas = new Map();
+function bloqueado(ip) {
+  const t = tentativas.get(ip);
+  return t && t.n >= 8 && Date.now() - t.desde < 15 * 60 * 1000;
+}
+function registrarFalha(ip) {
+  const t = tentativas.get(ip);
+  if (!t || Date.now() - t.desde > 15 * 60 * 1000) tentativas.set(ip, { n: 1, desde: Date.now() });
+  else t.n++;
+}
+
+app.post('/api/login', wrap(async (req, res) => {
+  const ip = req.ip;
+  if (bloqueado(ip)) return res.status(429).json({ erro: 'Muitas tentativas. Aguarde 15 minutos.' });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const { rows: [u] } = await pool.query('SELECT * FROM users WHERE email=$1 AND ativo', [email]);
+  if (!u || !conferirSenha(req.body.senha || '', u.senha_hash)) {
+    registrarFalha(ip);
+    return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
   }
-  res.status(401).json({ erro: 'Senha incorreta' });
-});
+  tentativas.delete(ip);
+  criarSessao(res, u);
+  res.json({ usuario: publico(u) });
+}));
+
 app.post('/api/logout', (req, res) => {
   res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0`);
   res.json({ ok: true });
 });
-app.get('/api/sessao', (req, res) => res.json({ autenticado: authed(req), protegido: !!PASSWORD }));
+
+app.get('/api/sessao', wrap(async (req, res) => {
+  const u = await usuarioDaSessao(req);
+  res.json({ autenticado: !!u, usuario: u ? publico(u) : null });
+}));
 app.get('/healthz', (req, res) => res.send('ok'));
 
-app.use('/api', (req, res, next) => (authed(req) ? next() : res.status(401).json({ erro: 'Não autenticado' })));
+app.use('/api', wrap(async (req, res, next) => {
+  const u = await usuarioDaSessao(req);
+  if (!u) return res.status(401).json({ erro: 'Não autenticado' });
+  req.user = u;
+  next();
+}));
+const soAdmin = (req, res, next) => (req.user.papel === 'admin' ? next() : res.status(403).json({ erro: 'Apenas administradores' }));
 
-const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
-  console.error(e);
-  res.status(500).json({ erro: e.message });
-});
+// ---------- Minha conta ----------
+app.post('/api/minha-senha', wrap(async (req, res) => {
+  const { atual, nova } = req.body;
+  if (!conferirSenha(atual || '', req.user.senha_hash)) return res.status(400).json({ erro: 'Senha atual incorreta' });
+  if (!nova || nova.length < 8) return res.status(400).json({ erro: 'A nova senha precisa ter pelo menos 8 caracteres' });
+  const { rows: [u] } = await pool.query(
+    'UPDATE users SET senha_hash=$1, trocar_senha=false WHERE id=$2 RETURNING *', [hashSenha(nova), req.user.id]);
+  criarSessao(res, u);
+  res.json({ usuario: publico(u) });
+}));
+
+app.put('/api/meu-perfil', wrap(async (req, res) => {
+  const { rows: [u] } = await pool.query('UPDATE users SET nome=$1 WHERE id=$2 RETURNING *',
+    [String(req.body.nome || '').trim() || null, req.user.id]);
+  res.json({ usuario: publico(u) });
+}));
+
+// ---------- Usuários ----------
+app.get('/api/users', wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM users ORDER BY ativo DESC, nome NULLS LAST, email');
+  res.json(rows.map(publico));
+}));
+
+app.post('/api/users', soAdmin, wrap(async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (!emailValido(email)) return res.status(400).json({ erro: 'E-mail inválido' });
+  const papel = req.body.papel === 'admin' ? 'admin' : 'membro';
+  const temp = senhaTemporaria();
+  try {
+    const { rows: [u] } = await pool.query(
+      `INSERT INTO users (email, nome, senha_hash, papel, trocar_senha) VALUES ($1,$2,$3,$4,true) RETURNING *`,
+      [email, String(req.body.nome || '').trim() || null, hashSenha(temp), papel]);
+    res.json({ usuario: publico(u), senha_temporaria: temp });
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ erro: 'Já existe um usuário com esse e-mail' });
+    throw e;
+  }
+}));
+
+async function adminsAtivos(excetoId) {
+  const { rows } = await pool.query(`SELECT count(*)::int n FROM users WHERE papel='admin' AND ativo AND id<>$1`, [excetoId]);
+  return rows[0].n;
+}
+
+app.put('/api/users/:id', soAdmin, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows: [alvo] } = await pool.query('SELECT * FROM users WHERE id=$1', [id]);
+  if (!alvo) return res.status(404).json({ erro: 'Usuário não encontrado' });
+  const papel = req.body.papel === 'admin' ? 'admin' : req.body.papel === 'membro' ? 'membro' : alvo.papel;
+  const ativo = typeof req.body.ativo === 'boolean' ? req.body.ativo : alvo.ativo;
+  const perdeAdmin = alvo.papel === 'admin' && alvo.ativo && (papel !== 'admin' || !ativo);
+  if (perdeAdmin && (await adminsAtivos(id)) === 0) return res.status(400).json({ erro: 'É preciso manter pelo menos um administrador ativo' });
+  const nome = 'nome' in req.body ? (String(req.body.nome || '').trim() || null) : alvo.nome;
+  const { rows: [u] } = await pool.query('UPDATE users SET nome=$1, papel=$2, ativo=$3 WHERE id=$4 RETURNING *', [nome, papel, ativo, id]);
+  res.json({ usuario: publico(u) });
+}));
+
+app.post('/api/users/:id/redefinir-senha', soAdmin, wrap(async (req, res) => {
+  const temp = senhaTemporaria();
+  const { rows: [u] } = await pool.query(
+    'UPDATE users SET senha_hash=$1, trocar_senha=true WHERE id=$2 RETURNING *', [hashSenha(temp), req.params.id]);
+  if (!u) return res.status(404).json({ erro: 'Usuário não encontrado' });
+  res.json({ usuario: publico(u), senha_temporaria: temp });
+}));
+
+app.delete('/api/users/:id', soAdmin, wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (id === req.user.id) return res.status(400).json({ erro: 'Você não pode excluir o próprio usuário' });
+  const { rows: [alvo] } = await pool.query('SELECT * FROM users WHERE id=$1', [id]);
+  if (alvo && alvo.papel === 'admin' && alvo.ativo && (await adminsAtivos(id)) === 0) return res.status(400).json({ erro: 'É preciso manter pelo menos um administrador ativo' });
+  await pool.query('DELETE FROM users WHERE id=$1', [id]);
+  res.json({ ok: true });
+}));
 
 // ---------- Clientes ----------
 const CLIENT_FIELDS = ['nome', 'marcas', 'site', 'whatsapp', 'instagram', 'meta_posts', 'meta_stories_dia', 'meta_blog', 'observacoes'];
@@ -79,7 +200,7 @@ app.put('/api/clients/:id', wrap(async (req, res) => {
   res.json(rows[0]);
 }));
 
-app.delete('/api/clients/:id', wrap(async (req, res) => {
+app.delete('/api/clients/:id', soAdmin, wrap(async (req, res) => {
   await pool.query('DELETE FROM clients WHERE id=$1', [req.params.id]);
   res.json({ ok: true });
 }));
@@ -211,7 +332,7 @@ app.get('/api/backup', wrap(async (req, res) => {
   res.json({ versao: 1, gerado_em: new Date().toISOString(), clients: c.rows, tasks: t.rows, materials: m.rows });
 }));
 
-app.post('/api/restaurar', wrap(async (req, res) => {
+app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
   const b = req.body;
   if (!b || !Array.isArray(b.clients) || !Array.isArray(b.tasks)) return res.status(400).json({ erro: 'Arquivo de backup inválido' });
   const c = await pool.connect();

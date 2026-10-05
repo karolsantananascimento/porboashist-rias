@@ -24,6 +24,8 @@ const S = {
   quadroTipo: 'post',
   listaFiltro: { tipo: '', status: '', busca: '' },
   matBusca: '',
+  me: null,
+  users: [],
 };
 
 function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
@@ -66,29 +68,45 @@ const clientesAtivos = () => (S.cliente ? S.clients.filter((c) => String(c.id) =
 async function iniciar() {
   const s = await api('/api/sessao');
   if (!s.autenticado) return mostrarLogin();
+  S.me = s.usuario;
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
-  if (!s.protegido) $('#sair').classList.add('hidden');
-  await carregarClientes();
+  mostrarEu();
+  await Promise.all([carregarClientes(), carregarUsuarios()]);
   render();
+  if (S.me.trocar_senha) abrirMinhaConta(true);
+}
+
+function mostrarEu() {
+  $('#meNome').textContent = S.me.nome || S.me.email.split('@')[0];
+  $('#meEmail').textContent = S.me.email;
+  $('#navUsuarios').classList.toggle('hidden', S.me.papel !== 'admin');
+  if (S.view === 'usuarios' && S.me.papel !== 'admin') S.view = 'painel';
+}
+
+async function carregarUsuarios() {
+  S.users = await api('/api/users');
 }
 
 function mostrarLogin() {
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
-  $('#senha').focus();
+  $('#modal').open && $('#modal').close();
+  ($('#email').value ? $('#senha') : $('#email')).focus();
 }
 
 $('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api('/api/login', { method: 'POST', body: { senha: $('#senha').value } });
+    await api('/api/login', { method: 'POST', body: { email: $('#email').value, senha: $('#senha').value } });
     $('#loginErro').textContent = '';
+    $('#senha').value = '';
     iniciar();
   } catch (err) { $('#loginErro').textContent = err.message; }
 });
 
-$('#sair').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); mostrarLogin(); });
+$('#sair').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); S.me = null; mostrarLogin(); });
+$('#minhaConta').addEventListener('click', () => abrirMinhaConta(false));
 
 async function carregarClientes() {
   S.clients = await api('/api/clients');
@@ -121,13 +139,13 @@ async function carregarTarefas() {
 async function render() {
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === S.view));
   $('#mesLabel').textContent = mesLabel(S.mes);
-  const semMes = ['materiais', 'clientes', 'captacao'].includes(S.view);
+  const semMes = ['materiais', 'clientes', 'captacao', 'usuarios'].includes(S.view);
   $('.mes').style.display = semMes ? 'none' : '';
   const v = $('#view');
   try {
-    if (!['materiais', 'clientes'].includes(S.view)) await carregarTarefas();
+    if (!['materiais', 'clientes', 'usuarios'].includes(S.view)) await carregarTarefas();
     ({ painel: viewPainel, calendario: viewCalendario, quadro: viewQuadro, lista: viewLista,
-      captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes })[S.view](v);
+      captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes, usuarios: viewUsuarios })[S.view](v);
   } catch (e) {
     v.innerHTML = `<div class="empty">Não foi possível carregar: ${esc(e.message)}</div>`;
   }
@@ -433,7 +451,7 @@ function viewClientes(v) {
       <p class="muted" style="margin:6px 0 12px">Baixe uma cópia de todos os dados com frequência. Se algo der errado, restaure o arquivo aqui.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a class="btn" href="/api/backup" download>Baixar backup (.json)</a>
-        <label class="btn" style="margin:0;text-transform:none;font-size:14px;color:var(--ink);letter-spacing:0">Restaurar backup<input type="file" id="restaurar" accept="application/json" hidden></label>
+        <label class="btn ${S.me.papel === 'admin' ? '' : 'hidden'}" style="margin:0;text-transform:none;font-size:14px;color:var(--ink);letter-spacing:0">Restaurar backup<input type="file" id="restaurar" accept="application/json" hidden></label>
       </div>
     </div>`;
 
@@ -498,7 +516,7 @@ function abrirTarefa(t, padrao = {}) {
         <div><label>Data</label><input type="date" id="tData" value="${t.data || ''}"></div>
         <div><label>Etapa</label><select id="tStatus">${STATUS.map((s) => `<option value="${s}">${STATUS_LABEL[s]}</option>`).join('')}</select></div>
         <div><label>Prioridade</label><select id="tPrio"><option value="baixa">Baixa</option><option value="normal">Normal</option><option value="alta">Alta</option></select></div>
-        <div><label>Responsável</label><input id="tResp" value="${esc(t.responsavel || '')}"></div>
+        <div><label>Responsável</label><input id="tResp" list="pessoas" value="${esc(t.responsavel || '')}"><datalist id="pessoas">${S.users.filter((u) => u.ativo).map((u) => `<option value="${esc(u.nome || u.email)}">`).join('')}</datalist></div>
       </div>
       <div class="row">
         <div><label>Tema</label><input id="tTema" value="${esc(t.tema || '')}"></div>
@@ -572,6 +590,116 @@ function abrirTarefa(t, padrao = {}) {
     await api('/api/tasks/' + t.id, { method: 'DELETE' }); d.close(); toast('Tarefa excluída'); render();
   });
   d.showModal();
+}
+
+// ---------------- Usuários (admin) ----------------
+async function viewUsuarios(v) {
+  await carregarUsuarios();
+  v.innerHTML = `
+    <div class="view-head"><div><h2>Usuários</h2><p>Quem pode entrar no sistema. Cada pessoa recebe uma senha temporária e cria a própria no primeiro acesso.</p></div></div>
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin-bottom:12px">Adicionar pessoa</h3>
+      <form id="uForm" class="row" style="align-items:end">
+        <div><label>E-mail</label><input type="email" id="uEmail" required placeholder="nome@exemplo.com"></div>
+        <div><label>Nome</label><input id="uNome" placeholder="Como aparece em Responsável"></div>
+        <div><label>Acesso</label><select id="uPapel"><option value="membro">Membro</option><option value="admin">Administrador</option></select></div>
+        <div><button class="btn primary" type="submit" style="width:100%">Adicionar</button></div>
+      </form>
+      <div id="uSenha"></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Pessoa</th><th>Acesso</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${S.users.map((u) => `<tr class="user-row ${u.ativo ? '' : 'inativo'}" data-u="${u.id}">
+        <td><strong>${esc(u.nome || '—')}</strong><div class="muted">${esc(u.email)}</div></td>
+        <td><select data-papel style="width:auto" ${u.id === S.me.id ? 'disabled' : ''}>
+          <option value="membro" ${u.papel === 'membro' ? 'selected' : ''}>Membro</option>
+          <option value="admin" ${u.papel === 'admin' ? 'selected' : ''}>Administrador</option></select></td>
+        <td>${!u.ativo ? '<span class="st">Desativado</span>' : u.trocar_senha ? '<span class="st aprovacao">Aguardando 1º acesso</span>' : '<span class="st publicado">Ativo</span>'}</td>
+        <td style="text-align:right;white-space:nowrap">${u.id === S.me.id ? '<span class="muted">Você</span>' : `
+          <button class="btn small" data-reset>Nova senha</button>
+          <button class="btn small" data-ativo>${u.ativo ? 'Desativar' : 'Reativar'}</button>
+          <button class="btn small danger" data-del>Excluir</button>`}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+
+  const mostrarSenha = (email, senha) => {
+    $('#uSenha').innerHTML = `<div style="margin-top:14px"><p style="margin:0 0 8px">Senha temporária de <b>${esc(email)}</b>. Envie para a pessoa: ela vai criar a própria senha no primeiro acesso. Esta senha não será mostrada de novo.</p>
+      <div class="senha-box"><span>${esc(senha)}</span><button type="button" class="btn small" id="copiarSenha">Copiar acesso</button></div></div>`;
+    $('#copiarSenha').addEventListener('click', () => {
+      navigator.clipboard.writeText(`Acesso ao sistema da Por Boas Histórias\n${location.origin}\nE-mail: ${email}\nSenha temporária: ${senha}`);
+      toast('Dados de acesso copiados');
+    });
+  };
+
+  $('#uForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('/api/users', { method: 'POST', body: { email: $('#uEmail').value, nome: $('#uNome').value, papel: $('#uPapel').value } });
+      await viewUsuarios(v);
+      mostrarSenha(r.usuario.email, r.senha_temporaria);
+      toast('Usuário criado');
+    } catch (err) { toast(err.message); }
+  });
+
+  $$('[data-u]', v).forEach((row) => {
+    const u = S.users.find((x) => x.id === Number(row.dataset.u));
+    $('[data-papel]', row).addEventListener('change', async (e) => {
+      try { await api('/api/users/' + u.id, { method: 'PUT', body: { papel: e.target.value } }); toast('Acesso atualizado'); }
+      catch (err) { toast(err.message); viewUsuarios(v); }
+    });
+    $('[data-reset]', row)?.addEventListener('click', async () => {
+      if (!confirm(`Gerar uma nova senha temporária para ${u.email}? A senha atual deixa de funcionar.`)) return;
+      const r = await api(`/api/users/${u.id}/redefinir-senha`, { method: 'POST' });
+      await viewUsuarios(v);
+      mostrarSenha(u.email, r.senha_temporaria);
+    });
+    $('[data-ativo]', row)?.addEventListener('click', async () => {
+      try { await api('/api/users/' + u.id, { method: 'PUT', body: { ativo: !u.ativo } }); viewUsuarios(v); }
+      catch (err) { toast(err.message); }
+    });
+    $('[data-del]', row)?.addEventListener('click', async () => {
+      if (!confirm(`Excluir ${u.email}? Para só bloquear o acesso, use Desativar.`)) return;
+      try { await api('/api/users/' + u.id, { method: 'DELETE' }); toast('Usuário excluído'); viewUsuarios(v); }
+      catch (err) { toast(err.message); }
+    });
+  });
+}
+
+// ---------------- Minha conta ----------------
+function abrirMinhaConta(obrigatorio) {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog" id="contaForm">
+    <div class="modal-head"><h3>${obrigatorio ? 'Crie sua senha' : 'Minha conta'}</h3>${obrigatorio ? '' : '<button class="icon" value="x" aria-label="Fechar">×</button>'}</div>
+    <div class="modal-body">
+      ${obrigatorio ? '<p style="margin:0">Você entrou com uma senha temporária. Escolha uma senha sua para continuar.</p>' : ''}
+      <div class="row"><div><label>E-mail</label><input value="${esc(S.me.email)}" disabled></div>
+        <div><label>Nome</label><input id="cNome" value="${esc(S.me.nome || '')}"></div></div>
+      <div><label>Senha atual</label><input type="password" id="cAtual" autocomplete="current-password" ${obrigatorio ? 'required' : ''}></div>
+      <div class="row"><div><label>Nova senha (mín. 8 caracteres)</label><input type="password" id="cNova" autocomplete="new-password" minlength="8" ${obrigatorio ? 'required' : ''}></div>
+        <div><label>Repita a nova senha</label><input type="password" id="cNova2" autocomplete="new-password" ${obrigatorio ? 'required' : ''}></div></div>
+      <p class="erro" id="cErro" style="margin:0"></p>
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px">${obrigatorio ? '' : '<button class="btn" value="x">Cancelar</button>'}<button type="button" class="btn primary" id="cSalvar">Salvar</button></div></div>
+  </form>`;
+  d.showModal();
+  d.oncancel = obrigatorio ? (e) => e.preventDefault() : null;
+  d.onclose = () => { d.oncancel = null; d.onclose = null; };
+  $('#cSalvar').addEventListener('click', async () => {
+    const nova = $('#cNova').value;
+    try {
+      if (nova || obrigatorio) {
+        if (nova.length < 8) throw new Error('A nova senha precisa ter pelo menos 8 caracteres');
+        if (nova !== $('#cNova2').value) throw new Error('As senhas não conferem');
+        const r = await api('/api/minha-senha', { method: 'POST', body: { atual: $('#cAtual').value, nova } });
+        S.me = r.usuario;
+      }
+      if (($('#cNome').value.trim() || null) !== (S.me.nome || null)) {
+        const r = await api('/api/meu-perfil', { method: 'PUT', body: { nome: $('#cNome').value } });
+        S.me = r.usuario;
+      }
+      mostrarEu(); await carregarUsuarios();
+      d.close(); toast('Conta atualizada');
+    } catch (err) { $('#cErro').textContent = err.message; }
+  });
 }
 
 iniciar().catch((e) => { document.body.innerHTML = `<div class="empty">Erro ao iniciar: ${esc(e.message)}</div>`; });

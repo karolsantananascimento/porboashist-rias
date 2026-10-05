@@ -14,7 +14,8 @@
     <form id="loginForm" class="login-card">
       <div class="brand-mark">B</div>
       <h1>Por Boas Histórias</h1>
-      <p>Entre com a senha da equipe.</p>
+      <p>Entre com seu e-mail e senha.</p>
+      <input type="email" id="email" placeholder="E-mail" autocomplete="username" required>
       <input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
       <button class="btn primary" type="submit">Entrar</button>
       <p class="erro" id="loginErro"></p>
@@ -38,8 +39,12 @@
         <a data-view="captacao">Captação</a>
         <a data-view="materiais">Materiais</a>
         <a data-view="clientes">Clientes</a>
+        <a data-view="usuarios" id="navUsuarios" class="hidden">Usuários</a>
       </nav>
-      <button class="btn ghost small sair" id="sair">Sair</button>
+      <div class="me">
+        <div class="me-info"><strong id="meNome"></strong><span id="meEmail"></span></div>
+        <div class="me-acts"><button class="btn ghost small" id="minhaConta">Minha conta</button><button class="btn ghost small" id="sair">Sair</button></div>
+      </div>
     </aside>
 
     <main>

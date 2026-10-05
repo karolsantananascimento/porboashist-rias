@@ -56,6 +56,17 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_client_data ON tasks (client_id, data);
 
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  nome TEXT,
+  senha_hash TEXT NOT NULL,
+  papel TEXT NOT NULL DEFAULT 'membro',      -- admin | membro
+  ativo BOOLEAN NOT NULL DEFAULT true,
+  trocar_senha BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS materials (
   id SERIAL PRIMARY KEY,
   client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -170,12 +181,50 @@ async function seedIfEmpty(c) {
   }
 }
 
+// ---------- Senhas (scrypt) ----------
+const crypto = require('crypto');
+
+function hashSenha(senha) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(senha, salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function conferirSenha(senha, armazenado) {
+  const [alg, salt, hash] = String(armazenado).split('$');
+  if (alg !== 'scrypt' || !salt || !hash) return false;
+  const calc = crypto.scryptSync(String(senha), salt, 64);
+  const orig = Buffer.from(hash, 'hex');
+  return orig.length === calc.length && crypto.timingSafeEqual(orig, calc);
+}
+
+function senhaTemporaria() {
+  const letras = 'abcdefghjkmnpqrstuvwxyz';
+  const pick = (n) => Array.from({ length: n }, () => letras[crypto.randomInt(letras.length)]).join('');
+  return `${pick(4)}-${pick(4)}-${crypto.randomInt(10, 100)}`;
+}
+
+// Primeiro administrador, criado a partir de ADMIN_EMAIL / ADMIN_PASSWORD quando não há usuários
+async function bootstrapAdmin(c) {
+  const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const senha = process.env.ADMIN_PASSWORD || process.env.APP_PASSWORD;
+  if (!email || !senha) return;
+  const { rows } = await c.query('SELECT count(*)::int AS n FROM users');
+  if (rows[0].n > 0) return;
+  await c.query(
+    `INSERT INTO users (email, nome, senha_hash, papel, trocar_senha) VALUES ($1,$2,$3,'admin',true)`,
+    [email, process.env.ADMIN_NAME || null, hashSenha(senha)]
+  );
+  console.log(`Administrador inicial criado: ${email}`);
+}
+
 async function init() {
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
     await c.query(SCHEMA);
     await seedIfEmpty(c);
+    await bootstrapAdmin(c);
     await c.query('COMMIT');
   } catch (e) {
     await c.query('ROLLBACK');
@@ -185,4 +234,4 @@ async function init() {
   }
 }
 
-module.exports = { pool, init, STATUSES, BLOG_CHECKLIST };
+module.exports = { pool, init, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha, senhaTemporaria };

@@ -11,7 +11,9 @@ Sistema da agência para planejar e acompanhar as entregas de cada cliente: post
 - **Captação**: pautas de produção de fotos e vídeos com checklist por item.
 - **Materiais**: banco de links do Drive por categoria, com busca e marcação de "evitar".
 - **Clientes**: metas mensais, marcas, rodapé padrão e botão para gerar a estrutura de um mês novo (posts distribuídos, stories diários e artigos de blog).
-- **Backup**: download e restauração de todos os dados em JSON.
+- **Usuários** (administradores): cada pessoa entra com o próprio e-mail. O administrador cadastra o e-mail, recebe uma senha temporária para enviar e a pessoa cria a senha dela no primeiro acesso. Dá para redefinir senha, desativar, excluir e alternar entre Membro e Administrador.
+- **Minha conta**: troca de nome e senha.
+- **Backup**: download e restauração de todos os dados em JSON (restauração só para administradores; usuários e senhas não entram no backup).
 
 ## Dados iniciais
 
@@ -27,7 +29,7 @@ Na primeira execução o banco é criado com:
 
 ```bash
 npm install
-DATABASE_URL=postgresql://usuario:senha@localhost:5432/pbh APP_PASSWORD=suasenha npm start
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/pbh ADMIN_EMAIL=voce@exemplo.com ADMIN_PASSWORD=temporaria123 npm start
 ```
 
 Abra http://localhost:3000.
@@ -37,7 +39,7 @@ Abra http://localhost:3000.
 | Variável | Uso |
 | --- | --- |
 | `DATABASE_URL` | Conexão com o Postgres |
-| `APP_PASSWORD` | Senha única da equipe. Sem ela, o sistema fica aberto. |
+| `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_PASSWORD` | Criam o primeiro administrador quando ainda não há usuários. A senha é temporária e precisa ser trocada no primeiro acesso. |
 | `SESSION_SECRET` | Chave para assinar a sessão (o Render gera sozinho) |
 | `DB_SCHEMA` | Schema do banco onde ficam as tabelas (`pbh` no Supabase) |
 
