@@ -39,9 +39,10 @@ Abra http://localhost:3000.
 | `DATABASE_URL` | Conexão com o Postgres |
 | `APP_PASSWORD` | Senha única da equipe. Sem ela, o sistema fica aberto. |
 | `SESSION_SECRET` | Chave para assinar a sessão (o Render gera sozinho) |
+| `DB_SCHEMA` | Schema do banco onde ficam as tabelas (`pbh` no Supabase) |
 
-## Deploy no Render
+## Hospedagem
 
-O arquivo `render.yaml` cria o serviço web e o banco Postgres no plano gratuito.
-
-**Atenção:** o Postgres gratuito do Render expira 30 dias após a criação. Antes disso, baixe um backup em **Clientes → Baixar backup**, crie um banco novo (ou mude para um plano pago) e restaure o arquivo em **Clientes → Restaurar backup**. O serviço web gratuito também "dorme" após um período sem acesso e leva alguns segundos para acordar.
+- **App:** serviço web gratuito no Render (`render.yaml`). Ele "dorme" após um período sem acesso e leva alguns segundos para acordar.
+- **Banco:** Postgres gratuito no Supabase (projeto `por-boas-historias`, região São Paulo), que não expira (o Supabase pausa projetos gratuitos após uma semana sem nenhum acesso; basta reativar no painel deles). As tabelas ficam no schema `pbh`, acessado por um usuário próprio (`pbh_app`), fora da API pública do Supabase.
+- **Backup:** em **Clientes → Baixar backup** você guarda uma cópia de tudo em JSON, que pode ser restaurada em **Clientes → Restaurar backup**.

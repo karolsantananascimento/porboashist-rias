@@ -10,17 +10,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: por-boas-historias-db
-          property: connectionString
+      - key: DATABASE_URL   # Postgres do Supabase (pooler, modo sessão)
+        sync: false
+      - key: DB_SCHEMA
+        value: pbh
       - key: APP_PASSWORD
         sync: false
       - key: SESSION_SECRET
         generateValue: true
-
-databases:
-  - name: por-boas-historias-db
-    plan: free
-    region: oregon
-    databaseName: pbh

@@ -430,7 +430,7 @@ function viewClientes(v) {
     </div>
     <div class="card" style="margin-top:16px">
       <h3>Backup dos dados</h3>
-      <p class="muted" style="margin:6px 0 12px">O banco gratuito do Render expira após 30 dias. Baixe um backup com frequência e restaure no banco novo quando precisar.</p>
+      <p class="muted" style="margin:6px 0 12px">Baixe uma cópia de todos os dados com frequência. Se algo der errado, restaure o arquivo aqui.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a class="btn" href="/api/backup" download>Baixar backup (.json)</a>
         <label class="btn" style="margin:0;text-transform:none;font-size:14px;color:var(--ink);letter-spacing:0">Restaurar backup<input type="file" id="restaurar" accept="application/json" hidden></label>

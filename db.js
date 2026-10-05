@@ -11,7 +11,14 @@ const pool = new Pool({
     : false,
 });
 
-const STATUSES = ['pauta', 'conteudo', 'design', 'revisao', 'aprovacao', 'agendado', 'publicado'];
+// Schema próprio (ex.: Supabase, para não expor as tabelas na API pública)
+const SCHEMA_NAME = process.env.DB_SCHEMA;
+if (SCHEMA_NAME) {
+  if (!/^[a-z_][a-z0-9_]*$/.test(SCHEMA_NAME)) throw new Error('DB_SCHEMA inválido');
+  pool.on('connect', (client) => client.query(`SET search_path TO ${SCHEMA_NAME}`));
+}
+
+const STATUSES =['pauta', 'conteudo', 'design', 'revisao', 'aprovacao', 'agendado', 'publicado'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS clients (
