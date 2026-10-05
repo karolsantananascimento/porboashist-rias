@@ -4,14 +4,14 @@ Sistema da agência para planejar e acompanhar as entregas de cada cliente: post
 
 ## O que tem
 
-- **Área do cliente**: página de cada cliente com botões para os links de trabalho (Trello, planilhas, reservas, unidades) e a aba de **acessos** (logins e senhas). As senhas ficam criptografadas no banco (AES-256-GCM, chave em `ACESSOS_KEY`), aparecem só quando alguém clica em Mostrar/Copiar e podem ser restritas a administradores. Acessos não entram no backup.
+- **Área do cliente**: página de cada cliente com botões para os links de trabalho (Trello, planilhas, reservas, unidades), a seção **Materiais** (botões para as pastas e arquivos do Drive, nomeados pelo conteúdo, com busca) e a aba de **acessos** (logins e senhas). As senhas ficam criptografadas no banco (AES-256-GCM, chave em `ACESSOS_KEY`), aparecem só quando alguém clica em Mostrar/Copiar e podem ser restritas a administradores. Acessos não entram no backup.
 - **Painel**: metas do contrato no mês (posts publicados, dias com stories, artigos de blog), andamento por etapa, próximas entregas e alertas (posts sem tema, entregas atrasadas, excesso ou falta de posts em relação à meta).
 - **Calendário**: visão mensal com posts, blog e stories por dia. Clique para editar ou no **+** para criar.
 - **Quadro**: kanban de produção (Pauta → Conteúdo/copy → Design/edição → Revisão interna → Aprovação do cliente → Agendado → Publicado), com arrastar e soltar.
 - **Lista**: todas as tarefas do mês com busca e filtros.
 - **Programação**: experiências e datas promocionais dos resorts (Samoa Beach, Samoa Villa, La Fleur) lidas da planilha do Google, agrupadas por mês, com botão **Criar pauta** que já leva tema e programação para o briefing. A aba **Planilha ao vivo** mostra a própria planilha embutida. O botão **Atualizar da planilha** relê a planilha quando ela está compartilhada como "qualquer pessoa com o link pode ver".
 - **Captação**: pautas de produção de fotos e vídeos com checklist por item.
-- **Materiais**: banco de links do Drive por categoria, com busca e marcação de "evitar".
+- **Materiais**: botões para as pastas e arquivos do Drive, agrupados por categoria e nomeados pelo conteúdo, com busca (sem precisar de acento), copiar link e marcação de "evitar".
 - **Clientes**: metas mensais, marcas, rodapé padrão e botão para gerar a estrutura de um mês novo (posts distribuídos, stories diários e artigos de blog).
 - **Usuários** (administradores): cada pessoa entra com o próprio e-mail. O administrador cadastra o e-mail e recebe um link de acesso (válido por 7 dias, uso único) para enviar; ao abrir, a pessoa cria a própria senha. Dá para gerar um novo link (esqueceu a senha), desativar, excluir e alternar entre Membro e Administrador.
 - **Minha conta**: troca de nome e senha.

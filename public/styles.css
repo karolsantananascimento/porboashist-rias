@@ -248,3 +248,16 @@ dialog::backdrop { background: rgba(30, 24, 20, .45); }
 .secao-titulo { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 24px 0 12px; }
 .cliente-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .cliente-pick button { text-align: left; cursor: pointer; }
+
+/* Materiais em botões */
+.mat-cat { margin-bottom: 14px; }
+.mat-cat summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.mat-cat summary::-webkit-details-marker { display: none; }
+.mat-cat summary::before { content: '▾'; font-size: 11px; transition: transform .15s; }
+.mat-cat:not([open]) summary::before { transform: rotate(-90deg); }
+.atalho.evitar { opacity: .6; }
+.atalho .acoes { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.atalho:hover .acoes, .atalho:focus-within .acoes { opacity: 1; }
+.atalho .acoes button { border: 0; background: var(--surface-2); color: var(--ink-2); cursor: pointer; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
+.atalho .tx strong { padding-right: 36px; }
+@media (hover: none) { .atalho .acoes { opacity: 1; } }

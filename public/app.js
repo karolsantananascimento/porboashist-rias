@@ -400,32 +400,53 @@ function viewCaptacao(v) {
 }
 
 // ---------------- Materiais ----------------
+// Botões de materiais (pastas e arquivos do Drive), agrupados por categoria
+function tipoMaterial(m) {
+  if (/\/file\//.test(m.url)) return ['FOTO', '#b4532a', 'Arquivo do Drive'];
+  if (/v[ií]deo/i.test(`${m.descricao} ${m.categoria}`)) return ['▶', '#7b5ea7', 'Pasta de vídeos'];
+  return ['▤', '#188038', 'Pasta do Drive'];
+}
+
+function materiaisHTML(mats, busca = '') {
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const b = norm(busca.trim());
+  const filtrados = mats.filter((m) => !b || norm(`${m.categoria} ${m.descricao}`).includes(b));
+  const grupos = {};
+  filtrados.forEach((m) => { (grupos[m.categoria || 'Sem categoria'] ||= []).push(m); });
+  if (!filtrados.length) return `<div class="empty" style="padding:20px">${mats.length ? 'Nada encontrado para essa busca.' : 'Nenhum material cadastrado.'}</div>`;
+  return Object.entries(grupos).map(([cat, arr]) => `<details class="mat-cat" open>
+    <summary>${esc(cat)} <span class="tag">${arr.length}</span></summary>
+    <div class="atalhos">${arr.map((m) => { const [ic, cor, tipo] = tipoMaterial(m); return `
+      <a class="atalho ${m.evitar ? 'evitar' : ''}" href="${esc(m.url)}" target="_blank" rel="noopener" title="Abrir no Drive">
+        <span class="ic" style="background:${cor};${ic.length > 2 ? 'font-size:9px' : ''}">${ic}</span>
+        <span class="tx"><strong>${esc(m.descricao || 'Material')}</strong><span>${m.evitar ? 'Evitar / usar com cuidado' : tipo}</span></span>
+        <span class="acoes"><button type="button" data-copy="${esc(m.url)}" title="Copiar link">⧉</button><button type="button" data-edit="${m.id}" title="Editar">✎</button></span>
+      </a>`; }).join('')}</div></details>`).join('');
+}
+
+function ligarMateriais(el, mats) {
+  $$('[data-copy]', el).forEach((bt) => bt.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation(); navigator.clipboard.writeText(bt.dataset.copy); toast('Link copiado');
+  }));
+  $$('[data-edit]', el).forEach((bt) => bt.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation(); abrirMaterial(mats.find((m) => m.id === Number(bt.dataset.edit)), mats);
+  }));
+}
+
 async function viewMateriais(v) {
   const q = S.cliente ? '?client_id=' + S.cliente : '';
   const mats = await api('/api/materials' + q);
-  const b = S.matBusca.toLowerCase();
-  const filtrados = mats.filter((m) => !b || `${m.categoria} ${m.descricao}`.toLowerCase().includes(b));
-  const grupos = {};
-  filtrados.forEach((m) => { (grupos[m.categoria || 'Sem categoria'] ||= []).push(m); });
   v.innerHTML = `
-    <div class="view-head"><div><h2>Banco de materiais</h2><p>${mats.length} pastas e arquivos no Drive. Itens apagados estão marcados para evitar.</p></div>
+    <div class="view-head"><div><h2>Materiais</h2><p>${mats.length} pastas e arquivos no Drive${S.cliente ? '' : ' de todos os clientes'}. Clique no botão para abrir.</p></div>
       <div class="toolbar"><input id="mBusca" placeholder="Buscar: piscina, café, casal…" value="${esc(S.matBusca)}" style="width:240px">
-      <button class="btn primary" id="novoMat">+ Adicionar link</button></div></div>
-    ${Object.entries(grupos).map(([cat, arr]) => `<div class="mat-group"><h3>${esc(cat)} <span class="tag">${arr.length}</span></h3>
-      <div class="mat-list">${arr.map((m) => `<div class="mat ${m.evitar ? 'evitar' : ''}">
-        <div class="ic">${/\/file\//.test(m.url) ? '▣' : '▤'}</div>
-        <div class="grow"><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.descricao || 'Material')}</a>
-          ${m.evitar ? '<div class="muted" style="font-size:12px">Evitar / usar com cuidado</div>' : ''}</div>
-        <div class="acts"><button title="Copiar link" data-copy="${esc(m.url)}">⧉</button><button title="Editar" data-edit="${m.id}">✎</button></div>
-      </div>`).join('')}</div></div>`).join('') || '<div class="empty">Nenhum material encontrado.</div>'}`;
-  const busca = $('#mBusca');
-  busca.addEventListener('input', () => {
-    S.matBusca = busca.value; clearTimeout(viewMateriais._t);
-    viewMateriais._t = setTimeout(async () => { await viewMateriais(v); const i = $('#mBusca'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250);
+      <button class="btn primary" id="novoMat">+ Adicionar material</button></div></div>
+    <div id="mLista">${materiaisHTML(mats, S.matBusca)}</div>`;
+  const lista = $('#mLista');
+  ligarMateriais(lista, mats);
+  $('#mBusca').addEventListener('input', (e) => {
+    S.matBusca = e.target.value; lista.innerHTML = materiaisHTML(mats, S.matBusca); ligarMateriais(lista, mats);
   });
   $('#novoMat').addEventListener('click', () => abrirMaterial(null, mats));
-  $$('[data-copy]', v).forEach((bt) => bt.addEventListener('click', () => { navigator.clipboard.writeText(bt.dataset.copy); toast('Link copiado'); }));
-  $$('[data-edit]', v).forEach((bt) => bt.addEventListener('click', () => abrirMaterial(mats.find((m) => m.id === Number(bt.dataset.edit)), mats)));
 }
 
 function abrirMaterial(m, todos) {
@@ -437,7 +458,7 @@ function abrirMaterial(m, todos) {
       ${m ? '' : `<div><label>Cliente</label><select id="mmCliente">${S.clients.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>`}
       <div><label>Link do Drive</label><input id="mmUrl" required value="${esc(m?.url || '')}" placeholder="https://drive.google.com/…"></div>
       <div class="row"><div><label>Categoria</label><input id="mmCat" list="mmCats" value="${esc(m?.categoria || '')}"><datalist id="mmCats">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div>
-      <div><label>Descrição</label><input id="mmDesc" value="${esc(m?.descricao || '')}" placeholder="Ex.: Casal na praia ao entardecer"></div></div>
+      <div><label>Nome do botão (do que se trata)</label><input id="mmDesc" value="${esc(m?.descricao || '')}" placeholder="Ex.: Casal na praia ao entardecer"></div></div>
       <label class="check" style="text-transform:none;font-weight:400;font-size:14px;color:var(--ink)"><input type="checkbox" id="mmEvitar" ${m?.evitar ? 'checked' : ''}><span>Evitar / usar com cuidado</span></label>
     </div>
     <div class="modal-foot"><div>${m ? '<button type="button" class="btn danger" id="mmDel">Excluir</button>' : ''}</div>
@@ -770,8 +791,8 @@ async function viewArea(v) {
     return;
   }
   const cl = S.clients.find((c) => String(c.id) === String(S.cliente));
-  const [links, { acessos, ocultos }] = await Promise.all([
-    api(`/api/clients/${cl.id}/links`), api(`/api/clients/${cl.id}/acessos`),
+  const [links, { acessos, ocultos }, mats] = await Promise.all([
+    api(`/api/clients/${cl.id}/links`), api(`/api/clients/${cl.id}/acessos`), api(`/api/materials?client_id=${cl.id}`),
   ]);
   const grupos = {};
   links.forEach((l) => { (grupos[l.categoria || 'Links'] ||= []).push(l); });
@@ -793,6 +814,10 @@ async function viewArea(v) {
           <button class="edit" data-link="${l.id}" title="Editar">✎</button></a>`; }).join('')}</div></div>`).join('')
     : '<div class="empty" style="padding:20px">Nenhum link ainda.</div>'}
 
+    <div class="secao-titulo"><h3>Materiais <span class="tag">${mats.length}</span></h3>
+      <div class="toolbar"><input id="aMatBusca" placeholder="Buscar material…" style="width:200px"><button class="btn small" id="aNovoMat">+ Adicionar material</button></div></div>
+    <div id="aMats">${materiaisHTML(mats)}</div>
+
     <div class="secao-titulo"><h3>Acessos</h3>${admin ? '<button class="btn small" id="novoAcesso">+ Adicionar acesso</button>' : ''}</div>
     ${ocultos ? `<p class="muted" style="margin-top:-4px">${ocultos} acesso(s) visíveis só para administradores.</p>` : ''}
     <div class="cofre">${acessos.map((a) => `<div class="card acesso" data-a="${a.id}">
@@ -806,6 +831,10 @@ async function viewArea(v) {
     </div>`).join('') || '<div class="empty" style="padding:20px">Nenhum acesso cadastrado.</div>'}</div>`;
 
   $$('[data-ir]', v).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.ir; render(); }));
+  const aMats = $('#aMats');
+  ligarMateriais(aMats, mats);
+  $('#aMatBusca').addEventListener('input', (e) => { aMats.innerHTML = materiaisHTML(mats, e.target.value); ligarMateriais(aMats, mats); });
+  $('#aNovoMat').addEventListener('click', () => abrirMaterial(null, mats));
   $('#novoLink').addEventListener('click', () => abrirLink(cl, null));
   $$('[data-link]', v).forEach((b) => b.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation(); abrirLink(cl, links.find((l) => l.id === Number(b.dataset.link)));
