@@ -1,7 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
-const { pool, init, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha, senhaTemporaria } = require('./db');
+const { pool, init, salvarExperiencias, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha } = require('./db');
+const { lerExperiencias, urlExportacao } = require('./experiencias');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -44,7 +45,48 @@ async function usuarioDaSessao(req) {
   return u;
 }
 
-const publico = (u) => ({ id: u.id, email: u.email, nome: u.nome, papel: u.papel, ativo: u.ativo, trocar_senha: u.trocar_senha, created_at: u.created_at });
+const publico = (u) => ({
+  id: u.id, email: u.email, nome: u.nome, papel: u.papel, ativo: u.ativo, trocar_senha: u.trocar_senha,
+  convite_pendente: !!u.convite_hash && new Date(u.convite_expira) > new Date(), created_at: u.created_at,
+});
+
+// ---------- Convites: link para a pessoa criar a própria senha ----------
+const CONVITE_DIAS = 7;
+const hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+async function gerarConvite(userId, req) {
+  const token = crypto.randomBytes(24).toString('base64url');
+  await pool.query(
+    `UPDATE users SET convite_hash=$1, convite_expira=now() + interval '${CONVITE_DIAS} days' WHERE id=$2`,
+    [hashToken(token), userId]);
+  return `${req.protocol}://${req.get('host')}/?convite=${token}`;
+}
+
+async function usuarioDoConvite(token) {
+  if (!token) return null;
+  const { rows: [u] } = await pool.query(
+    'SELECT * FROM users WHERE convite_hash=$1 AND convite_expira > now() AND ativo', [hashToken(token)]);
+  return u || null;
+}
+
+app.get('/api/convite/:token', wrap(async (req, res) => {
+  const u = await usuarioDoConvite(req.params.token);
+  if (!u) return res.status(404).json({ erro: 'Este link de acesso expirou ou já foi usado. Peça um novo a um administrador.' });
+  res.json({ email: u.email, nome: u.nome });
+}));
+
+app.post('/api/convite', wrap(async (req, res) => {
+  const u = await usuarioDoConvite(req.body.token);
+  if (!u) return res.status(404).json({ erro: 'Este link de acesso expirou ou já foi usado. Peça um novo a um administrador.' });
+  const senha = String(req.body.senha || '');
+  if (senha.length < 8) return res.status(400).json({ erro: 'A senha precisa ter pelo menos 8 caracteres' });
+  const nome = String(req.body.nome || '').trim() || u.nome;
+  const { rows: [atual] } = await pool.query(
+    `UPDATE users SET senha_hash=$1, trocar_senha=false, convite_hash=NULL, convite_expira=NULL, nome=$2 WHERE id=$3 RETURNING *`,
+    [hashSenha(senha), nome, u.id]);
+  criarSessao(res, atual);
+  res.json({ usuario: publico(atual) });
+}));
 const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 // Limite simples de tentativas de login por IP
@@ -119,12 +161,14 @@ app.post('/api/users', soAdmin, wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!emailValido(email)) return res.status(400).json({ erro: 'E-mail inválido' });
   const papel = req.body.papel === 'admin' ? 'admin' : 'membro';
-  const temp = senhaTemporaria();
   try {
+    // Senha aleatória inutilizável até a pessoa criar a dela pelo link
     const { rows: [u] } = await pool.query(
-      `INSERT INTO users (email, nome, senha_hash, papel, trocar_senha) VALUES ($1,$2,$3,$4,true) RETURNING *`,
-      [email, String(req.body.nome || '').trim() || null, hashSenha(temp), papel]);
-    res.json({ usuario: publico(u), senha_temporaria: temp });
+      `INSERT INTO users (email, nome, senha_hash, papel, trocar_senha) VALUES ($1,$2,$3,$4,false) RETURNING *`,
+      [email, String(req.body.nome || '').trim() || null, hashSenha(crypto.randomBytes(24).toString('hex')), papel]);
+    const link = await gerarConvite(u.id, req);
+    const { rows: [atual] } = await pool.query('SELECT * FROM users WHERE id=$1', [u.id]);
+    res.json({ usuario: publico(atual), link });
   } catch (e) {
     if (e.code === '23505') return res.status(400).json({ erro: 'Já existe um usuário com esse e-mail' });
     throw e;
@@ -149,12 +193,12 @@ app.put('/api/users/:id', soAdmin, wrap(async (req, res) => {
   res.json({ usuario: publico(u) });
 }));
 
-app.post('/api/users/:id/redefinir-senha', soAdmin, wrap(async (req, res) => {
-  const temp = senhaTemporaria();
-  const { rows: [u] } = await pool.query(
-    'UPDATE users SET senha_hash=$1, trocar_senha=true WHERE id=$2 RETURNING *', [hashSenha(temp), req.params.id]);
+app.post('/api/users/:id/convite', soAdmin, wrap(async (req, res) => {
+  const { rows: [u] } = await pool.query('SELECT * FROM users WHERE id=$1', [req.params.id]);
   if (!u) return res.status(404).json({ erro: 'Usuário não encontrado' });
-  res.json({ usuario: publico(u), senha_temporaria: temp });
+  const link = await gerarConvite(u.id, req);
+  const { rows: [atual] } = await pool.query('SELECT * FROM users WHERE id=$1', [u.id]);
+  res.json({ usuario: publico(atual), link });
 }));
 
 app.delete('/api/users/:id', soAdmin, wrap(async (req, res) => {
@@ -167,7 +211,7 @@ app.delete('/api/users/:id', soAdmin, wrap(async (req, res) => {
 }));
 
 // ---------- Clientes ----------
-const CLIENT_FIELDS = ['nome', 'marcas', 'site', 'whatsapp', 'instagram', 'meta_posts', 'meta_stories_dia', 'meta_blog', 'observacoes'];
+const CLIENT_FIELDS = ['nome', 'marcas', 'site', 'whatsapp', 'instagram', 'meta_posts', 'meta_stories_dia', 'meta_blog', 'observacoes', 'planilha_url'];
 
 app.get('/api/clients', wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM clients ORDER BY nome');
@@ -291,6 +335,47 @@ app.put('/api/tasks/:id', wrap(async (req, res) => {
 
 app.delete('/api/tasks/:id', wrap(async (req, res) => {
   await pool.query('DELETE FROM tasks WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// ---------- Programação / experiências (planilha do cliente) ----------
+app.get('/api/experiencias', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT e.*, t.status AS task_status, t.data AS task_data FROM experiencias e LEFT JOIN tasks t ON t.id=e.task_id
+     WHERE e.client_id=$1 ORDER BY e.ordem`, [req.query.client_id]);
+  res.json(rows);
+}));
+
+app.post('/api/clients/:id/sincronizar-planilha', wrap(async (req, res) => {
+  const { rows: [cl] } = await pool.query('SELECT * FROM clients WHERE id=$1', [req.params.id]);
+  if (!cl) return res.status(404).json({ erro: 'Cliente não encontrado' });
+  const url = urlExportacao(cl.planilha_url);
+  if (!url) return res.status(400).json({ erro: 'Cadastre o link da planilha do Google em Clientes' });
+  let texto;
+  try {
+    const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    texto = await r.text();
+    if (!r.ok || /^\s*<!doctype html|^\s*<html/i.test(texto)) throw new Error('privada');
+  } catch {
+    return res.status(400).json({
+      erro: 'Não consegui ler a planilha. No Google Sheets, compartilhe como "Qualquer pessoa com o link pode ver" e tente de novo.',
+    });
+  }
+  let lista;
+  try { lista = lerExperiencias(texto); } catch (e) { return res.status(400).json({ erro: e.message }); }
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    await salvarExperiencias(c, cl.id, lista);
+    await c.query('UPDATE clients SET planilha_sync=now() WHERE id=$1', [cl.id]);
+    await c.query('COMMIT');
+  } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
+  res.json({ ok: true, experiencias: lista.length });
+}));
+
+app.put('/api/experiencias/vincular', wrap(async (req, res) => {
+  const ids = (req.body.ids || []).map(Number).filter(Boolean);
+  await pool.query('UPDATE experiencias SET task_id=$1 WHERE id = ANY($2)', [req.body.task_id || null, ids]);
   res.json({ ok: true });
 }));
 

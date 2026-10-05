@@ -1,5 +1,9 @@
 const { Pool, types } = require('pg');
+const fs = require('fs');
+const path = require('path');
 const seed = require('./seed/october.json');
+const trello = require('./seed/clientes-trello.json');
+const { lerExperiencias } = require('./experiencias');
 
 // Datas (DATE) voltam como texto 'AAAA-MM-DD', sem conversão de fuso.
 types.setTypeParser(1082, (v) => v);
@@ -66,6 +70,32 @@ CREATE TABLE IF NOT EXISTS users (
   trocar_senha BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS convite_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS convite_expira TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS planilha_url TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS planilha_sync TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS experiencias (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  secao TEXT,
+  ordem INT NOT NULL DEFAULT 0,
+  periodo TEXT,
+  nome TEXT NOT NULL,
+  resort TEXT NOT NULL,
+  descricao TEXT,
+  horario TEXT,
+  local TEXT,
+  incluso TEXT,
+  preco TEXT,
+  observacoes TEXT,
+  status TEXT,
+  task_id INT REFERENCES tasks(id) ON DELETE SET NULL,
+  UNIQUE (client_id, nome, resort, periodo)
+);
+
+CREATE TABLE IF NOT EXISTS seeds (chave TEXT PRIMARY KEY, aplicado_em TIMESTAMPTZ NOT NULL DEFAULT now());
 
 CREATE TABLE IF NOT EXISTS materials (
   id SERIAL PRIMARY KEY,
@@ -218,12 +248,63 @@ async function bootstrapAdmin(c) {
   console.log(`Administrador inicial criado: ${email}`);
 }
 
+// Grava/atualiza as experiências de um cliente, preservando as pautas já vinculadas
+async function salvarExperiencias(c, clientId, lista) {
+  const chaves = [];
+  for (const e of lista) {
+    await c.query(
+      `INSERT INTO experiencias (client_id, secao, ordem, periodo, nome, resort, descricao, horario, local, incluso, preco, observacoes, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (client_id, nome, resort, periodo) DO UPDATE SET secao=EXCLUDED.secao, ordem=EXCLUDED.ordem,
+         descricao=EXCLUDED.descricao, horario=EXCLUDED.horario, local=EXCLUDED.local, incluso=EXCLUDED.incluso,
+         preco=EXCLUDED.preco, observacoes=EXCLUDED.observacoes, status=EXCLUDED.status`,
+      [clientId, e.secao, e.ordem, e.periodo, e.nome, e.resort, e.descricao, e.horario, e.local, e.incluso, e.preco, e.observacoes, e.status]);
+    chaves.push(`${e.nome}\u0001${e.resort}\u0001${e.periodo || ''}`);
+  }
+  await c.query(
+    `DELETE FROM experiencias WHERE client_id=$1 AND NOT (nome || chr(1) || resort || chr(1) || coalesce(periodo,'') = ANY($2))`,
+    [clientId, chaves]);
+}
+
+// Dados adicionados depois da primeira versão (aplicados uma única vez)
+async function seedsIncrementais(c) {
+  const aplicar = async (chave, fn) => {
+    const { rowCount } = await c.query('INSERT INTO seeds (chave) VALUES ($1) ON CONFLICT DO NOTHING', [chave]);
+    if (rowCount) await fn();
+  };
+
+  await aplicar('experiencias_lafleur_v1', async () => {
+    const { rows: [lf] } = await c.query(`SELECT id FROM clients WHERE nome='La Fleur Collection'`);
+    if (!lf) return;
+    await c.query('UPDATE clients SET planilha_url=$1 WHERE id=$2',
+      ['https://docs.google.com/spreadsheets/d/1oRIPrVLTZEY4xlqvNIl8W9nBK0X_hxkuA0WHrgFJf6I/edit?gid=1478707839#gid=1478707839', lf.id]);
+    const csv = fs.readFileSync(path.join(__dirname, 'seed', 'experiencias-samoa.csv'), 'utf8');
+    await salvarExperiencias(c, lf.id, lerExperiencias(csv));
+  });
+
+  await aplicar('clientes_marilia_laura_v1', async () => {
+    const clientes = [
+      ['Marília', 'marilia', 'Quadro original no Trello: "Boas Histórias com Marília". Conteúdos de oftalmologia e blefaroplastia.'],
+      ['Laura', 'laura', 'Quadro original no Trello: "Boas Histórias com Laura". Conteúdos sobre NR-1, gestão de riscos psicossociais e Metodologia/Plataforma Farol Psicossocial.'],
+    ];
+    for (const [nome, chave, obs] of clientes) {
+      const { rows: [cl] } = await c.query(
+        `INSERT INTO clients (nome, marcas, meta_posts, meta_stories_dia, meta_blog, observacoes) VALUES ($1,'[]',12,0,0,$2) RETURNING id`,
+        [nome, obs]);
+      for (const t of trello[chave]) {
+        await insertTask(c, { ...t, client_id: cl.id, tipo: t.tipo || 'post' });
+      }
+    }
+  });
+}
+
 async function init() {
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
     await c.query(SCHEMA);
     await seedIfEmpty(c);
+    await seedsIncrementais(c);
     await bootstrapAdmin(c);
     await c.query('COMMIT');
   } catch (e) {
@@ -234,4 +315,4 @@ async function init() {
   }
 }
 
-module.exports = { pool, init, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha, senhaTemporaria };
+module.exports = { pool, init, salvarExperiencias, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha, senhaTemporaria };

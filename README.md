@@ -8,10 +8,11 @@ Sistema da agência para planejar e acompanhar as entregas de cada cliente: post
 - **Calendário**: visão mensal com posts, blog e stories por dia. Clique para editar ou no **+** para criar.
 - **Quadro**: kanban de produção (Pauta → Conteúdo/copy → Design/edição → Revisão interna → Aprovação do cliente → Agendado → Publicado), com arrastar e soltar.
 - **Lista**: todas as tarefas do mês com busca e filtros.
+- **Programação**: experiências e datas promocionais dos resorts (Samoa Beach, Samoa Villa, La Fleur) lidas da planilha do Google, agrupadas por mês, com botão **Criar pauta** que já leva tema e programação para o briefing. A aba **Planilha ao vivo** mostra a própria planilha embutida. O botão **Atualizar da planilha** relê a planilha quando ela está compartilhada como "qualquer pessoa com o link pode ver".
 - **Captação**: pautas de produção de fotos e vídeos com checklist por item.
 - **Materiais**: banco de links do Drive por categoria, com busca e marcação de "evitar".
 - **Clientes**: metas mensais, marcas, rodapé padrão e botão para gerar a estrutura de um mês novo (posts distribuídos, stories diários e artigos de blog).
-- **Usuários** (administradores): cada pessoa entra com o próprio e-mail. O administrador cadastra o e-mail, recebe uma senha temporária para enviar e a pessoa cria a senha dela no primeiro acesso. Dá para redefinir senha, desativar, excluir e alternar entre Membro e Administrador.
+- **Usuários** (administradores): cada pessoa entra com o próprio e-mail. O administrador cadastra o e-mail e recebe um link de acesso (válido por 7 dias, uso único) para enviar; ao abrir, a pessoa cria a própria senha. Dá para gerar um novo link (esqueceu a senha), desativar, excluir e alternar entre Membro e Administrador.
 - **Minha conta**: troca de nome e senha.
 - **Backup**: download e restauração de todos os dados em JSON (restauração só para administradores; usuários e senhas não entram no backup).
 
@@ -24,6 +25,8 @@ Na primeira execução o banco é criado com:
 - 31 tarefas de stories e 4 artigos de blog com checklist de SEO.
 - 3 captações prioritárias (Villa de Muro Alto, buggy na praia, hóspedes na praia de Muro Alto).
 - 91 links de fotos e vídeos do Drive organizados por categoria.
+- Experiências de datas promocionais dos Resorts Samoa (planilha BCRAG v2).
+- Clientes **Marília** e **Laura**, com as pautas dos quadros do Trello.
 
 ## Rodar localmente
 

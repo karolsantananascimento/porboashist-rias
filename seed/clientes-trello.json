@@ -1,0 +1,269 @@
+{
+ "marilia": [
+  {
+   "tema": "Como a blefaroplastia pode transformar a qualidade de vida além da estética",
+   "status": "pauta",
+   "briefing": "Aguardar novo depoimento."
+  },
+  {
+   "tema": "Não há idade certa para blefaroplastia",
+   "status": "pauta",
+   "briefing": "Casos de pessoas que realizam a cirurgia aos 30 anos ou mais novas, se houver."
+  },
+  {
+   "tema": "Amplie o seu campo de visão",
+   "status": "pauta",
+   "briefing": "Visão escurecida, campo visual."
+  },
+  {
+   "tema": "Nem todo desconforto nos olhos é \"cansaço\"",
+   "status": "pauta"
+  },
+  {
+   "tema": "O que significa ter a visão \"distorcida\"?",
+   "status": "pauta"
+  },
+  {
+   "tema": "Temas para roteiros",
+   "status": "design",
+   "tipo": "outro"
+  },
+  {
+   "tema": "Novos temas para roteiros",
+   "status": "design",
+   "tipo": "outro"
+  },
+  {
+   "tema": "Você sente que enxerga pior à noite?",
+   "status": "publicado"
+  },
+  {
+   "tema": "Existe forma de evitar que o grau dos óculos aumente?",
+   "status": "publicado",
+   "data": "2026-09-29"
+  },
+  {
+   "tema": "Falta de regularidade afeta sua visão",
+   "status": "publicado",
+   "briefing": "Apenas aumentar o grau dos óculos pode não bastar quando a córnea foi comprometida. Entenda e investigue."
+  },
+  {
+   "tema": "Relatório - setembro a novembro/24",
+   "status": "revisao",
+   "tipo": "outro"
+  },
+  {
+   "tema": "Relatório - novembro a março/25",
+   "status": "revisao",
+   "tipo": "outro"
+  }
+ ],
+ "laura": [
+  {
+   "tema": "Vídeo - Diferença entre conflito de trabalho e assédio moral (clareza para gestores).",
+   "status": "pauta",
+   "formato": "reels"
+  },
+  {
+   "tema": "Vídeo - Por que falar em saúde mental não é \"mimimi\": os impactos reais no desempenho da empresa.",
+   "status": "pauta",
+   "formato": "reels"
+  },
+  {
+   "tema": "Cases/exemplos (genéricos, sem expor) de empresas que implementaram boas práticas e os resultados alcançados.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Bastidores de rotina de pesquisa, escrita de artigos, palestras, etc - pode virar uma editoria frequente",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Inspiração: menção a referências da área (mostrando que está atualizada com grandes nomes).",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Vídeo - Quais os novos desafios para empresas na gestão de pessoas pós-pandemia",
+   "status": "pauta",
+   "formato": "reels"
+  },
+  {
+   "tema": "REELS - Saúde mental: O que é obrigação da empresa?",
+   "status": "pauta",
+   "formato": "reels"
+  },
+  {
+   "tema": "Por que políticas internas não funcionam (e o problema não é o papel)",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "REELS - Como um gestor pode reduzir riscos HOJE",
+   "status": "pauta",
+   "formato": "reels"
+  },
+  {
+   "tema": "REELS - O que eu observo antes de um afastamento acontecer",
+   "status": "pauta",
+   "formato": "reels"
+  },
+  {
+   "tema": "Introdução - todo o conteúdo que a Laura criou e que resume os temas das postagens que virão: NR1, PGR, GRO, GRP, metodologia e plataforma.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que é a NR1 e a sua relação com a Gestão de Riscos Psicossociais.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "A importância da empresa seguir a NR1.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que acontece se a empresa não seguir a NR1.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Como se resguardar em relação a NR1.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que é o PGR e relação com a GRP.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "A importância do PGR ter a GRP inclusa.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que acontece se não incluir a GRP no PGR.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Como evitar autuação e multa.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que é a GRO.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "A relação entre a NR1, PGR, GRO e GRP.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "A atualização da NR1 e a relação GRO e GRP (antes e depois da atualização).",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Por que a GRO e GRP caminham juntas.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que é a GRP.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "A importância de mapear e acompanhar a GRP.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que acontece se a empresa não entrar em conformidade da NR1 e GRP.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Adequação a NR1 e como evitar autuação e multas.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "O que é e para que serve a Metodologia Farol Psicossocial.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Etapas da GRP com a Metodologia Farol Psicossocial.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Inventário de riscos e mapeamento.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Planos de ação, PDCA e acompanhamento.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "GRP e a nossa Plataforma Farol Psicossocial.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "A importância de utilizar tecnologia para otimizar a GRP.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Área do cliente para acompanhamento da GRP - plataforma Farol Psicossocial.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Canal de denúncia - plataforma Farol Psicossocial.",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Uma empresa corre risco a partir da sua fundação",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Cumprir a NR-1 é dever da empresa desde a sua fundação. Você sabe que penalidades já são atribuídas às empresas por riscos psicossociais, antes da NR-1?",
+   "status": "pauta",
+   "formato": null
+  },
+  {
+   "tema": "Não cumprir a NR-1 traz consequências legais e prejuízos financeiros",
+   "status": "design"
+  },
+  {
+   "tema": "REELS (2º vídeo) - 90 segundos com Farol",
+   "status": "agendado",
+   "formato": "reels",
+   "briefing": "Aprovado pela Laura. Aguardando publicação."
+  },
+  {
+   "tema": "REELS - Palestra • Secretaria da Saúde de Jaboatão",
+   "status": "publicado",
+   "formato": "reels",
+   "data": "2026-09-29"
+  },
+  {
+   "tema": "REELS (animação) - Cumprir a NR-1 é mais que evitar penalizações",
+   "status": "publicado",
+   "formato": "reels"
+  }
+ ]
+}

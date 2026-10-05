@@ -66,6 +66,8 @@ const clientesAtivos = () => (S.cliente ? S.clients.filter((c) => String(c.id) =
 
 // ---------------- Inicialização ----------------
 async function iniciar() {
+  const convite = new URLSearchParams(location.search).get('convite');
+  if (convite) return mostrarConvite(convite);
   const s = await api('/api/sessao');
   if (!s.autenticado) return mostrarLogin();
   S.me = s.usuario;
@@ -88,9 +90,45 @@ async function carregarUsuarios() {
   S.users = await api('/api/users');
 }
 
+async function mostrarConvite(token) {
+  $('#app').classList.add('hidden');
+  $('#login').classList.remove('hidden');
+  $('#loginForm').classList.add('hidden');
+  $('#conviteForm').classList.remove('hidden');
+  try {
+    const r = await fetch('/api/convite/' + encodeURIComponent(token)).then(async (x) => {
+      const d = await x.json(); if (!x.ok) throw new Error(d.erro); return d;
+    });
+    $('#conviteEmail').textContent = `Acesso de ${r.email}`;
+    $('#conviteNome').value = r.nome || '';
+    $('#conviteSenha').focus();
+  } catch (err) {
+    $('#conviteEmail').textContent = '';
+    $('#conviteErro').textContent = err.message;
+    $$('#conviteForm input, #conviteForm button').forEach((el) => el.classList.add('hidden'));
+    $('#conviteForm').insertAdjacentHTML('beforeend', '<a class="btn" href="/">Ir para o login</a>');
+    return;
+  }
+  $('#conviteForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const senha = $('#conviteSenha').value;
+    if (senha.length < 8) return ($('#conviteErro').textContent = 'A senha precisa ter pelo menos 8 caracteres');
+    if (senha !== $('#conviteSenha2').value) return ($('#conviteErro').textContent = 'As senhas não conferem');
+    try {
+      await api('/api/convite', { method: 'POST', body: { token, senha, nome: $('#conviteNome').value } });
+      history.replaceState(null, '', '/');
+      $('#conviteForm').classList.add('hidden');
+      $('#loginForm').classList.remove('hidden');
+      iniciar();
+    } catch (err) { $('#conviteErro').textContent = err.message; }
+  };
+}
+
 function mostrarLogin() {
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
+  $('#conviteForm').classList.add('hidden');
+  $('#loginForm').classList.remove('hidden');
   $('#modal').open && $('#modal').close();
   ($('#email').value ? $('#senha') : $('#email')).focus();
 }
@@ -139,13 +177,13 @@ async function carregarTarefas() {
 async function render() {
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === S.view));
   $('#mesLabel').textContent = mesLabel(S.mes);
-  const semMes = ['materiais', 'clientes', 'captacao', 'usuarios'].includes(S.view);
+  const semMes = ['materiais', 'clientes', 'captacao', 'usuarios', 'programacao'].includes(S.view);
   $('.mes').style.display = semMes ? 'none' : '';
   const v = $('#view');
   try {
-    if (!['materiais', 'clientes', 'usuarios'].includes(S.view)) await carregarTarefas();
+    if (!['materiais', 'clientes', 'usuarios', 'programacao'].includes(S.view)) await carregarTarefas();
     ({ painel: viewPainel, calendario: viewCalendario, quadro: viewQuadro, lista: viewLista,
-      captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes, usuarios: viewUsuarios })[S.view](v);
+      captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes, usuarios: viewUsuarios, programacao: viewProgramacao })[S.view](v);
   } catch (e) {
     v.innerHTML = `<div class="empty">Não foi possível carregar: ${esc(e.message)}</div>`;
   }
@@ -436,6 +474,7 @@ function viewClientes(v) {
         <div class="row"><div><label>Site</label><input data-f="site" value="${esc(c.site || '')}"></div>
           <div><label>WhatsApp</label><input data-f="whatsapp" value="${esc(c.whatsapp || '')}"></div></div>
         <div><label>Instagram</label><input data-f="instagram" value="${esc(c.instagram || '')}" placeholder="@perfil"></div>
+        <div><label>Planilha de programação (Google Sheets)</label><input data-f="planilha_url" value="${esc(c.planilha_url || '')}" placeholder="https://docs.google.com/spreadsheets/d/…"></div>
         <div class="row"><div><label>Posts / mês</label><input type="number" min="0" data-f="meta_posts" value="${c.meta_posts}"></div>
           <div><label>Stories / dia</label><input type="number" min="0" data-f="meta_stories_dia" value="${c.meta_stories_dia}"></div>
           <div><label>Blog / mês</label><input type="number" min="0" data-f="meta_blog" value="${c.meta_blog}"></div></div>
@@ -580,8 +619,8 @@ function abrirTarefa(t, padrao = {}) {
       links: $('#tLinks').value.trim(), checklist: t.checklist,
     };
     try {
-      if (novo) await api('/api/tasks', { method: 'POST', body });
-      else await api('/api/tasks/' + t.id, { method: 'PUT', body });
+      const salvo = novo ? await api('/api/tasks', { method: 'POST', body }) : await api('/api/tasks/' + t.id, { method: 'PUT', body });
+      if (padrao._onSalvo) await padrao._onSalvo(salvo);
       d.close(); toast('Tarefa salva'); render();
     } catch (e) { toast(e.message); }
   });
@@ -592,11 +631,122 @@ function abrirTarefa(t, padrao = {}) {
   d.showModal();
 }
 
+// ---------------- Programação (planilha de experiências) ----------------
+const MESES_ABREV = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+S.progAba = 'experiencias';
+S.progResort = '';
+S.progSoConteudo = false;
+
+function planilhaEmbed(url) {
+  const id = (url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/) || [])[1];
+  const gid = (url.match(/[#&?]gid=(\d+)/) || [])[1];
+  return id ? `https://docs.google.com/spreadsheets/d/${id}/edit?rm=minimal${gid ? '&gid=' + gid + '#gid=' + gid : ''}` : null;
+}
+
+async function viewProgramacao(v) {
+  const candidatos = S.cliente ? clientesAtivos() : S.clients.filter((c) => c.planilha_url);
+  const cl = candidatos[0];
+  if (!cl) {
+    v.innerHTML = `<div class="view-head"><div><h2>Programação</h2><p>Experiências e datas promocionais que viram pauta.</p></div></div>
+      <div class="empty">Escolha um cliente no topo ou cadastre o link da planilha de programação em <a href="#" data-go="clientes">Clientes</a>.</div>`;
+    $$('[data-go]', v).forEach((x) => x.addEventListener('click', (e) => { e.preventDefault(); S.view = 'clientes'; render(); }));
+    return;
+  }
+  const exps = await api('/api/experiencias?client_id=' + cl.id);
+  const resorts = [...new Set(exps.map((e) => e.resort))];
+  const embed = cl.planilha_url ? planilhaEmbed(cl.planilha_url) : null;
+
+  // Agrupa: seção → experiência (nome + período) → resorts
+  const secoes = [];
+  for (const e of exps) {
+    if (S.progResort && e.resort !== S.progResort) continue;
+    let s = secoes.find((x) => x.nome === e.secao);
+    if (!s) secoes.push((s = { nome: e.secao, itens: [] }));
+    let it = s.itens.find((x) => x.nome === e.nome && x.periodo === e.periodo);
+    if (!it) s.itens.push((it = { nome: e.nome, periodo: e.periodo, rows: [] }));
+    it.rows.push(e);
+  }
+  const comConteudo = (it) => it.rows.some((r) => r.descricao);
+  secoes.forEach((s) => { if (S.progSoConteudo) s.itens = s.itens.filter(comConteudo); });
+  const visiveis = secoes.filter((s) => s.itens.length);
+  const sync = cl.planilha_sync ? `Atualizado da planilha em ${new Date(cl.planilha_sync).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}` : 'Dados importados do arquivo da planilha';
+
+  v.innerHTML = `
+    <div class="view-head"><div><h2>Programação · ${esc(cl.nome)}</h2><p>Experiências e datas promocionais dos resorts para pautar conteúdos. ${esc(sync)}.</p></div>
+      <div class="toolbar">
+        ${cl.planilha_url ? `<button class="btn" id="pSync">Atualizar da planilha</button><a class="btn" href="${esc(cl.planilha_url)}" target="_blank" rel="noopener">Abrir no Google Sheets</a>` : ''}
+      </div></div>
+    <div class="toolbar" style="margin-bottom:16px">
+      <div class="seg"><button data-aba="experiencias" class="${S.progAba === 'experiencias' ? 'on' : ''}">Experiências</button>
+        <button data-aba="planilha" class="${S.progAba === 'planilha' ? 'on' : ''}" ${embed ? '' : 'disabled'}>Planilha ao vivo</button></div>
+      ${S.progAba === 'experiencias' ? `
+      <div class="seg"><button data-resort="" class="${!S.progResort ? 'on' : ''}">Todos</button>${resorts.map((r) => `<button data-resort="${esc(r)}" class="${S.progResort === r ? 'on' : ''}">${esc(r)}</button>`).join('')}</div>
+      <label class="check" style="text-transform:none;font-weight:400;font-size:14px;color:var(--ink);margin:0"><input type="checkbox" id="pSo" ${S.progSoConteudo ? 'checked' : ''}><span>Só com programação preenchida</span></label>` : ''}
+    </div>
+    <div id="pCorpo"></div>`;
+
+  const corpo = $('#pCorpo');
+  if (S.progAba === 'planilha' && embed) {
+    corpo.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><iframe src="${esc(embed)}" style="width:100%;height:75vh;border:0" loading="lazy" title="Planilha de programação"></iframe></div>
+      <p class="muted" style="margin-top:8px">A planilha aparece aqui para quem estiver logado no Google com acesso a ela. Se não carregar, use “Abrir no Google Sheets”.</p>`;
+  } else if (!visiveis.length) {
+    corpo.innerHTML = `<div class="empty">${exps.length ? 'Nenhuma experiência com esse filtro.' : 'Nenhuma experiência importada ainda. Use “Atualizar da planilha”.'}</div>`;
+  } else {
+    const mesAtual = MESES_ABREV[new Date().getMonth()];
+    corpo.innerHTML = visiveis.map((s) => `<div class="mat-group prog-secao" data-secao="${esc(s.nome || '')}">
+      <h3>${esc(s.nome || 'Sem seção')}</h3>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">${s.itens.map((it) => {
+        const vinc = it.rows.find((r) => r.task_id);
+        return `<div class="card">
+          <div class="muted" style="font-size:12px">${esc(it.periodo || '')}</div>
+          <h3 style="margin:2px 0 10px">${esc(it.nome)}</h3>
+          ${it.rows.map((r) => `<div style="border-top:1px solid var(--line);padding:8px 0">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong style="font-size:13px">${esc(r.resort)}</strong>
+              <span class="st ${/aprov/i.test(r.status || '') ? 'publicado' : /revis/i.test(r.status || '') ? 'aprovacao' : ''}">${esc(r.status || 'Pendente')}</span></div>
+            ${r.descricao ? `<div style="white-space:pre-line;font-size:13px;margin-top:4px">${esc(r.descricao)}</div>` : '<div class="muted" style="font-size:13px;margin-top:4px">Aguardando programação</div>'}
+            ${[r.horario && 'Horário: ' + r.horario, r.local && 'Local: ' + r.local, r.incluso && 'Incluso: ' + r.incluso, r.preco && 'Preço: ' + r.preco, r.observacoes && 'Obs.: ' + r.observacoes].filter(Boolean).map((x) => `<div class="muted" style="font-size:12px">${esc(x)}</div>`).join('')}
+          </div>`).join('')}
+          <div style="margin-top:10px">${vinc
+            ? `<button class="btn small" data-abrir="${vinc.task_id}">Pauta criada · ${esc(STATUS_LABEL[vinc.task_status] || '')}</button>`
+            : `<button class="btn small primary" data-pauta="${it.rows.map((r) => r.id).join(',')}">Criar pauta</button>`}</div>
+        </div>`;
+      }).join('')}</div></div>`).join('');
+    const alvo = $$('.prog-secao', corpo).find((el) => el.dataset.secao.split('|')[0].includes(mesAtual));
+    if (alvo) setTimeout(() => alvo.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
+
+  $$('[data-aba]', v).forEach((b) => b.addEventListener('click', () => { S.progAba = b.dataset.aba; viewProgramacao(v); }));
+  $$('[data-resort]', v).forEach((b) => b.addEventListener('click', () => { S.progResort = b.dataset.resort; viewProgramacao(v); }));
+  $('#pSo')?.addEventListener('change', (e) => { S.progSoConteudo = e.target.checked; viewProgramacao(v); });
+  $('#pSync')?.addEventListener('click', async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Atualizando…';
+    try {
+      const r = await api(`/api/clients/${cl.id}/sincronizar-planilha`, { method: 'POST' });
+      await carregarClientes(); toast(`${r.experiencias} experiências atualizadas`); viewProgramacao(v);
+    } catch (err) { toast(err.message); e.target.disabled = false; e.target.textContent = 'Atualizar da planilha'; }
+  });
+  $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', async () => {
+    const t = (await api('/api/tasks?client_id=' + cl.id)).find((x) => x.id === Number(b.dataset.abrir));
+    if (t) abrirTarefa(t);
+  }));
+  $$('[data-pauta]', v).forEach((b) => b.addEventListener('click', () => {
+    const ids = b.dataset.pauta.split(',').map(Number);
+    const rows = exps.filter((e) => ids.includes(e.id));
+    const base = rows[0];
+    const briefing = rows.filter((r) => r.descricao).map((r) => `${r.resort}:\n${r.descricao}`).join('\n\n');
+    abrirTarefa(null, {
+      client_id: cl.id, tipo: 'post', data: '', editorial: 'Programação dos resorts',
+      tema: base.nome, briefing: `${base.periodo ? 'Período: ' + base.periodo + '\n\n' : ''}${briefing}`,
+      _onSalvo: (task) => api('/api/experiencias/vincular', { method: 'PUT', body: { ids, task_id: task.id } }),
+    });
+  }));
+}
+
 // ---------------- Usuários (admin) ----------------
 async function viewUsuarios(v) {
   await carregarUsuarios();
   v.innerHTML = `
-    <div class="view-head"><div><h2>Usuários</h2><p>Quem pode entrar no sistema. Cada pessoa recebe uma senha temporária e cria a própria no primeiro acesso.</p></div></div>
+    <div class="view-head"><div><h2>Usuários</h2><p>Quem pode entrar no sistema. Cada pessoa recebe um link de acesso e cria a própria senha.</p></div></div>
     <div class="card" style="margin-bottom:16px">
       <h3 style="margin-bottom:12px">Adicionar pessoa</h3>
       <form id="uForm" class="row" style="align-items:end">
@@ -614,19 +764,19 @@ async function viewUsuarios(v) {
         <td><select data-papel style="width:auto" ${u.id === S.me.id ? 'disabled' : ''}>
           <option value="membro" ${u.papel === 'membro' ? 'selected' : ''}>Membro</option>
           <option value="admin" ${u.papel === 'admin' ? 'selected' : ''}>Administrador</option></select></td>
-        <td>${!u.ativo ? '<span class="st">Desativado</span>' : u.trocar_senha ? '<span class="st aprovacao">Aguardando 1º acesso</span>' : '<span class="st publicado">Ativo</span>'}</td>
+        <td>${!u.ativo ? '<span class="st">Desativado</span>' : u.convite_pendente ? '<span class="st aprovacao">Convite enviado</span>' : '<span class="st publicado">Ativo</span>'}</td>
         <td style="text-align:right;white-space:nowrap">${u.id === S.me.id ? '<span class="muted">Você</span>' : `
-          <button class="btn small" data-reset>Nova senha</button>
+          <button class="btn small" data-reset>Link de acesso</button>
           <button class="btn small" data-ativo>${u.ativo ? 'Desativar' : 'Reativar'}</button>
           <button class="btn small danger" data-del>Excluir</button>`}</td>
       </tr>`).join('')}</tbody></table></div>`;
 
-  const mostrarSenha = (email, senha) => {
-    $('#uSenha').innerHTML = `<div style="margin-top:14px"><p style="margin:0 0 8px">Senha temporária de <b>${esc(email)}</b>. Envie para a pessoa: ela vai criar a própria senha no primeiro acesso. Esta senha não será mostrada de novo.</p>
-      <div class="senha-box"><span>${esc(senha)}</span><button type="button" class="btn small" id="copiarSenha">Copiar acesso</button></div></div>`;
+  const mostrarLink = (email, link) => {
+    $('#uSenha').innerHTML = `<div style="margin-top:14px"><p style="margin:0 0 8px">Link de acesso de <b>${esc(email)}</b>. Envie para a pessoa: ao abrir, ela cria a própria senha. O link vale por 7 dias e só funciona uma vez.</p>
+      <div class="senha-box" style="font-size:13px"><span style="word-break:break-all">${esc(link)}</span><button type="button" class="btn small" id="copiarSenha">Copiar convite</button></div></div>`;
     $('#copiarSenha').addEventListener('click', () => {
-      navigator.clipboard.writeText(`Acesso ao sistema da Por Boas Histórias\n${location.origin}\nE-mail: ${email}\nSenha temporária: ${senha}`);
-      toast('Dados de acesso copiados');
+      navigator.clipboard.writeText(`Olá! Este é seu acesso ao sistema da Por Boas Histórias.\nAbra o link para criar sua senha (vale por 7 dias):\n${link}\n\nDepois, entre em ${location.origin} com o e-mail ${email}.`);
+      toast('Convite copiado');
     });
   };
 
@@ -635,7 +785,7 @@ async function viewUsuarios(v) {
     try {
       const r = await api('/api/users', { method: 'POST', body: { email: $('#uEmail').value, nome: $('#uNome').value, papel: $('#uPapel').value } });
       await viewUsuarios(v);
-      mostrarSenha(r.usuario.email, r.senha_temporaria);
+      mostrarLink(r.usuario.email, r.link);
       toast('Usuário criado');
     } catch (err) { toast(err.message); }
   });
@@ -647,10 +797,9 @@ async function viewUsuarios(v) {
       catch (err) { toast(err.message); viewUsuarios(v); }
     });
     $('[data-reset]', row)?.addEventListener('click', async () => {
-      if (!confirm(`Gerar uma nova senha temporária para ${u.email}? A senha atual deixa de funcionar.`)) return;
-      const r = await api(`/api/users/${u.id}/redefinir-senha`, { method: 'POST' });
+      const r = await api(`/api/users/${u.id}/convite`, { method: 'POST' });
       await viewUsuarios(v);
-      mostrarSenha(u.email, r.senha_temporaria);
+      mostrarLink(u.email, r.link);
     });
     $('[data-ativo]', row)?.addEventListener('click', async () => {
       try { await api('/api/users/' + u.id, { method: 'PUT', body: { ativo: !u.ativo } }); viewUsuarios(v); }

@@ -19,6 +19,17 @@
       <input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
       <button class="btn primary" type="submit">Entrar</button>
       <p class="erro" id="loginErro"></p>
+      <p class="muted" style="font-size:12px">Primeiro acesso? Use o link enviado pelo administrador para criar sua senha.</p>
+    </form>
+    <form id="conviteForm" class="login-card hidden">
+      <div class="brand-mark">B</div>
+      <h1>Crie sua senha</h1>
+      <p id="conviteEmail"></p>
+      <input id="conviteNome" placeholder="Seu nome" autocomplete="name">
+      <input type="password" id="conviteSenha" placeholder="Nova senha (mín. 8 caracteres)" autocomplete="new-password" minlength="8" required>
+      <input type="password" id="conviteSenha2" placeholder="Repita a senha" autocomplete="new-password" required>
+      <button class="btn primary" type="submit">Criar senha e entrar</button>
+      <p class="erro" id="conviteErro"></p>
     </form>
   </div>
 
@@ -36,6 +47,7 @@
         <a data-view="calendario">Calendário</a>
         <a data-view="quadro">Quadro</a>
         <a data-view="lista">Lista</a>
+        <a data-view="programacao">Programação</a>
         <a data-view="captacao">Captação</a>
         <a data-view="materiais">Materiais</a>
         <a data-view="clientes">Clientes</a>
