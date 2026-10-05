@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Por Boas Histórias — Gestão</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23b4532a'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Georgia'>B</text></svg>">
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <form id="loginForm" class="login-card">
+      <div class="brand-mark">B</div>
+      <h1>Por Boas Histórias</h1>
+      <p>Entre com a senha da equipe.</p>
+      <input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
+      <button class="btn primary" type="submit">Entrar</button>
+      <p class="erro" id="loginErro"></p>
+    </form>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">B</div>
+        <div>
+          <strong>Por Boas Histórias</strong>
+          <span>Gestão de conteúdo</span>
+        </div>
+      </div>
+      <nav id="nav">
+        <a data-view="painel" class="active">Painel</a>
+        <a data-view="calendario">Calendário</a>
+        <a data-view="quadro">Quadro</a>
+        <a data-view="lista">Lista</a>
+        <a data-view="captacao">Captação</a>
+        <a data-view="materiais">Materiais</a>
+        <a data-view="clientes">Clientes</a>
+      </nav>
+      <button class="btn ghost small sair" id="sair">Sair</button>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div class="filters">
+          <select id="fCliente" aria-label="Cliente"></select>
+          <div class="mes">
+            <button class="icon" id="mesPrev" aria-label="Mês anterior">‹</button>
+            <span id="mesLabel"></span>
+            <button class="icon" id="mesNext" aria-label="Próximo mês">›</button>
+          </div>
+        </div>
+        <button class="btn primary" id="novaTarefa">+ Nova tarefa</button>
+      </header>
+      <section id="view"></section>
+    </main>
+  </div>
+
+  <dialog id="modal"></dialog>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

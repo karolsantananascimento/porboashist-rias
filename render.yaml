@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: por-boas-historias
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: por-boas-historias-db
+          property: connectionString
+      - key: APP_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+
+databases:
+  - name: por-boas-historias-db
+    plan: free
+    region: oregon
+    databaseName: pbh
