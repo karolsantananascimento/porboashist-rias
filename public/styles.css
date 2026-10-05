@@ -215,6 +215,7 @@ dialog::backdrop { background: rgba(30, 24, 20, .45); }
   .brand span { display: none; }
   nav { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; width: 100%; min-width: 0; order: 3; }
   nav a { white-space: nowrap; }
+  .sidebar { gap: 8px; }
   .me { margin-top: 0; margin-left: auto; border-top: 0; padding-top: 0; }
   .me-info { display: none; }
   main { padding: 0 16px 32px; }
@@ -225,3 +226,25 @@ dialog::backdrop { background: rgba(30, 24, 20, .45); }
   .cal .chip { font-size: 10px; padding: 2px 4px; }
   .cal .dow { font-size: 10px; padding: 6px 4px; }
 }
+
+/* Área do cliente */
+.area-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin: 6px 0 18px; }
+.area-head .marcas { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.nota { background: var(--accent-soft); border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-bottom: 18px; white-space: pre-line; }
+.atalhos { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.atalho { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); text-decoration: none; color: var(--ink); box-shadow: var(--shadow); transition: border-color .15s, transform .15s; position: relative; min-height: 64px; }
+.atalho:hover { border-color: var(--accent); transform: translateY(-1px); }
+.atalho .ic { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex-shrink: 0; color: #fff; }
+.atalho .tx { min-width: 0; }
+.atalho .tx strong { display: block; font-weight: 600; }
+.atalho .tx span { display: block; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atalho .edit { position: absolute; top: 6px; right: 6px; border: 0; background: var(--surface); color: var(--ink-3); cursor: pointer; border-radius: 6px; padding: 2px 6px; opacity: 0; }
+.atalho:hover .edit { opacity: 1; }
+.cofre { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.acesso .linha { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.acesso .linha .k { width: 64px; color: var(--ink-3); font-size: 12px; flex-shrink: 0; }
+.acesso .linha .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
+.acesso .linha button { border: 0; background: none; color: var(--accent); cursor: pointer; font-weight: 600; font-size: 12px; padding: 2px 4px; }
+.secao-titulo { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 24px 0 12px; }
+.cliente-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.cliente-pick button { text-align: left; cursor: pointer; }

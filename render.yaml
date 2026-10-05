@@ -22,3 +22,5 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      - key: ACESSOS_KEY     # chave do cofre de senhas (32 bytes em base64)
+        sync: false

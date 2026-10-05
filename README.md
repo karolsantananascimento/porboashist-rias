@@ -4,6 +4,7 @@ Sistema da agência para planejar e acompanhar as entregas de cada cliente: post
 
 ## O que tem
 
+- **Área do cliente**: página de cada cliente com botões para os links de trabalho (Trello, planilhas, reservas, unidades) e a aba de **acessos** (logins e senhas). As senhas ficam criptografadas no banco (AES-256-GCM, chave em `ACESSOS_KEY`), aparecem só quando alguém clica em Mostrar/Copiar e podem ser restritas a administradores. Acessos não entram no backup.
 - **Painel**: metas do contrato no mês (posts publicados, dias com stories, artigos de blog), andamento por etapa, próximas entregas e alertas (posts sem tema, entregas atrasadas, excesso ou falta de posts em relação à meta).
 - **Calendário**: visão mensal com posts, blog e stories por dia. Clique para editar ou no **+** para criar.
 - **Quadro**: kanban de produção (Pauta → Conteúdo/copy → Design/edição → Revisão interna → Aprovação do cliente → Agendado → Publicado), com arrastar e soltar.
@@ -44,6 +45,7 @@ Abra http://localhost:3000.
 | `DATABASE_URL` | Conexão com o Postgres |
 | `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_PASSWORD` | Criam o primeiro administrador quando ainda não há usuários. A senha é temporária e precisa ser trocada no primeiro acesso. |
 | `SESSION_SECRET` | Chave para assinar a sessão (o Render gera sozinho) |
+| `ACESSOS_KEY` | Chave do cofre de senhas dos clientes (32 bytes em base64). Sem ela, não dá para salvar nem ler senhas. Se for perdida, as senhas salvas não podem ser recuperadas. |
 | `DB_SCHEMA` | Schema do banco onde ficam as tabelas (`pbh` no Supabase) |
 
 ## Hospedagem

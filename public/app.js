@@ -177,13 +177,13 @@ async function carregarTarefas() {
 async function render() {
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === S.view));
   $('#mesLabel').textContent = mesLabel(S.mes);
-  const semMes = ['materiais', 'clientes', 'captacao', 'usuarios', 'programacao'].includes(S.view);
+  const semMes = ['materiais', 'clientes', 'captacao', 'usuarios', 'programacao', 'area'].includes(S.view);
   $('.mes').style.display = semMes ? 'none' : '';
   const v = $('#view');
   try {
-    if (!['materiais', 'clientes', 'usuarios', 'programacao'].includes(S.view)) await carregarTarefas();
+    if (!['materiais', 'clientes', 'usuarios', 'programacao', 'area'].includes(S.view)) await carregarTarefas();
     ({ painel: viewPainel, calendario: viewCalendario, quadro: viewQuadro, lista: viewLista,
-      captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes, usuarios: viewUsuarios, programacao: viewProgramacao })[S.view](v);
+      captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes, usuarios: viewUsuarios, programacao: viewProgramacao, area: viewArea })[S.view](v);
   } catch (e) {
     v.innerHTML = `<div class="empty">Não foi possível carregar: ${esc(e.message)}</div>`;
   }
@@ -740,6 +740,149 @@ async function viewProgramacao(v) {
       _onSalvo: (task) => api('/api/experiencias/vincular', { method: 'PUT', body: { ids, task_id: task.id } }),
     });
   }));
+}
+
+// ---------------- Área do cliente: links rápidos e acessos ----------------
+function iconeLink(url) {
+  const u = (url || '').toLowerCase();
+  if (u.includes('trello.com')) return ['T', '#0c66e4'];
+  if (u.includes('docs.google.com/spreadsheets')) return ['P', '#188038'];
+  if (u.includes('docs.google.com/document')) return ['D', '#1a73e8'];
+  if (u.includes('drive.google.com')) return ['DR', '#f4b400'];
+  if (u.includes('sharepoint.com') || u.includes('office.com')) return ['XL', '#107c41'];
+  if (u.includes('stays.net')) return ['R', '#e2574c'];
+  if (u.includes('instagram.com')) return ['IG', '#c13584'];
+  if (u.includes('linkedin.com')) return ['in', '#0a66c2'];
+  if (u.includes('canva.com')) return ['C', '#00c4cc'];
+  return ['↗', 'var(--accent)'];
+}
+const dominio = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
+
+async function viewArea(v) {
+  const admin = S.me.papel === 'admin';
+  if (!S.cliente) {
+    v.innerHTML = `<div class="view-head"><div><h2>Área do cliente</h2><p>Escolha um cliente para ver links, planilhas e acessos.</p></div></div>
+      <div class="cliente-pick">${S.clients.map((c) => `<button class="card" data-pick="${c.id}"><h3>${esc(c.nome)}</h3>
+        <div class="muted" style="margin-top:4px">${esc((c.marcas || []).join(' · ') || 'Abrir área')}</div></button>`).join('')}</div>`;
+    $$('[data-pick]', v).forEach((b) => b.addEventListener('click', () => {
+      S.cliente = b.dataset.pick; localStorageSet('pbh_cliente', S.cliente); $('#fCliente').value = S.cliente; viewArea(v);
+    }));
+    return;
+  }
+  const cl = S.clients.find((c) => String(c.id) === String(S.cliente));
+  const [links, { acessos, ocultos }] = await Promise.all([
+    api(`/api/clients/${cl.id}/links`), api(`/api/clients/${cl.id}/acessos`),
+  ]);
+  const grupos = {};
+  links.forEach((l) => { (grupos[l.categoria || 'Links'] ||= []).push(l); });
+
+  v.innerHTML = `
+    <div class="area-head"><div><h2>${esc(cl.nome)}</h2>
+      ${(cl.marcas || []).length ? `<div class="marcas">${cl.marcas.map((m) => `<span class="tag">${esc(m)}</span>`).join('')}</div>` : ''}</div>
+      <div class="toolbar">${cl.planilha_url ? '<button class="btn" data-ir="programacao">Programação</button>' : ''}
+        <button class="btn" data-ir="calendario">Calendário</button><button class="btn" data-ir="quadro">Quadro</button><button class="btn" data-ir="materiais">Materiais</button></div></div>
+    ${cl.observacoes ? `<div class="nota">${esc(cl.observacoes)}</div>` : ''}
+
+    <div class="secao-titulo"><h3>Links rápidos</h3><button class="btn small" id="novoLink">+ Adicionar link</button></div>
+    ${Object.keys(grupos).length ? Object.entries(grupos).map(([cat, arr]) => `
+      <div class="mat-group"><div class="muted" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${esc(cat)}</div>
+      <div class="atalhos">${arr.map((l) => { const [ic, cor] = iconeLink(l.url); return `
+        <a class="atalho" href="${esc(l.url)}" target="_blank" rel="noopener">
+          <span class="ic" style="background:${cor}">${ic}</span>
+          <span class="tx"><strong>${esc(l.titulo)}</strong><span>${esc(l.observacao || dominio(l.url))}</span></span>
+          <button class="edit" data-link="${l.id}" title="Editar">✎</button></a>`; }).join('')}</div></div>`).join('')
+    : '<div class="empty" style="padding:20px">Nenhum link ainda.</div>'}
+
+    <div class="secao-titulo"><h3>Acessos</h3>${admin ? '<button class="btn small" id="novoAcesso">+ Adicionar acesso</button>' : ''}</div>
+    ${ocultos ? `<p class="muted" style="margin-top:-4px">${ocultos} acesso(s) visíveis só para administradores.</p>` : ''}
+    <div class="cofre">${acessos.map((a) => `<div class="card acesso" data-a="${a.id}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+        <h3>${esc(a.servico)}</h3>${a.restrito ? '<span class="tag" title="Só administradores veem">Restrito</span>' : ''}</div>
+      ${a.url ? `<div class="linha"><span class="k">Link</span><a class="v" style="font-family:inherit" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(dominio(a.url))}</a></div>` : ''}
+      ${a.usuario ? `<div class="linha"><span class="k">Usuário</span><span class="v">${esc(a.usuario)}</span><button data-copiar="${esc(a.usuario)}">Copiar</button></div>` : ''}
+      ${a.tem_senha ? `<div class="linha"><span class="k">Senha</span><span class="v" data-senha>••••••••</span><button data-mostrar>Mostrar</button><button data-copiar-senha>Copiar</button></div>` : ''}
+      ${a.observacao ? `<div class="muted" style="font-size:12px;margin-top:6px;white-space:pre-line">${esc(a.observacao)}</div>` : ''}
+      ${admin ? '<div style="margin-top:8px"><button class="btn small" data-editar-acesso>Editar</button></div>' : ''}
+    </div>`).join('') || '<div class="empty" style="padding:20px">Nenhum acesso cadastrado.</div>'}</div>`;
+
+  $$('[data-ir]', v).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.ir; render(); }));
+  $('#novoLink').addEventListener('click', () => abrirLink(cl, null));
+  $$('[data-link]', v).forEach((b) => b.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation(); abrirLink(cl, links.find((l) => l.id === Number(b.dataset.link)));
+  }));
+  $$('[data-copiar]', v).forEach((b) => b.addEventListener('click', () => { navigator.clipboard.writeText(b.dataset.copiar); toast('Usuário copiado'); }));
+  $$('[data-a]', v).forEach((card) => {
+    const id = Number(card.dataset.a);
+    const pegar = () => api(`/api/acessos/${id}/senha`).then((r) => r.senha);
+    $('[data-mostrar]', card)?.addEventListener('click', async (e) => {
+      const alvo = $('[data-senha]', card);
+      if (e.target.textContent === 'Ocultar') { alvo.textContent = '••••••••'; e.target.textContent = 'Mostrar'; return; }
+      try { alvo.textContent = await pegar(); e.target.textContent = 'Ocultar'; setTimeout(() => { alvo.textContent = '••••••••'; e.target.textContent = 'Mostrar'; }, 20000); }
+      catch (err) { toast(err.message); }
+    });
+    $('[data-copiar-senha]', card)?.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(await pegar()); toast('Senha copiada'); } catch (err) { toast(err.message); }
+    });
+    $('[data-editar-acesso]', card)?.addEventListener('click', () => abrirAcesso(cl, acessos.find((a) => a.id === id)));
+  });
+  $('#novoAcesso')?.addEventListener('click', () => abrirAcesso(cl, null));
+}
+
+function abrirLink(cl, l) {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>${l ? 'Editar link' : 'Novo link'} · ${esc(cl.nome)}</h3><button class="icon" value="x">×</button></div>
+    <div class="modal-body">
+      <div class="row"><div><label>Título do botão</label><input id="lkTitulo" value="${esc(l?.titulo || '')}" placeholder="Ex.: Planejamento mensal"></div>
+        <div><label>Grupo</label><input id="lkCat" list="lkCats" value="${esc(l?.categoria || '')}" placeholder="Ex.: Planejamento">
+        <datalist id="lkCats"><option value="Planejamento"><option value="Programação"><option value="Gestão"><option value="Reservas e unidades"><option value="Relatórios"></datalist></div></div>
+      <div><label>Link</label><input id="lkUrl" value="${esc(l?.url || '')}" placeholder="https://…"></div>
+      <div><label>Observação (aparece no botão)</label><input id="lkObs" value="${esc(l?.observacao || '')}"></div>
+    </div>
+    <div class="modal-foot"><div>${l ? '<button type="button" class="btn danger" id="lkDel">Excluir</button>' : ''}</div>
+      <div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="lkSalvar">Salvar</button></div></div></form>`;
+  d.showModal();
+  $('#lkSalvar').addEventListener('click', async () => {
+    const body = { client_id: cl.id, titulo: $('#lkTitulo').value, url: $('#lkUrl').value, categoria: $('#lkCat').value.trim(), observacao: $('#lkObs').value.trim() };
+    try {
+      if (l) await api('/api/links/' + l.id, { method: 'PUT', body }); else await api('/api/links', { method: 'POST', body });
+      d.close(); toast('Link salvo'); render();
+    } catch (e) { toast(e.message); }
+  });
+  $('#lkDel')?.addEventListener('click', async () => {
+    if (!confirm('Excluir este link?')) return;
+    await api('/api/links/' + l.id, { method: 'DELETE' }); d.close(); render();
+  });
+}
+
+function abrirAcesso(cl, a) {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>${a ? 'Editar acesso' : 'Novo acesso'} · ${esc(cl.nome)}</h3><button class="icon" value="x">×</button></div>
+    <div class="modal-body">
+      <div class="row"><div><label>Serviço</label><input id="acServ" value="${esc(a?.servico || '')}" placeholder="Ex.: Instagram"></div>
+        <div><label>Link de login</label><input id="acUrl" value="${esc(a?.url || '')}" placeholder="https://…"></div></div>
+      <div class="row"><div><label>Usuário / e-mail</label><input id="acUser" value="${esc(a?.usuario || '')}" autocomplete="off"></div>
+        <div><label>${a?.tem_senha ? 'Nova senha (deixe em branco para manter)' : 'Senha'}</label><input id="acSenha" type="password" autocomplete="new-password"></div></div>
+      <div><label>Observação</label><textarea id="acObs" rows="2" style="min-height:60px">${esc(a?.observacao || '')}</textarea></div>
+      <label class="check" style="text-transform:none;font-weight:400;font-size:14px;color:var(--ink)"><input type="checkbox" id="acRestrito" ${a ? (a.restrito ? 'checked' : '') : 'checked'}><span>Só administradores podem ver</span></label>
+      ${a?.tem_senha ? '<label class="check" style="text-transform:none;font-weight:400;font-size:14px;color:var(--ink)"><input type="checkbox" id="acLimpar"><span>Remover a senha salva</span></label>' : ''}
+    </div>
+    <div class="modal-foot"><div>${a ? '<button type="button" class="btn danger" id="acDel">Excluir</button>' : ''}</div>
+      <div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="acSalvar">Salvar</button></div></div></form>`;
+  d.showModal();
+  $('#acSalvar').addEventListener('click', async () => {
+    const body = { client_id: cl.id, servico: $('#acServ').value.trim(), url: $('#acUrl').value.trim(), usuario: $('#acUser').value.trim(),
+      senha: $('#acSenha').value, observacao: $('#acObs').value.trim(), restrito: $('#acRestrito').checked, limpar_senha: !!$('#acLimpar')?.checked };
+    try {
+      if (a) await api('/api/acessos/' + a.id, { method: 'PUT', body }); else await api('/api/acessos', { method: 'POST', body });
+      d.close(); toast('Acesso salvo'); render();
+    } catch (e) { toast(e.message); }
+  });
+  $('#acDel')?.addEventListener('click', async () => {
+    if (!confirm(`Excluir o acesso ${a.servico}?`)) return;
+    await api('/api/acessos/' + a.id, { method: 'DELETE' }); d.close(); render();
+  });
 }
 
 // ---------------- Usuários (admin) ----------------

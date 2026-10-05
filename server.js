@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { pool, init, salvarExperiencias, STATUSES, BLOG_CHECKLIST, hashSenha, conferirSenha } = require('./db');
 const { lerExperiencias, urlExportacao } = require('./experiencias');
+const { cifrar, decifrar } = require('./cofre');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -379,6 +380,85 @@ app.put('/api/experiencias/vincular', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- Links rápidos do cliente ----------
+const urlValida = (u) => /^https?:\/\/\S+$/i.test(String(u || '').trim());
+
+app.get('/api/clients/:id/links', wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM links WHERE client_id=$1 ORDER BY categoria NULLS LAST, ordem, id', [req.params.id]);
+  res.json(rows);
+}));
+
+app.post('/api/links', wrap(async (req, res) => {
+  const b = req.body;
+  if (!b.client_id || !b.titulo || !urlValida(b.url)) return res.status(400).json({ erro: 'Informe título e um link começando com https://' });
+  const { rows: [l] } = await pool.query(
+    'INSERT INTO links (client_id, titulo, url, categoria, observacao) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [b.client_id, b.titulo.trim(), b.url.trim(), b.categoria || null, b.observacao || null]);
+  res.json(l);
+}));
+
+app.put('/api/links/:id', wrap(async (req, res) => {
+  const b = req.body;
+  if (!b.titulo || !urlValida(b.url)) return res.status(400).json({ erro: 'Informe título e um link começando com https://' });
+  const { rows: [l] } = await pool.query(
+    'UPDATE links SET titulo=$1, url=$2, categoria=$3, observacao=$4 WHERE id=$5 RETURNING *',
+    [b.titulo.trim(), b.url.trim(), b.categoria || null, b.observacao || null, req.params.id]);
+  res.json(l);
+}));
+
+app.delete('/api/links/:id', wrap(async (req, res) => {
+  await pool.query('DELETE FROM links WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+// ---------- Acessos (logins e senhas dos clientes) ----------
+const podeVer = (req, a) => !a.restrito || req.user.papel === 'admin';
+const acessoPublico = (a) => ({
+  id: a.id, client_id: a.client_id, servico: a.servico, url: a.url, usuario: a.usuario,
+  tem_senha: !!a.senha_enc, observacao: a.observacao, restrito: a.restrito, updated_at: a.updated_at,
+});
+
+app.get('/api/clients/:id/acessos', wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM acessos WHERE client_id=$1 ORDER BY ordem, id', [req.params.id]);
+  const visiveis = rows.filter((a) => podeVer(req, a));
+  res.json({ acessos: visiveis.map(acessoPublico), ocultos: rows.length - visiveis.length });
+}));
+
+app.get('/api/acessos/:id/senha', wrap(async (req, res) => {
+  const { rows: [a] } = await pool.query('SELECT * FROM acessos WHERE id=$1', [req.params.id]);
+  if (!a || !podeVer(req, a)) return res.status(404).json({ erro: 'Acesso não encontrado' });
+  console.log(`Senha visualizada: acesso ${a.id} (${a.servico}) por ${req.user.email}`);
+  res.json({ senha: decifrar(a.senha_enc) });
+}));
+
+app.post('/api/acessos', soAdmin, wrap(async (req, res) => {
+  const b = req.body;
+  if (!b.client_id || !b.servico) return res.status(400).json({ erro: 'Informe o serviço' });
+  const { rows: [a] } = await pool.query(
+    `INSERT INTO acessos (client_id, servico, url, usuario, senha_enc, observacao, restrito)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [b.client_id, b.servico.trim(), b.url || null, b.usuario || null, cifrar(b.senha), b.observacao || null, b.restrito !== false]);
+  res.json(acessoPublico(a));
+}));
+
+app.put('/api/acessos/:id', soAdmin, wrap(async (req, res) => {
+  const b = req.body;
+  const { rows: [atual] } = await pool.query('SELECT * FROM acessos WHERE id=$1', [req.params.id]);
+  if (!atual) return res.status(404).json({ erro: 'Acesso não encontrado' });
+  // Senha só muda quando uma nova é enviada; string vazia com limpar_senha remove
+  const senha = b.limpar_senha ? null : (b.senha ? cifrar(b.senha) : atual.senha_enc);
+  const { rows: [a] } = await pool.query(
+    `UPDATE acessos SET servico=$1, url=$2, usuario=$3, senha_enc=$4, observacao=$5, restrito=$6, updated_at=now()
+     WHERE id=$7 RETURNING *`,
+    [b.servico || atual.servico, b.url || null, b.usuario || null, senha, b.observacao || null, b.restrito !== false, atual.id]);
+  res.json(acessoPublico(a));
+}));
+
+app.delete('/api/acessos/:id', soAdmin, wrap(async (req, res) => {
+  await pool.query('DELETE FROM acessos WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+}));
+
 // ---------- Materiais (fotos e vídeos) ----------
 app.get('/api/materials', wrap(async (req, res) => {
   const { rows } = req.query.client_id
@@ -411,10 +491,10 @@ app.delete('/api/materials/:id', wrap(async (req, res) => {
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {
-  const [c, t, m] = await Promise.all(['clients', 'tasks', 'materials']
+  const [c, t, m, l] = await Promise.all(['clients', 'tasks', 'materials', 'links']
     .map((tb) => pool.query(`SELECT * FROM ${tb} ORDER BY id`)));
   res.setHeader('Content-Disposition', `attachment; filename="por-boas-historias-backup-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ versao: 1, gerado_em: new Date().toISOString(), clients: c.rows, tasks: t.rows, materials: m.rows });
+  res.json({ versao: 1, gerado_em: new Date().toISOString(), clients: c.rows, tasks: t.rows, materials: m.rows, links: l.rows });
 }));
 
 app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
@@ -423,6 +503,10 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
+    // Acessos e experiências não vão no backup: guarda antes e devolve depois (mesmos ids de cliente)
+    const { rows: acessosAntes } = await c.query('SELECT * FROM acessos');
+    const { rows: expAntes } = await c.query('SELECT * FROM experiencias');
+    const { rows: linksAntes } = await c.query('SELECT * FROM links');
     await c.query('TRUNCATE materials, tasks, clients RESTART IDENTITY CASCADE');
     const restore = async (tb, rows) => {
       for (const r of rows) {
@@ -435,6 +519,12 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
     await restore('clients', b.clients);
     await restore('tasks', b.tasks);
     await restore('materials', b.materials || []);
+    await restore('links', Array.isArray(b.links) ? b.links : linksAntes.filter((x) => new Set(b.clients.map((y) => y.id)).has(x.client_id)));
+    const ids = new Set(b.clients.map((x) => x.id));
+    const tarefas = new Set(b.tasks.map((x) => x.id));
+    await restore('acessos', acessosAntes.filter((a) => ids.has(a.client_id)));
+    await restore('experiencias', expAntes.filter((e) => ids.has(e.client_id))
+      .map((e) => ({ ...e, task_id: tarefas.has(e.task_id) ? e.task_id : null })));
     await c.query('COMMIT');
     res.json({ ok: true, clientes: b.clients.length, tarefas: b.tasks.length });
   } catch (e) {

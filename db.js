@@ -95,6 +95,30 @@ CREATE TABLE IF NOT EXISTS experiencias (
   UNIQUE (client_id, nome, resort, periodo)
 );
 
+CREATE TABLE IF NOT EXISTS links (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  titulo TEXT NOT NULL,
+  url TEXT NOT NULL,
+  categoria TEXT,
+  observacao TEXT,
+  ordem INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS acessos (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  servico TEXT NOT NULL,
+  url TEXT,
+  usuario TEXT,
+  senha_enc TEXT,
+  observacao TEXT,
+  restrito BOOLEAN NOT NULL DEFAULT true,   -- true: só administradores veem
+  ordem INT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS seeds (chave TEXT PRIMARY KEY, aplicado_em TIMESTAMPTZ NOT NULL DEFAULT now());
 
 CREATE TABLE IF NOT EXISTS materials (
