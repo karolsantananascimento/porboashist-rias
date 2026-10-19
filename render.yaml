@@ -24,3 +24,5 @@ services:
         generateValue: true
       - key: ACESSOS_KEY     # chave do cofre de senhas (32 bytes em base64)
         sync: false
+      - key: ANTHROPIC_API_KEY  # chave da API do Claude, usada pelo agente de conteúdo
+        sync: false

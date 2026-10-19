@@ -38,7 +38,6 @@ h1, h2, h3 { font-family: Fraunces, Georgia, serif; font-weight: 600; margin: 0;
 h2 { font-size: 22px; }
 h3 { font-size: 16px; }
 a { color: var(--accent); }
-.hidden { display: none !important; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Botões e campos */
@@ -261,3 +260,15 @@ dialog::backdrop { background: rgba(30, 24, 20, .45); }
 .atalho .acoes button { border: 0; background: var(--surface-2); color: var(--ink-2); cursor: pointer; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
 .atalho .tx strong { padding-right: 36px; }
 @media (hover: none) { .atalho .acoes { opacity: 1; } }
+
+/* Agente de conteúdo */
+.ia-box { border: 1px dashed var(--line, #d9cfc4); border-radius: 12px; padding: 12px 14px; background: var(--surface-2); }
+.ia-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ia-res { display: grid; gap: 10px; margin-top: 12px; }
+.ia-txt { white-space: pre-wrap; background: var(--surface); border-radius: 8px; padding: 10px 12px; max-height: 260px; overflow: auto; font-size: 14px; line-height: 1.5; }
+.ia-conferir { background: #fff4dc; border-left: 3px solid #e0a84a; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #6b4a00; }
+.ia-conferir ul, .ia-alt { margin: 4px 0 0; padding-left: 18px; }
+.ia-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ia-acoes input { flex: 1; min-width: 200px; }
+.pauta { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--surface-2); }
+.hidden { display: none !important; }

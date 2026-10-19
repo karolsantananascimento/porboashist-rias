@@ -503,6 +503,8 @@ function viewClientes(v) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary small" data-salvar>Salvar</button>
           <button class="btn small" data-gerar>Gerar estrutura de ${esc(mesLabel(S.mes))}</button>
+          <button class="btn small" data-contexto>Contexto do agente</button>
+          <button class="btn small" data-pautas>Sugerir pautas de ${esc(mesLabel(S.mes))}</button>
         </div>
       </div></div>`).join('')}
     </div>
@@ -530,6 +532,8 @@ function viewClientes(v) {
       try { await api('/api/clients/' + id, { method: 'PUT', body: dados() }); await carregarClientes(); toast('Cliente salvo'); viewClientes(v); }
       catch (e) { toast(e.message); }
     });
+    $('[data-contexto]', card).addEventListener('click', () => abrirContextoAgente(id));
+    $('[data-pautas]', card).addEventListener('click', () => abrirPautasAgente(id));
     $('[data-gerar]', card).addEventListener('click', async () => {
       const r = await api(`/api/clients/${id}/gerar-mes`, { method: 'POST', body: { mes: S.mes } });
       const c = r.criados;
@@ -551,6 +555,69 @@ function viewClientes(v) {
       const r = await api('/api/restaurar', { method: 'POST', body: JSON.parse(await f.text()) });
       await carregarClientes(); toast(`Restaurado: ${r.clientes} clientes, ${r.tarefas} tarefas`); viewClientes(v);
     } catch (err) { toast(err.message); }
+  });
+}
+
+// ---------------- Agente de conteúdo: contexto e pautas do cliente ----------------
+const CAMPOS_CONTEXTO = [
+  ['tom_de_voz', 'Tom de voz', 'Ex.: acolhedor, elegante, sem gírias; fala com o hóspede como um anfitrião…', 3],
+  ['publico', 'Público', 'Quem lê: famílias, casais, investidores, de onde vêm…', 3],
+  ['pilares', 'Pilares de conteúdo', 'Um por linha: experiência do hóspede, programação dos resorts, datas especiais…', 4],
+  ['regras', 'Regras do cliente (o agente sempre obedece)', 'O que dizer, o que nunca dizer, avisos obrigatórios, termos proibidos…', 5],
+  ['rodape', 'Rodapé padrão das legendas', 'Texto fixo no fim das legendas', 3],
+  ['exemplos', 'Exemplos de posts aprovados (opcional)', 'Cole 2 ou 3 legendas que o cliente adorou. O agente imita o jeito de escrever.', 6],
+];
+
+async function abrirContextoAgente(clientId) {
+  const cl = S.clients.find((c) => c.id === clientId);
+  const d = $('#modal');
+  let ctx;
+  try { ctx = await api(`/api/clients/${clientId}/contexto`); } catch (e) { return toast(e.message); }
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>Contexto do agente · ${esc(cl.nome)}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <p class="muted" style="margin:0">Quanto melhor este contexto, melhor o texto. O agente também lê as marcas, a programação dos resorts, os materiais marcados para evitar e os posts que a equipe já aprovou.</p>
+      ${CAMPOS_CONTEXTO.map(([k, l, ph, r]) => `<div><label>${l}</label><textarea data-k="${k}" rows="${r}" placeholder="${esc(ph)}">${esc(ctx[k] || '')}</textarea></div>`).join('')}
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="ctxSalvar">Salvar</button></div></div>
+  </form>`;
+  d.showModal();
+  $('#ctxSalvar').addEventListener('click', async () => {
+    const body = {};
+    $$('[data-k]', d).forEach((i) => { body[i.dataset.k] = i.value.trim(); });
+    try { await api(`/api/clients/${clientId}/contexto`, { method: 'PUT', body }); d.close(); toast('Contexto salvo'); } catch (e) { toast(e.message); }
+  });
+}
+
+async function abrirPautasAgente(clientId) {
+  const cl = S.clients.find((c) => c.id === clientId);
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>Pautas sugeridas · ${esc(cl.nome)} · ${esc(mesLabel(S.mes))}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body" id="pautasCorpo"><div class="empty">Pensando nas pautas do mês… pode levar até um minuto.</div></div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary hidden" id="pautasAplicar">Aplicar selecionadas</button></div></div>
+  </form>`;
+  d.showModal();
+  let r;
+  try { r = await api('/api/agente/pautas', { method: 'POST', body: { client_id: clientId, mes: S.mes } }); }
+  catch (e) { $('#pautasCorpo').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (!r.pautas.length) { $('#pautasCorpo').innerHTML = `<div class="empty">${esc(r.aviso || 'Nenhuma pauta sugerida.')}</div>`; return; }
+  $('#pautasCorpo').innerHTML = `<p class="muted" style="margin:0">Marque as que quiser aplicar. Você pode ajustar o tema antes. Nada é criado sem o seu clique.</p>` +
+    r.pautas.map((p, i) => `<div class="pauta" data-i="${i}">
+      <label class="check" style="text-transform:none;font-weight:400"><input type="checkbox" checked>
+        <span><strong>${esc(fmtData(p.data))} · ${esc(p.formato)}</strong> · <em>${esc(p.editorial)}</em></span></label>
+      <input class="pauta-tema" value="${esc(p.tema)}"><div class="muted" style="font-size:12px">${esc(p.motivo)}</div></div>`).join('');
+  $('#pautasAplicar').classList.remove('hidden');
+  $('#pautasAplicar').addEventListener('click', async () => {
+    const marcadas = $$('.pauta', d).filter((el) => $('input[type=checkbox]', el).checked);
+    if (!marcadas.length) return toast('Marque ao menos uma pauta');
+    try {
+      await Promise.all(marcadas.map((el) => {
+        const p = r.pautas[Number(el.dataset.i)];
+        return api('/api/tasks/' + p.task_id, { method: 'PUT', body: { tema: $('.pauta-tema', el).value.trim(), editorial: p.editorial, formato: p.formato } });
+      }));
+      d.close(); toast(`${marcadas.length} pautas aplicadas`); render();
+    } catch (e) { toast(e.message); }
   });
 }
 
@@ -584,6 +651,11 @@ function abrirTarefa(t, padrao = {}) {
           <option value="Experiência do cliente / hospedagens"><option value="Dicas de conteúdos para hóspedes e investidores"><option value="Datas especiais"><option value="Programação dos resorts"></datalist></div>
       </div>
       <div id="kwWrap"><label>Palavra-chave SEO</label><input id="tKw" value="${esc(t.palavra_chave || '')}" placeholder="Ex.: apartamento em Muro Alto"></div>
+      <div class="ia-box">
+        <div class="ia-head"><div><strong>Agente de conteúdo</strong><span class="muted"> · escreve a partir do tema, do briefing e do contexto do cliente</span></div>
+          <button type="button" class="btn small primary" id="iaGerar">Gerar com IA</button></div>
+        <div id="iaSaida"></div>
+      </div>
       <div><label id="lblLegenda">Legenda / texto</label><textarea id="tLegenda" rows="8">${esc(t.legenda || '')}</textarea>
         <div class="counter"><span id="cont"></span><button type="button" id="copiar">Copiar texto</button></div></div>
       <div><label>Briefing visual / roteiro</label><textarea id="tBriefing" rows="6">${esc(t.briefing || '')}</textarea></div>
@@ -631,6 +703,67 @@ function abrirTarefa(t, padrao = {}) {
   $('#chkAdd').addEventListener('click', addChk);
   $('#chkNovo').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addChk(); } });
 
+  // ----- Agente de conteúdo -----
+  const MARCA_IA = '── Sugestão do agente ──';
+  const ia = { id: null, resultado: null, usado: null };
+  const dadosIA = () => ({
+    client_id: Number($('#tCliente').value), task_id: novo ? null : t.id, tipo: $('#tTipo').value,
+    formato: $('#tFormato').value.trim(), data: $('#tData').value || null, tema: $('#tTema').value.trim(),
+    editorial: $('#tEditorial').value.trim(), palavra_chave: $('#tKw').value.trim(),
+    briefing: $('#tBriefing').value.split(MARCA_IA)[0].trim(),
+  });
+  const desenharIA = () => {
+    const r = ia.resultado;
+    if (!r) { $('#iaSaida').innerHTML = ''; return; }
+    $('#iaSaida').innerHTML = `<div class="ia-res">
+      ${r.conferir?.length ? `<div class="ia-conferir"><strong>Conferir antes de publicar</strong><ul>${r.conferir.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
+      ${r.legenda ? `<label>Texto sugerido</label><div class="ia-txt">${esc(r.legenda)}</div>` : ''}
+      ${r.briefing ? `<label>Direção visual / roteiro</label><div class="ia-txt">${esc(r.briefing)}</div>` : ''}
+      ${r.alternativas?.length ? `<label>Ganchos alternativos</label><ul class="ia-alt">${r.alternativas.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+      <div class="ia-acoes">
+        <button type="button" class="btn small primary" id="iaUsar">Usar na tarefa</button>
+        <input id="iaAjuste" placeholder="Pedir ajuste: mais curto, mais emocional, citar o buggy…">
+        <button type="button" class="btn small" id="iaReescrever">Reescrever</button>
+      </div></div>`;
+    $('#iaUsar').addEventListener('click', usarIA);
+    $('#iaReescrever').addEventListener('click', () => {
+      const f = $('#iaAjuste').value.trim();
+      if (!f) return toast('Escreva o ajuste que você quer');
+      gerarIA(f);
+    });
+    $('#iaAjuste').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#iaReescrever').click(); } });
+  };
+  const gerarIA = async (feedback = '') => {
+    const bt = $('#iaGerar');
+    bt.disabled = true; bt.textContent = 'Gerando…';
+    $('#iaReescrever') && ($('#iaReescrever').disabled = true);
+    try {
+      const body = dadosIA();
+      if (feedback && ia.resultado) {
+        body.anterior = [ia.resultado.legenda, ia.resultado.briefing].filter(Boolean).join('\n\n');
+        body.feedback = feedback;
+      }
+      const r = await api('/api/agente/gerar', { method: 'POST', body });
+      ia.id = r.id; ia.resultado = r.resultado; desenharIA();
+    } catch (e) { toast(e.message); desenharIA(); }
+    finally { bt.disabled = false; bt.textContent = ia.resultado ? 'Gerar de novo' : 'Gerar com IA'; }
+  };
+  const usarIA = () => {
+    const r = ia.resultado;
+    if (r.legenda && $('#tLegenda').value.trim() && $('#tLegenda').value.trim() !== r.legenda.trim()
+      && !confirm('Isto substitui o texto atual da legenda. Continuar?')) return;
+    if (r.legenda) $('#tLegenda').value = r.legenda;
+    if (r.briefing) {
+      const base = $('#tBriefing').value.split(MARCA_IA)[0].trim();
+      $('#tBriefing').value = base ? `${base}\n\n${MARCA_IA}\n${r.briefing}` : r.briefing;
+    }
+    if (r.tema && !$('#tTema').value.trim()) $('#tTema').value = r.tema;
+    if (r.palavra_chave && !$('#tKw').value.trim()) $('#tKw').value = r.palavra_chave;
+    ia.usado = ia.id; contar();
+    toast('Texto aplicado. Revise e clique em Salvar.');
+  };
+  $('#iaGerar').addEventListener('click', () => gerarIA());
+
   $('#tSalvar').addEventListener('click', async () => {
     const body = {
       client_id: Number($('#tCliente').value), tipo: $('#tTipo').value, formato: $('#tFormato').value.trim(),
@@ -642,6 +775,10 @@ function abrirTarefa(t, padrao = {}) {
     try {
       const salvo = novo ? await api('/api/tasks', { method: 'POST', body }) : await api('/api/tasks/' + t.id, { method: 'PUT', body });
       if (padrao._onSalvo) await padrao._onSalvo(salvo);
+      if (ia.usado) { // guarda o texto final, com as edições da equipe, como exemplo para próximas gerações
+        const final = ($('#tLegenda').value.trim() || $('#tBriefing').value.split(MARCA_IA).pop().trim());
+        api(`/api/agente/${ia.usado}/final`, { method: 'PUT', body: { task_id: salvo.id, texto: final } }).catch(() => {});
+      }
       d.close(); toast('Tarefa salva'); render();
     } catch (e) { toast(e.message); }
   });

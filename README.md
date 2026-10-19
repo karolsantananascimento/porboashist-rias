@@ -15,6 +15,7 @@ Sistema da agência para planejar e acompanhar as entregas de cada cliente: post
 - **Clientes**: metas mensais, marcas, rodapé padrão e botão para gerar a estrutura de um mês novo (posts distribuídos, stories diários e artigos de blog).
 - **Usuários** (administradores): cada pessoa entra com o próprio e-mail. O administrador cadastra o e-mail e recebe um link de acesso (válido por 7 dias, uso único) para enviar; ao abrir, a pessoa cria a própria senha. Dá para gerar um novo link (esqueceu a senha), desativar, excluir e alternar entre Membro e Administrador.
 - **Minha conta**: troca de nome e senha.
+- **Agente de conteúdo**: dentro de cada tarefa, o botão **Gerar com IA** escreve a legenda do feed (com hashtags e direção visual), o roteiro de stories ou o artigo de blog com SEO, usando o tema e o briefing da tarefa, o **contexto do cliente** (tom de voz, público, pilares, regras e rodapé, editados em **Clientes → Contexto do agente**), os dados da planilha de programação, os materiais marcados para evitar e os últimos textos aprovados. O resultado vem com uma lista **Conferir antes de publicar** (preços, horários ou datas que faltam) e só vai para a tarefa quando alguém clica em **Usar na tarefa** e salva. É possível pedir ajustes ("mais curto", "citar o buggy") e reescrever. Em **Clientes → Sugerir pautas do mês**, o agente propõe tema, editorial e formato para os posts e artigos ainda sem pauta; nada é aplicado sem o clique.
 - **Backup**: download e restauração de todos os dados em JSON (restauração só para administradores; usuários e senhas não entram no backup).
 
 ## Dados iniciais
@@ -46,6 +47,9 @@ Abra http://localhost:3000.
 | `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_PASSWORD` | Criam o primeiro administrador quando ainda não há usuários. A senha é temporária e precisa ser trocada no primeiro acesso. |
 | `SESSION_SECRET` | Chave para assinar a sessão (o Render gera sozinho) |
 | `ACESSOS_KEY` | Chave do cofre de senhas dos clientes (32 bytes em base64). Sem ela, não dá para salvar nem ler senhas. Se for perdida, as senhas salvas não podem ser recuperadas. |
+| `ANTHROPIC_API_KEY` | Chave da API do Claude para o agente de conteúdo. Sem ela o botão **Gerar com IA** avisa que o agente não está ativo. |
+| `AGENTE_MODELO` | Opcional. Modelo usado pelo agente (padrão `claude-sonnet-5-5`). |
+| `AGENTE_LIMITE_HORA` | Opcional. Máximo de gerações por pessoa por hora (padrão 40). |
 | `DB_SCHEMA` | Schema do banco onde ficam as tabelas (`pbh` no Supabase) |
 
 ## Hospedagem

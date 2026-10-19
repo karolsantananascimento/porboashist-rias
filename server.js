@@ -11,7 +11,7 @@ app.use(express.json({ limit: '5mb' }));
 
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch((e) => {
   console.error(e);
-  res.status(500).json({ erro: e.message });
+  res.status(e.status || 500).json({ erro: e.message });
 });
 
 // ---------- Sessão por usuário (cookie assinado) ----------
@@ -489,6 +489,9 @@ app.delete('/api/materials/:id', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- Agente de conteúdo ----------
+require('./agente')(app, { pool, wrap });
+
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {
   const [c, t, m, l] = await Promise.all(['clients', 'tasks', 'materials', 'links']
@@ -507,6 +510,8 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
     const { rows: acessosAntes } = await c.query('SELECT * FROM acessos');
     const { rows: expAntes } = await c.query('SELECT * FROM experiencias');
     const { rows: linksAntes } = await c.query('SELECT * FROM links');
+    const { rows: contextoAntes } = await c.query('SELECT * FROM contexto_cliente');
+    const { rows: geradosAntes } = await c.query('SELECT * FROM conteudos_gerados');
     await c.query('TRUNCATE materials, tasks, clients RESTART IDENTITY CASCADE');
     const restore = async (tb, rows) => {
       for (const r of rows) {
@@ -514,6 +519,7 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
         await c.query(`INSERT INTO ${tb} (${cols.join(',')}) VALUES (${cols.map((_, i) => '$' + (i + 1)).join(',')})`,
           cols.map((k) => (r[k] !== null && typeof r[k] === 'object' && !(r[k] instanceof Date) ? JSON.stringify(r[k]) : r[k])));
       }
+      if (tb === 'contexto_cliente') return; // chave é client_id, sem sequência
       await c.query(`SELECT setval(pg_get_serial_sequence('${tb}','id'), GREATEST((SELECT max(id) FROM ${tb}),1))`);
     };
     await restore('clients', b.clients);
@@ -525,6 +531,9 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
     await restore('acessos', acessosAntes.filter((a) => ids.has(a.client_id)));
     await restore('experiencias', expAntes.filter((e) => ids.has(e.client_id))
       .map((e) => ({ ...e, task_id: tarefas.has(e.task_id) ? e.task_id : null })));
+    await restore('contexto_cliente', contextoAntes.filter((x) => ids.has(x.client_id)));
+    await restore('conteudos_gerados', geradosAntes.filter((x) => ids.has(x.client_id))
+      .map((x) => ({ ...x, task_id: tarefas.has(x.task_id) ? x.task_id : null })));
     await c.query('COMMIT');
     res.json({ ok: true, clientes: b.clients.length, tarefas: b.tasks.length });
   } catch (e) {

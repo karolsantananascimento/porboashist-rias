@@ -121,6 +121,36 @@ CREATE TABLE IF NOT EXISTS acessos (
 
 CREATE TABLE IF NOT EXISTS seeds (chave TEXT PRIMARY KEY, aplicado_em TIMESTAMPTZ NOT NULL DEFAULT now());
 
+-- Agente de conteúdo: contexto de cada cliente e histórico do que foi gerado
+CREATE TABLE IF NOT EXISTS contexto_cliente (
+  client_id INT PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+  tom_de_voz TEXT,
+  publico TEXT,
+  pilares TEXT,
+  regras TEXT,
+  rodape TEXT,
+  exemplos TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS conteudos_gerados (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  task_id INT,
+  tipo TEXT NOT NULL,
+  entrada JSONB,
+  saida JSONB,
+  feedback TEXT,
+  status TEXT NOT NULL DEFAULT 'rascunho',   -- rascunho | usado
+  texto_final TEXT,
+  usuario_id INT,
+  modelo TEXT,
+  tokens_in INT,
+  tokens_out INT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS conteudos_cliente_tipo ON conteudos_gerados (client_id, tipo, status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS materials (
   id SERIAL PRIMARY KEY,
   client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -304,6 +334,17 @@ async function seedsIncrementais(c) {
       ['https://docs.google.com/spreadsheets/d/1oRIPrVLTZEY4xlqvNIl8W9nBK0X_hxkuA0WHrgFJf6I/edit?gid=1478707839#gid=1478707839', lf.id]);
     const csv = fs.readFileSync(path.join(__dirname, 'seed', 'experiencias-samoa.csv'), 'utf8');
     await salvarExperiencias(c, lf.id, lerExperiencias(csv));
+  });
+
+  // Regras que a Karolina já definiu para a La Fleur; tom de voz e público ficam para a equipe preencher
+  await aplicar('contexto_lafleur_v1', async () => {
+    const { rows: [lf] } = await c.query(`SELECT id, observacoes FROM clients WHERE nome='La Fleur Collection'`);
+    if (!lf) return;
+    await c.query(
+      `INSERT INTO contexto_cliente (client_id, regras, rodape) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [lf.id,
+        'Os hóspedes de cada unidade La Fleur têm direito à programação do resort onde estão hospedados (Samoa Villa ou Samoa Beach). Sempre incluir o aviso: Programação sujeita a alterações sem aviso prévio.',
+        '📍 Muro Alto — Porto de Galinhas/PE · Reserve: lafleurcollection.com.br · Link na bio · *Programação sujeita a alterações sem aviso prévio.']);
   });
 
   await aplicar('clientes_marilia_laura_v1', async () => {
