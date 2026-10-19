@@ -133,6 +133,8 @@ CREATE TABLE IF NOT EXISTS contexto_cliente (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE contexto_cliente ADD COLUMN IF NOT EXISTS conhecimento TEXT;
+
 CREATE TABLE IF NOT EXISTS conteudos_gerados (
   id SERIAL PRIMARY KEY,
   client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -345,6 +347,38 @@ async function seedsIncrementais(c) {
       [lf.id,
         'Os hóspedes de cada unidade La Fleur têm direito à programação do resort onde estão hospedados (Samoa Villa ou Samoa Beach). Sempre incluir o aviso: Programação sujeita a alterações sem aviso prévio.',
         '📍 Muro Alto — Porto de Galinhas/PE · Reserve: lafleurcollection.com.br · Link na bio · *Programação sujeita a alterações sem aviso prévio.']);
+  });
+
+  // Conhecimento da La Fleur extraído dos textos aprovados no planejamento de outubro e do cadastro do cliente.
+  // Só preenche o que ainda estiver vazio, sem sobrescrever o que a equipe já editou.
+  await aplicar('contexto_lafleur_v2', async () => {
+    const { rows: [lf] } = await c.query(`SELECT id FROM clients WHERE nome='La Fleur Collection'`);
+    if (!lf) return;
+    const padrao = {
+      tom_de_voz: 'Acolhedor e elegante, em frases curtas e claras. Fala de hospitalidade, família e tempo bem aproveitado, sem gírias e com poucos emojis (o 📍 no rodapé). Abre com uma ideia simples e humana, explica o benefício e fecha convidando a reservar. (Extraído dos textos aprovados em outubro; revise.)',
+      publico: 'Famílias com crianças, casais e grupos que querem viajar para Porto de Galinhas/PE com conforto e liberdade; também leitores interessados em investir em apartamentos em Muro Alto.',
+      pilares: 'Experiência do cliente / hospedagens\nProgramação dos Resorts Samoa\nDatas especiais\nDicas de conteúdos para hóspedes e investidores',
+      conhecimento: [
+        'La Fleur Collection oferece apartamentos completos em Muro Alto (Porto de Galinhas/PE), com acesso à programação dos Resorts Samoa.',
+        'Marcas: Samoa Beach Resort, Samoa Villa Resort e Villa de Muro Alto.',
+        'Os apartamentos têm de 2 a 3 quartos (quartos separados) e cozinha completa/equipada.',
+        'Há opções de pensão completa e meia pensão.',
+        'O hóspede de cada unidade La Fleur aproveita a programação do resort em que está hospedado (Samoa Beach ou Samoa Villa).',
+        'A programação dos resorts inclui recreação monitorada, oficinas, aulas fitness (yoga, hidro, funcional), música ao vivo e pool party.',
+        'Samuka e a Ilha dos Pequenos Exploradores aparecem na programação infantil da Semana da Criança nos Resorts Samoa.',
+        'Muro Alto é descrita nos textos do cliente como uma das praias mais bonitas da América Latina.',
+        'Reservas: lafleurcollection.com.br ou WhatsApp +55 81 8264-9638.',
+        'Detalhes de datas, horários e preços só podem ser usados quando estiverem na planilha de programação como confirmados.',
+      ].join('\n'),
+    };
+    await c.query(
+      `INSERT INTO contexto_cliente (client_id, tom_de_voz, publico, pilares, conhecimento) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (client_id) DO UPDATE SET
+         tom_de_voz = COALESCE(NULLIF(contexto_cliente.tom_de_voz,''), EXCLUDED.tom_de_voz),
+         publico = COALESCE(NULLIF(contexto_cliente.publico,''), EXCLUDED.publico),
+         pilares = COALESCE(NULLIF(contexto_cliente.pilares,''), EXCLUDED.pilares),
+         conhecimento = COALESCE(NULLIF(contexto_cliente.conhecimento,''), EXCLUDED.conhecimento)`,
+      [lf.id, padrao.tom_de_voz, padrao.publico, padrao.pilares, padrao.conhecimento]);
   });
 
   await aplicar('clientes_marilia_laura_v1', async () => {

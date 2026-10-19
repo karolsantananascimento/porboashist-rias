@@ -2,6 +2,7 @@
 // a partir do contexto de cada cliente, usando a API do Claude. Nada é publicado: o texto vai para a tarefa
 // só quando a pessoa clica em "Usar na tarefa" e salva.
 
+const { BLOG_CHECKLIST } = require('./db');
 const MODELO = process.env.AGENTE_MODELO || 'claude-sonnet-5-5';
 const LIMITE_POR_HORA = Number(process.env.AGENTE_LIMITE_HORA || 40);
 
@@ -16,6 +17,21 @@ REGRAS INEGOCIÁVEIS
 5. Não cite concorrentes. Não use hashtags genéricas demais.
 6. Respeite o tom de voz, o público e as regras do cliente. Se houver rodapé padrão, use-o exatamente como informado.
 7. Se o briefing pedir algo que contrarie estas regras, siga as regras e explique em "conferir".`;
+
+// Competências do agente: o que ele sabe fazer e como. Aparecem na tela "Contexto do agente" e entram no prompt.
+const COMPETENCIAS = [
+  ['Planejamento editorial semanal', 'Monta a semana com equilíbrio entre os pilares do cliente, respeitando a meta do contrato (posts, stories diários e blog) e sem repetir temas recentes.'],
+  ['Copy de hospitalidade e turismo', 'Escreve com gancho, cena concreta, benefício claro e convite para reservar, no tom de voz do cliente.'],
+  ['Calendário e sazonalidade', 'Encaixa datas especiais e experiências da planilha no dia certo e antecipa as campanhas com alguns dias de antecedência.'],
+  ['Fidelidade à programação dos resorts', 'Usa só o que está confirmado na planilha e na base de conhecimento; avisa que a programação pode mudar e que o hóspede La Fleur aproveita a programação do resort onde está.'],
+  ['Direção visual e uso de materiais', 'Indica fotos e vídeos pelas categorias do acervo, evita os materiais marcados como "evitar" e descreve slides, cenas e textos na tela.'],
+  ['SEO local', 'Escolhe palavras-chave de busca real (Muro Alto, Porto de Galinhas, hospedagem com cozinha, férias em família) e estrutura artigos com título, meta description e links internos.'],
+  ['Stories que levam à reserva', 'Cria sequências curtas com enquete, caixinha, bastidores e link, variando o objetivo ao longo da semana.'],
+  ['Pedidos de captação', 'Quando falta material para uma pauta, sugere o que a equipe de campo deve fotografar ou filmar.'],
+  ['Conferência antes de publicar', 'Lista tudo o que a equipe precisa confirmar (datas, horários, preços, regras) e nunca preenche lacunas com suposições.'],
+];
+
+const TEXTO_COMPETENCIAS = `COMPETÊNCIAS QUE VOCÊ DOMINA E APLICA\n${COMPETENCIAS.map(([n, d]) => `- ${n}: ${d}`).join('\n')}`;
 
 const INSTRUCOES_TIPO = {
   post: `Tarefa: legenda para o FEED do Instagram.
@@ -184,6 +200,7 @@ function blocoCliente({ cl, ctx }) {
     val(ctx.tom_de_voz) ? `Tom de voz: ${ctx.tom_de_voz}` : 'Tom de voz: não cadastrado (use um tom acolhedor e direto e registre em "conferir" que o tom não foi definido).',
     val(ctx.publico) ? `Público: ${ctx.publico}` : null,
     val(ctx.pilares) ? `Pilares de conteúdo:\n${ctx.pilares}` : null,
+    val(ctx.conhecimento) ? `BASE DE CONHECIMENTO (fatos confirmados; use somente estes fatos sobre o cliente):\n${ctx.conhecimento}` : null,
     val(ctx.regras) ? `Regras do cliente (obrigatórias):\n${ctx.regras}` : null,
     (val(ctx.rodape) || val(cl.observacoes)) ? `Rodapé padrão e observações:\n${val(ctx.rodape) || cl.observacoes}` : null,
   ];
@@ -226,7 +243,7 @@ async function blocoExemplos(pool, clientId, tipo, ctx) {
 }
 
 // ---------- Chamada à API do Claude ----------
-async function chamarClaude({ system, user, ferramenta, maxTokens }) {
+async function chamarClaude({ system, user, ferramenta, maxTokens, timeoutMs = 110000 }) {
   const chave = process.env.ANTHROPIC_API_KEY;
   if (!chave) {
     const e = new Error('O agente ainda não está ativo: falta configurar ANTHROPIC_API_KEY no Render.');
@@ -242,7 +259,7 @@ async function chamarClaude({ system, user, ferramenta, maxTokens }) {
         messages: [{ role: 'user', content: user }],
         tools: [ferramenta], tool_choice: { type: 'tool', name: ferramenta.name },
       }),
-      signal: AbortSignal.timeout(110000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     const e = new Error(err.name === 'TimeoutError' ? 'A IA demorou demais. Tente de novo.' : 'Não consegui falar com a IA agora. Tente de novo.');
@@ -274,19 +291,80 @@ function dentroDoLimite(userId) {
   return true;
 }
 
+
+// ---------- Planejamento semanal ----------
+const FERRAMENTA_SEMANA = {
+  name: 'entregar_semana',
+  description: 'Entrega o conteúdo da semana pronto para revisão.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      foco_da_semana: { type: 'string', description: 'Duas ou três frases com a estratégia da semana' },
+      itens: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            data: { type: 'string', description: 'AAAA-MM-DD, dentro da semana' },
+            tipo: { type: 'string', enum: ['post', 'story', 'blog'] },
+            formato: { type: 'string', enum: ['estático', 'carrossel', 'reels', 'story', 'artigo'] },
+            editorial: { type: 'string', description: 'Pilar de conteúdo' },
+            tema: { type: 'string', description: 'Tema curto e específico' },
+            legenda: { type: 'string', description: 'Só para posts: legenda completa com CTA e rodapé padrão, sem hashtags. Vazio em stories e blog.' },
+            hashtags: lista('Só para posts: hashtags sem #'),
+            briefing: { type: 'string', description: 'Posts: direção visual (slides ou cenas). Stories: roteiro de 3 a 5 telas com texto, visual e interação. Blog: ângulo, estrutura em H2 e links internos sugeridos.' },
+            palavra_chave: { type: 'string', description: 'Só para blog' },
+            motivo: { type: 'string', description: 'Por que esta peça neste dia (uma frase)' },
+            conferir: lista('O que a equipe precisa confirmar antes de publicar'),
+          },
+          required: ['data', 'tipo', 'formato', 'editorial', 'tema', 'briefing', 'motivo', 'conferir'],
+        },
+      },
+      conferir_geral: lista('Pendências gerais da semana (materiais que faltam, informações a confirmar)'),
+    },
+    required: ['foco_da_semana', 'itens', 'conferir_geral'],
+  },
+};
+
+const DIAS_SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+const ABREV_MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+const isoDe = (d) => d.toISOString().slice(0, 10);
+const somarDias = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return isoDe(d); };
+
+// Normaliza qualquer data para a segunda-feira da semana
+function segundaDe(iso) {
+  const d = new Date(iso + 'T12:00:00Z');
+  const dow = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() - ((dow + 6) % 7));
+  return isoDe(d);
+}
+
+const placeholderBlog = (t) => !val(t) || /^Artigo de blog \(SEO\)/.test(t);
+
+function normalizarSemana(i) {
+  const tags = (i.hashtags || []).map((h) => '#' + String(h).replace(/^#/, '').replace(/\s+/g, '')).join(' ');
+  return {
+    data: i.data, tipo: i.tipo, formato: i.formato, editorial: i.editorial || null, tema: i.tema,
+    legenda: i.tipo === 'post' ? (tags ? `${i.legenda || ''}\n\n${tags}`.trim() : (i.legenda || '')) : '',
+    briefing: i.briefing || '', palavra_chave: i.tipo === 'blog' ? (i.palavra_chave || '') : '',
+    motivo: i.motivo || '', conferir: (i.conferir || []).filter(Boolean),
+  };
+}
+
 const TIPOS = Object.keys(INSTRUCOES_TIPO);
 const texto = (v, max = 4000) => String(v ?? '').slice(0, max);
 
 // ---------- Rotas ----------
 module.exports = function registrarAgente(app, { pool, wrap }) {
   app.get('/api/agente/status', (req, res) => res.json({ ativo: !!process.env.ANTHROPIC_API_KEY, modelo: MODELO }));
+  app.get('/api/agente/competencias', (req, res) => res.json(COMPETENCIAS.map(([nome, descricao]) => ({ nome, descricao }))));
 
   app.get('/api/clients/:id/contexto', wrap(async (req, res) => {
     const c = await carregarContexto(pool, req.params.id);
     if (!c) return res.status(404).json({ erro: 'Cliente não encontrado' });
     const { ctx, cl } = c;
     res.json({
-      tom_de_voz: ctx.tom_de_voz || '', publico: ctx.publico || '', pilares: ctx.pilares || '',
+      tom_de_voz: ctx.tom_de_voz || '', publico: ctx.publico || '', pilares: ctx.pilares || '', conhecimento: ctx.conhecimento || '',
       regras: ctx.regras || '', rodape: ctx.rodape || cl.observacoes || '', exemplos: ctx.exemplos || '',
     });
   }));
@@ -294,11 +372,11 @@ module.exports = function registrarAgente(app, { pool, wrap }) {
   app.put('/api/clients/:id/contexto', wrap(async (req, res) => {
     const b = req.body || {};
     await pool.query(
-      `INSERT INTO contexto_cliente (client_id, tom_de_voz, publico, pilares, regras, rodape, exemplos, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+      `INSERT INTO contexto_cliente (client_id, tom_de_voz, publico, pilares, conhecimento, regras, rodape, exemplos, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
        ON CONFLICT (client_id) DO UPDATE SET tom_de_voz=EXCLUDED.tom_de_voz, publico=EXCLUDED.publico, pilares=EXCLUDED.pilares,
-         regras=EXCLUDED.regras, rodape=EXCLUDED.rodape, exemplos=EXCLUDED.exemplos, updated_at=now()`,
-      [req.params.id, texto(b.tom_de_voz), texto(b.publico), texto(b.pilares), texto(b.regras), texto(b.rodape), texto(b.exemplos, 8000)]);
+         conhecimento=EXCLUDED.conhecimento, regras=EXCLUDED.regras, rodape=EXCLUDED.rodape, exemplos=EXCLUDED.exemplos, updated_at=now()`,
+      [req.params.id, texto(b.tom_de_voz), texto(b.publico), texto(b.pilares), texto(b.conhecimento, 8000), texto(b.regras), texto(b.rodape), texto(b.exemplos, 8000)]);
     res.json({ ok: true });
   }));
 
@@ -331,7 +409,7 @@ ${tipo === 'blog' ? `Palavra-chave principal: ${val(b.palavra_chave) || '(sugira
     ].filter(Boolean).join('\n\n');
 
     const { saida, uso } = await chamarClaude({
-      system: `${REGRAS_GERAIS}\n\n${INSTRUCOES_TIPO[tipo]}`,
+      system: `${REGRAS_GERAIS}\n\n${TEXTO_COMPETENCIAS}\n\n${INSTRUCOES_TIPO[tipo]}`,
       user: secoes, ferramenta: FERRAMENTAS[tipo], maxTokens: tipo === 'blog' ? 6000 : 3000,
     });
     const resultado = normalizar(tipo, saida);
@@ -383,11 +461,135 @@ ${tipo === 'blog' ? `Palavra-chave principal: ${val(b.palavra_chave) || '(sugira
     ].filter(Boolean).join('\n\n');
 
     const { saida } = await chamarClaude({
-      system: `${REGRAS_GERAIS}\n\nTarefa: propor pautas (tema, editorial, formato) para as tarefas listadas. Não escreva as legendas agora.`,
+      system: `${REGRAS_GERAIS}\n\n${TEXTO_COMPETENCIAS}\n\nTarefa: propor pautas (tema, editorial, formato) para as tarefas listadas. Não escreva as legendas agora.`,
       user, ferramenta: FERRAMENTA_PAUTAS, maxTokens: 4000,
     });
     const ids = new Set(vazias.map((t) => t.id));
     const datas = Object.fromEntries(vazias.map((t) => [t.id, t.data]));
     res.json({ pautas: (saida.pautas || []).filter((p) => ids.has(p.task_id)).map((p) => ({ ...p, data: datas[p.task_id] })) });
+  }));
+
+  // Gera o conteúdo completo de uma semana (segunda a domingo) de acordo com a meta do contrato
+  app.post('/api/agente/semana', wrap(async (req, res) => {
+    const b = req.body || {};
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b.inicio || '')) return res.status(400).json({ erro: 'Escolha uma data da semana' });
+    const c = await carregarContexto(pool, b.client_id);
+    if (!c) return res.status(404).json({ erro: 'Cliente não encontrado' });
+    const inicio = segundaDe(b.inicio);
+    const fim = somarDias(inicio, 6);
+    const dias = Array.from({ length: 7 }, (_, k) => somarDias(inicio, k));
+
+    const { rows: daSemana } = await pool.query(
+      `SELECT id, tipo, data, tema, legenda, briefing FROM tasks WHERE client_id=$1 AND data BETWEEN $2 AND $3 ORDER BY data, id`,
+      [c.cl.id, inicio, fim]);
+    const planejado = (t) => (t.tipo === 'blog' ? !placeholderBlog(t.tema) : val(t.tema) || val(t.legenda) || val(t.briefing));
+    const jaPosts = daSemana.filter((t) => t.tipo === 'post' && planejado(t));
+    const jaBlog = daSemana.filter((t) => t.tipo === 'blog' && planejado(t));
+    const metaPosts = Math.max(0, Math.round((c.cl.meta_posts * 7) / 30));
+    const metaBlog = Math.max(0, Math.round((c.cl.meta_blog * 7) / 30));
+    const precisaPosts = Math.max(0, metaPosts - jaPosts.length);
+    const precisaBlog = Math.max(0, metaBlog - jaBlog.length);
+    const diasStory = c.cl.meta_stories_dia > 0
+      ? dias.filter((d) => !daSemana.some((t) => t.tipo === 'story' && t.data === d && val(t.briefing))) : [];
+    if (!precisaPosts && !precisaBlog && !diasStory.length) {
+      return res.json({ inicio, fim, itens: [], aviso: 'Esta semana já está toda planejada.' });
+    }
+    if (!dentroDoLimite(req.user.id)) return res.status(429).json({ erro: 'Limite de gerações por hora atingido. Tente mais tarde.' });
+
+    const meses = new Set(dias.map((d) => ABREV_MESES[Number(d.slice(5, 7)) - 1]));
+    const { rows: todasExp } = await pool.query('SELECT * FROM experiencias WHERE client_id=$1 ORDER BY ordem', [c.cl.id]);
+    const exps = todasExp
+      .filter((e) => [...meses].some((m) => String(e.secao || '').toUpperCase().includes(m)))
+      .sort((a, z) => Number(!!z.descricao) - Number(!!a.descricao)).slice(0, 14);
+    const { rows: recentes } = await pool.query(
+      `SELECT data, tipo, tema FROM tasks WHERE client_id=$1 AND tipo IN ('post','blog') AND data BETWEEN $2 AND $3
+       AND tema IS NOT NULL AND tema<>'' AND tema NOT LIKE 'Artigo de blog (SEO)%' ORDER BY data`, [c.cl.id, somarDias(inicio, -28), somarDias(inicio, -1)]);
+    const { rows: capt } = await pool.query(`SELECT tema FROM tasks WHERE client_id=$1 AND tipo='captacao' AND status<>'publicado' LIMIT 8`, [c.cl.id]);
+    const [materiais, exemplos] = await Promise.all([blocoMateriais(pool, c.cl.id), blocoExemplos(pool, c.cl.id, 'post', c.ctx)]);
+
+    const rotulo = (d) => `${d} (${DIAS_SEMANA[new Date(d + 'T12:00:00Z').getUTCDay()]})`;
+    const user = [
+      `## CONTEXTO DO CLIENTE\n${blocoCliente(c)}`,
+      `## SEMANA\nDe ${rotulo(inicio)} a ${rotulo(fim)}.`,
+      `## O QUE PRODUZIR (nem mais, nem menos)\n- Posts de feed: ${precisaPosts}\n- Artigos de blog (apenas pauta e briefing de SEO; o texto completo é escrito depois): ${precisaBlog}\n- Roteiro de stories para os dias: ${diasStory.length ? diasStory.map(rotulo).join(', ') : 'nenhum'}`,
+      daSemana.filter(planejado).length && `## JÁ PLANEJADO NESTA SEMANA (não repita nem substitua)\n${daSemana.filter(planejado).map((t) => `- ${t.data} · ${t.tipo} · ${t.tema || '(sem tema)'}`).join('\n')}`,
+      recentes.length && `## PUBLICADO NAS ÚLTIMAS 4 SEMANAS (evite repetir temas)\n${recentes.map((t) => `- ${t.data} · ${t.tipo} · ${t.tema}`).join('\n')}`,
+      exps.length && `## EXPERIÊNCIAS E DATAS DESTE PERÍODO NA PLANILHA (use só as que coincidirem com a semana; não complete o que estiver vazio)\n${exps.map(fmtExp).join('\n')}`,
+      capt.length && `## PRIORIDADES DE CAPTAÇÃO (aproveite quando fizer sentido)\n${capt.map((t) => `- ${t.tema}`).join('\n')}`,
+      materiais && `## MATERIAIS\n${materiais}`,
+      exemplos && `## EXEMPLOS APROVADOS (imite o jeito de escrever, não o conteúdo)\n${exemplos}`,
+      val(b.foco) && `## PEDIDO DA EQUIPE PARA ESTA SEMANA\n${texto(b.foco, 800)}`,
+      'Distribua posts e blog em dias diferentes, alterne os pilares e os formatos, encaixe datas especiais perto do dia certo e dê a cada dia de stories um objetivo diferente. Escreva as legendas por completo, nos mesmos moldes dos exemplos.',
+    ].filter(Boolean).join('\n\n');
+
+    const { saida, uso } = await chamarClaude({
+      system: `${REGRAS_GERAIS}\n\n${TEXTO_COMPETENCIAS}\n\nTarefa: planejar e escrever o conteúdo de uma semana inteira do cliente, seguindo exatamente as quantidades pedidas. Posts levam legenda completa e hashtags; stories levam roteiro curto de 3 a 5 telas; blog leva só ângulo, palavra-chave e estrutura.`,
+      user, ferramenta: FERRAMENTA_SEMANA, maxTokens: 9000, timeoutMs: 100000,
+    });
+
+    // Garante que o resultado respeita a semana e as quantidades contratadas
+    const restante = { post: precisaPosts, blog: precisaBlog };
+    const storiesVistos = new Set();
+    const itens = [];
+    for (const i of saida.itens || []) {
+      if (!dias.includes(i.data)) continue;
+      if (i.tipo === 'story') {
+        if (!diasStory.includes(i.data) || storiesVistos.has(i.data)) continue;
+        storiesVistos.add(i.data);
+      } else if (restante[i.tipo] > 0) restante[i.tipo]--;
+      else continue;
+      itens.push(normalizarSemana(i));
+    }
+    itens.sort((a, z) => a.data.localeCompare(z.data) || a.tipo.localeCompare(z.tipo));
+    const resultado = { inicio, fim, foco: saida.foco_da_semana, itens, conferir_geral: (saida.conferir_geral || []).filter(Boolean) };
+    const { rows: [g] } = await pool.query(
+      `INSERT INTO conteudos_gerados (client_id, tipo, entrada, saida, usuario_id, modelo, tokens_in, tokens_out)
+       VALUES ($1,'semana',$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [c.cl.id, JSON.stringify({ inicio, foco: b.foco }), JSON.stringify(resultado), req.user.id, MODELO, uso.input_tokens || null, uso.output_tokens || null]);
+    res.json({ id: g.id, ...resultado });
+  }));
+
+  // Aplica a semana nas tarefas: ocupa as tarefas vazias do mês (que já existem pelo contrato) e cria só o que faltar
+  app.post('/api/agente/semana/aplicar', wrap(async (req, res) => {
+    const b = req.body || {};
+    const c = await carregarContexto(pool, b.client_id);
+    if (!c) return res.status(404).json({ erro: 'Cliente não encontrado' });
+    const itens = (Array.isArray(b.itens) ? b.itens : []).filter((i) => /^\d{4}-\d{2}-\d{2}$/.test(i.data || '') && ['post', 'story', 'blog'].includes(i.tipo)).slice(0, 30);
+    if (!itens.length) return res.status(400).json({ erro: 'Nenhuma peça selecionada' });
+    const cx = await pool.connect();
+    const r = { atualizadas: 0, criadas: 0 };
+    try {
+      await cx.query('BEGIN');
+      for (const i of itens) {
+        const campos = [texto(i.tema, 300), texto(i.editorial, 200) || null, texto(i.formato, 40) || null, texto(i.legenda, 12000), texto(i.briefing, 12000), texto(i.palavra_chave, 200)];
+        let alvo;
+        if (i.tipo === 'story') {
+          ({ rows: [alvo] } = await cx.query(
+            `SELECT id FROM tasks WHERE client_id=$1 AND tipo='story' AND data=$2::date AND coalesce(briefing,'')='' ORDER BY id LIMIT 1 FOR UPDATE`, [c.cl.id, i.data]));
+        } else {
+          ({ rows: [alvo] } = await cx.query(
+            `SELECT id FROM tasks WHERE client_id=$1 AND tipo=$2 AND to_char(data,'YYYY-MM')=$3
+             AND (coalesce(tema,'')='' OR tema LIKE 'Artigo de blog (SEO)%') AND coalesce(legenda,'')='' AND coalesce(briefing,'')=''
+             ORDER BY abs(data - $4::date), id LIMIT 1 FOR UPDATE`, [c.cl.id, i.tipo, i.data.slice(0, 7), i.data]));
+        }
+        if (alvo) {
+          await cx.query(
+            `UPDATE tasks SET data=$1::date, tema=$2, editorial=$3, formato=COALESCE($4, formato), legenda=COALESCE(NULLIF($5,''), legenda),
+               briefing=COALESCE(NULLIF($6,''), briefing), palavra_chave=COALESCE(NULLIF($7,''), palavra_chave),
+               status=CASE WHEN status='pauta' AND ($5<>'' OR $6<>'') THEN 'conteudo' ELSE status END, updated_at=now() WHERE id=$8`,
+            [i.data, ...campos, alvo.id]);
+          r.atualizadas++;
+        } else {
+          await cx.query(
+            `INSERT INTO tasks (client_id,tipo,formato,data,editorial,tema,legenda,briefing,palavra_chave,status,checklist)
+             VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,'conteudo',$10)`,
+            [c.cl.id, i.tipo, campos[2] || (i.tipo === 'story' ? 'story' : null), i.data, campos[1], campos[0], campos[3] || null, campos[4] || null,
+              campos[5] || null, JSON.stringify(i.tipo === 'blog' ? BLOG_CHECKLIST.map((t) => ({ texto: t, feito: false })) : [])]);
+          r.criadas++;
+        }
+      }
+      await cx.query('COMMIT');
+    } catch (e) { await cx.query('ROLLBACK'); throw e; } finally { cx.release(); }
+    res.json(r);
   }));
 };

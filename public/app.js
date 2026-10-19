@@ -503,6 +503,7 @@ function viewClientes(v) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary small" data-salvar>Salvar</button>
           <button class="btn small" data-gerar>Gerar estrutura de ${esc(mesLabel(S.mes))}</button>
+          <button class="btn small primary" data-semana>Gerar semana</button>
           <button class="btn small" data-contexto>Contexto do agente</button>
           <button class="btn small" data-pautas>Sugerir pautas de ${esc(mesLabel(S.mes))}</button>
         </div>
@@ -532,6 +533,7 @@ function viewClientes(v) {
       try { await api('/api/clients/' + id, { method: 'PUT', body: dados() }); await carregarClientes(); toast('Cliente salvo'); viewClientes(v); }
       catch (e) { toast(e.message); }
     });
+    $('[data-semana]', card).addEventListener('click', () => abrirSemanaAgente(id));
     $('[data-contexto]', card).addEventListener('click', () => abrirContextoAgente(id));
     $('[data-pautas]', card).addEventListener('click', () => abrirPautasAgente(id));
     $('[data-gerar]', card).addEventListener('click', async () => {
@@ -563,6 +565,7 @@ const CAMPOS_CONTEXTO = [
   ['tom_de_voz', 'Tom de voz', 'Ex.: acolhedor, elegante, sem gírias; fala com o hóspede como um anfitrião…', 3],
   ['publico', 'Público', 'Quem lê: famílias, casais, investidores, de onde vêm…', 3],
   ['pilares', 'Pilares de conteúdo', 'Um por linha: experiência do hóspede, programação dos resorts, datas especiais…', 4],
+  ['conhecimento', 'Base de conhecimento (fatos confirmados)', 'Um fato por linha: unidades, comodidades, distâncias, políticas, diferenciais. O agente só afirma o que estiver aqui, na planilha ou no briefing.', 8],
   ['regras', 'Regras do cliente (o agente sempre obedece)', 'O que dizer, o que nunca dizer, avisos obrigatórios, termos proibidos…', 5],
   ['rodape', 'Rodapé padrão das legendas', 'Texto fixo no fim das legendas', 3],
   ['exemplos', 'Exemplos de posts aprovados (opcional)', 'Cole 2 ou 3 legendas que o cliente adorou. O agente imita o jeito de escrever.', 6],
@@ -571,12 +574,14 @@ const CAMPOS_CONTEXTO = [
 async function abrirContextoAgente(clientId) {
   const cl = S.clients.find((c) => c.id === clientId);
   const d = $('#modal');
-  let ctx;
-  try { ctx = await api(`/api/clients/${clientId}/contexto`); } catch (e) { return toast(e.message); }
+  let ctx; let comp = [];
+  try { [ctx, comp] = await Promise.all([api(`/api/clients/${clientId}/contexto`), api('/api/agente/competencias')]); } catch (e) { return toast(e.message); }
   d.innerHTML = `<form method="dialog">
     <div class="modal-head"><h3>Contexto do agente · ${esc(cl.nome)}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
     <div class="modal-body">
       <p class="muted" style="margin:0">Quanto melhor este contexto, melhor o texto. O agente também lê as marcas, a programação dos resorts, os materiais marcados para evitar e os posts que a equipe já aprovou.</p>
+      <details class="ia-comp"><summary>Competências do agente (${comp.length})</summary>
+        <ul>${comp.map((c) => `<li><strong>${esc(c.nome)}.</strong> ${esc(c.descricao)}</li>`).join('')}</ul></details>
       ${CAMPOS_CONTEXTO.map(([k, l, ph, r]) => `<div><label>${l}</label><textarea data-k="${k}" rows="${r}" placeholder="${esc(ph)}">${esc(ctx[k] || '')}</textarea></div>`).join('')}
     </div>
     <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="ctxSalvar">Salvar</button></div></div>
@@ -617,6 +622,73 @@ async function abrirPautasAgente(clientId) {
         return api('/api/tasks/' + p.task_id, { method: 'PUT', body: { tema: $('.pauta-tema', el).value.trim(), editorial: p.editorial, formato: p.formato } });
       }));
       d.close(); toast(`${marcadas.length} pautas aplicadas`); render();
+    } catch (e) { toast(e.message); }
+  });
+}
+
+
+const proximaSegunda = () => {
+  const d = new Date(hojeISO + 'T12:00');
+  d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+async function abrirSemanaAgente(clientId) {
+  const cl = S.clients.find((c) => c.id === clientId);
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>Conteúdo da semana · ${esc(cl.nome)}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body" id="semCorpo">
+      <p class="muted" style="margin:0">O agente escreve a semana inteira (posts, roteiros de stories e pauta de blog) seguindo a meta do contrato, a programação dos resorts e o que já foi publicado. Leva cerca de um minuto.</p>
+      <div class="row"><div><label>Semana de (qualquer dia da semana)</label><input type="date" id="semInicio" value="${proximaSegunda()}"></div>
+        <div style="flex:2"><label>Pedido para esta semana (opcional)</label><input id="semFoco" placeholder="Ex.: destacar a programação de Halloween e o buggy na praia"></div></div>
+      <div><button type="button" class="btn primary" id="semGerar">Gerar semana</button></div>
+      <div id="semSaida"></div>
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary hidden" id="semAplicar">Aplicar selecionadas</button></div></div>
+  </form>`;
+  d.showModal();
+  let resultado = null;
+  $('#semGerar').addEventListener('click', async () => {
+    const bt = $('#semGerar');
+    if (!$('#semInicio').value) return toast('Escolha a semana');
+    bt.disabled = true; bt.textContent = 'Gerando a semana…';
+    $('#semSaida').innerHTML = '<div class="empty">Escrevendo posts, stories e pauta do blog… não feche esta janela.</div>';
+    $('#semAplicar').classList.add('hidden');
+    try {
+      resultado = await api('/api/agente/semana', { method: 'POST', body: { client_id: clientId, inicio: $('#semInicio').value, foco: $('#semFoco').value.trim() } });
+      desenharSemana();
+    } catch (e) { $('#semSaida').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+    finally { bt.disabled = false; bt.textContent = 'Gerar de novo'; }
+  });
+  const desenharSemana = () => {
+    const r = resultado;
+    if (!r.itens.length) { $('#semSaida').innerHTML = `<div class="empty">${esc(r.aviso || 'Nada para gerar nesta semana.')}</div>`; return; }
+    const ROT = { post: 'Feed', story: 'Stories', blog: 'Blog' };
+    $('#semSaida').innerHTML = `
+      <div class="ia-res">
+        <div class="ia-txt" style="max-height:none"><strong>Foco da semana ${esc(fmtData(r.inicio))} a ${esc(fmtData(r.fim))}.</strong> ${esc(r.foco)}</div>
+        ${r.conferir_geral?.length ? `<div class="ia-conferir"><strong>Pendências da semana</strong><ul>${r.conferir_geral.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
+        ${r.itens.map((i, n) => `<div class="pauta" data-n="${n}">
+          <label class="check" style="text-transform:none;font-weight:400"><input type="checkbox" checked>
+            <span><strong>${esc(dowDe(i.data))} ${esc(fmtData(i.data))}</strong> · <span class="tag ${i.tipo}">${ROT[i.tipo]}</span> ${esc(i.formato)} · <em>${esc(i.editorial || '')}</em></span></label>
+          <input class="pauta-tema" value="${esc(i.tema)}">
+          <div class="muted" style="font-size:12px">${esc(i.motivo)}</div>
+          <details><summary>Ver texto e roteiro</summary>
+            ${i.legenda ? `<div class="ia-txt">${esc(i.legenda)}</div>` : ''}
+            ${i.briefing ? `<div class="ia-txt" style="margin-top:6px">${esc(i.briefing)}</div>` : ''}
+            ${i.conferir?.length ? `<div class="ia-conferir" style="margin-top:6px"><strong>Conferir</strong><ul>${i.conferir.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
+          </details></div>`).join('')}
+      </div>`;
+    $('#semAplicar').classList.remove('hidden');
+  };
+  $('#semAplicar').addEventListener('click', async () => {
+    const marcados = $$('#semSaida .pauta', d).filter((el) => $('input[type=checkbox]', el).checked);
+    if (!marcados.length) return toast('Marque ao menos uma peça');
+    const itens = marcados.map((el) => ({ ...resultado.itens[Number(el.dataset.n)], tema: $('.pauta-tema', el).value.trim() }));
+    try {
+      const r = await api('/api/agente/semana/aplicar', { method: 'POST', body: { client_id: clientId, itens } });
+      d.close(); toast(`Semana aplicada: ${r.atualizadas} tarefas preenchidas, ${r.criadas} novas`); render();
     } catch (e) { toast(e.message); }
   });
 }
