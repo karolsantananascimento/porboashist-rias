@@ -669,6 +669,7 @@ async function abrirSemanaAgente(clientId) {
       <div class="ia-res">
         <div class="ia-txt" style="max-height:none"><strong>Foco da semana ${esc(fmtData(r.inicio))} a ${esc(fmtData(r.fim))}.</strong> ${esc(r.foco)}</div>
         ${r.conferir_geral?.length ? `<div class="ia-conferir"><strong>Pendências da semana</strong><ul>${r.conferir_geral.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
+        <div><button type="button" class="btn" id="semCopiar">Copiar pautas dos posts marcados</button></div>
         ${r.itens.map((i, n) => `<div class="pauta" data-n="${n}">
           <label class="check" style="text-transform:none;font-weight:400"><input type="checkbox" checked>
             <span><strong>${esc(dowDe(i.data))} ${esc(fmtData(i.data))}</strong> · <span class="tag ${i.tipo}">${ROT[i.tipo]}</span> ${esc(i.formato)} · <em>${esc(i.editorial || '')}</em></span></label>
@@ -681,6 +682,12 @@ async function abrirSemanaAgente(clientId) {
           </details></div>`).join('')}
       </div>`;
     $('#semAplicar').classList.remove('hidden');
+    $('#semCopiar').addEventListener('click', async () => {
+      const txt = $$('#semSaida .pauta', d).filter((el) => $('input[type=checkbox]', el).checked)
+        .map((el) => resultado.itens[Number(el.dataset.n)]).filter((i) => i.pauta).map((i) => i.pauta).join('\n\n\n');
+      if (!txt) return toast('Marque ao menos um post');
+      try { await navigator.clipboard.writeText(txt); toast('Pautas copiadas'); } catch { toast('Não consegui copiar; selecione o texto manualmente'); }
+    });
   };
   $('#semAplicar').addEventListener('click', async () => {
     const marcados = $$('#semSaida .pauta', d).filter((el) => $('input[type=checkbox]', el).checked);

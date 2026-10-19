@@ -34,11 +34,19 @@ const COMPETENCIAS = [
 const TEXTO_COMPETENCIAS = `COMPETÊNCIAS QUE VOCÊ DOMINA E APLICA\n${COMPETENCIAS.map(([n, d]) => `- ${n}: ${d}`).join('\n')}`;
 
 const INSTRUCOES_TIPO = {
-  post: `Tarefa: legenda para o FEED do Instagram.
-- Primeiras linhas com um gancho forte (aparecem antes do "ver mais").
-- Corpo curto e concreto, com um CTA claro. Termine com o rodapé padrão do cliente, se existir.
-- No máximo 2200 caracteres. Entre 5 e 10 hashtags de nicho e lugar (sem #).
-- Se o formato for carrossel, descreva os slides em "briefing_visual" (slide 1, slide 2…). Se for reels, descreva roteiro em cenas.
+  post: `Tarefa: PAUTA COMPLETA de uma peça do FEED do Instagram, no padrão da agência: legenda + briefing criativo.
+LEGENDA
+- Primeiras linhas com um gancho forte (aparecem antes do "ver mais"). Parágrafos curtos, separados por linha em branco.
+- Corpo concreto e com um CTA claro (salvar, reservar, falar com o atendimento). Termine com o rodapé padrão do cliente, se existir.
+- No máximo 2200 caracteres. Entre 4 e 8 hashtags de marca, lugar e tema (sem #).
+BRIEFING CRIATIVO (campo "briefing_pecas", uma entrada por peça visual)
+- Carrossel: CAPA ("CARD 1 · CAPA"), depois um card por ideia ("CARD 2 · ESPAÇO", "LÂMINA 3 · PRAIA E PISCINA"…), de 5 a 8 no total, e o último de FECHAMENTO/CONVERSÃO com CTA. Cada card traz o texto exato da arte (título curto e, se couber, 3 a 5 itens), a imagem desejada e a direção de arte (hierarquia, espaço livre, ícones, assinatura da marca).
+- Reels: uma entrada por cena ("Cena 1", "Cena 2"…), com o texto na tela, o que aparece na imagem e a direção (ritmo, transições, trilha). Termine com a cena de encerramento com o logo e o CTA.
+- Estático: uma única entrada com texto da arte, imagem e direção de arte.
+- Em "imagem", descreva a foto ou o vídeo ideal e, quando houver em MATERIAIS uma pasta ou categoria compatível, cite-a. Nunca invente links, nomes de arquivo ou fotos que não estejam em MATERIAIS.
+- Em "texto" escreva só o que vai escrito na arte. Em "direcao_arte" diga como a arte deve ser composta.
+- Se a pauta depender de regras de acesso, benefícios ou programação que não estejam na base de conhecimento ou na planilha, escreva em "nota_producao" o que confirmar antes de citar resorts, atividades ou preços, e mantenha a arte e a legenda genéricas.
+- Em "obs_gerais" coloque orientações que valem para a peça toda (trilha, edição, duração).
 - Ofereça 3 alternativas de gancho.`,
   story: `Tarefa: roteiro de STORIES do dia (de 3 a 6 telas).
 - Cada tela tem um texto curto (até 2 linhas), a sugestão visual e, quando fizer sentido, uma interação (enquete, caixinha, quiz, link).
@@ -54,6 +62,20 @@ const INSTRUCOES_TIPO = {
 INSTRUCOES_TIPO.outro = INSTRUCOES_TIPO.post;
 
 // ---------- Ferramentas (saída estruturada) ----------
+const PECAS = {
+  type: 'array',
+  description: 'Briefing criativo: uma entrada por card, lâmina ou cena, na ordem em que aparecem',
+  items: {
+    type: 'object',
+    properties: {
+      rotulo: { type: 'string', description: 'Ex.: "CARD 1 · CAPA", "LÂMINA 3 · PRAIA E PISCINA", "Cena 2"' },
+      texto: { type: 'string', description: 'Texto exato que vai na arte ou na tela (título e itens), uma linha por item' },
+      imagem: { type: 'string', description: 'Foto ou vídeo desejado; cite pastas/categorias reais de MATERIAIS quando houver' },
+      direcao_arte: { type: 'string', description: 'Como compor a arte: hierarquia, espaço livre, ícones, assinatura, CTA' },
+    },
+    required: ['rotulo', 'texto', 'imagem', 'direcao_arte'],
+  },
+};
 const lista = (descricao) => ({ type: 'array', items: { type: 'string' }, description: descricao });
 const FERRAMENTAS = {
   post: {
@@ -65,11 +87,13 @@ const FERRAMENTAS = {
         tema: { type: 'string', description: 'Tema curto da peça (até 80 caracteres)' },
         legenda: { type: 'string', description: 'Legenda completa, já com CTA e rodapé padrão, sem hashtags' },
         hashtags: lista('Hashtags sem o símbolo #'),
-        briefing_visual: { type: 'string', description: 'Direção visual: foto, vídeo, slides ou cenas' },
+        briefing_pecas: PECAS,
+        obs_gerais: { type: 'string', description: 'Orientações para a peça toda: trilha, edição, duração. Pode ficar vazio.' },
+        nota_producao: { type: 'string', description: 'O que a produção deve confirmar antes de citar resorts, atividades ou preços. Vazio se nada.' },
         alternativas_gancho: lista('Três ganchos alternativos'),
         conferir: lista('Informações que a equipe precisa confirmar antes de publicar'),
       },
-      required: ['legenda', 'hashtags', 'briefing_visual', 'conferir'],
+      required: ['legenda', 'hashtags', 'briefing_pecas', 'conferir'],
     },
   },
   story: {
@@ -153,6 +177,31 @@ const FERRAMENTA_PAUTAS = {
 // ---------- Normalização: devolve sempre campos da tarefa ----------
 const nl = (itens) => (itens || []).filter(Boolean).map((x) => `• ${x}`).join('\n');
 
+const DIAS_ABREV = ['dom.', 'seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.'];
+const NOME_FORMATO = { 'estático': 'Estático', carrossel: 'Carrossel', reels: 'Reels', story: 'Stories', artigo: 'Blog' };
+
+// "qua. 14/10/26"
+function dataCurta(iso) {
+  const [a, m, d] = iso.split('-');
+  return `${DIAS_ABREV[new Date(iso + 'T12:00:00Z').getUTCDay()]} ${d}/${m}/${a.slice(2)}`;
+}
+
+function montarBriefing(o) {
+  const pecas = (o.briefing_pecas || []).map((p) => [
+    String(p.rotulo || '').trim(), String(p.texto || '').trim(),
+    p.imagem ? `Imagem: ${String(p.imagem).trim()}` : '', p.direcao_arte ? `Direção de arte: ${String(p.direcao_arte).trim()}` : '',
+  ].filter(Boolean).join('\n'));
+  return [...pecas, o.obs_gerais && `Orientações gerais: ${String(o.obs_gerais).trim()}`,
+    o.nota_producao && `Nota de produção: ${String(o.nota_producao).trim()}`].filter(Boolean).join('\n\n');
+}
+
+// Pauta completa no formato da agência, pronta para copiar
+function textoPauta({ data, formato, tema, legenda, briefing }) {
+  return [`${dataCurta(data)} · ${NOME_FORMATO[formato] || formato} · ${tema}`, '',
+    'Data', `${data.split('-').reverse().join('/')} - ${DIAS_SEMANA[new Date(data + 'T12:00:00Z').getUTCDay()]}`,
+    'Legenda', legenda || '', 'Briefing criativo', briefing || '', 'Link de imagens', '', 'Obs:'].join('\n');
+}
+
 function normalizar(tipo, o) {
   const conferir = (o.conferir || []).filter(Boolean);
   if (tipo === 'story') {
@@ -175,7 +224,7 @@ function normalizar(tipo, o) {
   return {
     tema: o.tema || undefined,
     legenda: tags ? `${o.legenda}\n\n${tags}` : o.legenda,
-    briefing: o.briefing_visual,
+    briefing: montarBriefing(o) || o.briefing_visual,
     alternativas: o.alternativas_gancho || [],
     conferir,
   };
@@ -225,11 +274,12 @@ async function blocoProgramacao(pool, clientId, taskId, tema) {
 }
 
 async function blocoMateriais(pool, clientId) {
-  const { rows } = await pool.query('SELECT categoria, descricao, evitar FROM materials WHERE client_id=$1 ORDER BY evitar DESC, categoria LIMIT 80', [clientId]);
+  const { rows } = await pool.query('SELECT categoria, descricao, url, evitar FROM materials WHERE client_id=$1 ORDER BY evitar DESC, categoria LIMIT 80', [clientId]);
   if (!rows.length) return null;
   const evitar = rows.filter((m) => m.evitar).map((m) => `- ${m.descricao || m.categoria}`);
-  const cats = [...new Set(rows.filter((m) => !m.evitar).map((m) => m.categoria).filter(Boolean))];
-  return [cats.length ? `Categorias de fotos e vídeos disponíveis: ${cats.join('; ')}` : null,
+  const livres = rows.filter((m) => !m.evitar);
+  const acervo = livres.map((m) => `- ${[m.categoria, m.descricao].filter(Boolean).join(' · ') || 'Material'}: ${m.url}`);
+  return [acervo.length ? `Acervo de fotos e vídeos (cite estas pastas e links no campo "imagem" quando combinarem com a cena; nunca invente links):\n${acervo.join('\n')}` : null,
     evitar.length ? `Materiais a EVITAR ou usar com cuidado (não os sugira):\n${evitar.join('\n')}` : null].filter(Boolean).join('\n');
 }
 
@@ -312,12 +362,15 @@ const FERRAMENTA_SEMANA = {
             tema: { type: 'string', description: 'Tema curto e específico' },
             legenda: { type: 'string', description: 'Só para posts: legenda completa com CTA e rodapé padrão, sem hashtags. Vazio em stories e blog.' },
             hashtags: lista('Só para posts: hashtags sem #'),
-            briefing: { type: 'string', description: 'Posts: direção visual (slides ou cenas). Stories: roteiro de 3 a 5 telas com texto, visual e interação. Blog: ângulo, estrutura em H2 e links internos sugeridos.' },
+            briefing_pecas: { ...PECAS, description: 'SÓ PARA POSTS: briefing criativo com uma entrada por card, lâmina ou cena (rótulo, texto da arte, imagem, direção de arte). Vazio em stories e blog.' },
+            obs_gerais: { type: 'string', description: 'Só para posts: trilha, edição, duração. Pode ficar vazio.' },
+            nota_producao: { type: 'string', description: 'Só para posts: o que a produção deve confirmar antes de citar resorts, atividades ou preços.' },
+            briefing: { type: 'string', description: 'Só para stories (roteiro de 3 a 5 telas com texto, visual e interação) e blog (ângulo, estrutura em H2, links internos). Vazio em posts.' },
             palavra_chave: { type: 'string', description: 'Só para blog' },
             motivo: { type: 'string', description: 'Por que esta peça neste dia (uma frase)' },
             conferir: lista('O que a equipe precisa confirmar antes de publicar'),
           },
-          required: ['data', 'tipo', 'formato', 'editorial', 'tema', 'briefing', 'motivo', 'conferir'],
+          required: ['data', 'tipo', 'formato', 'editorial', 'tema', 'motivo', 'conferir'],
         },
       },
       conferir_geral: lista('Pendências gerais da semana (materiais que faltam, informações a confirmar)'),
@@ -343,12 +396,15 @@ const placeholderBlog = (t) => !val(t) || /^Artigo de blog \(SEO\)/.test(t);
 
 function normalizarSemana(i) {
   const tags = (i.hashtags || []).map((h) => '#' + String(h).replace(/^#/, '').replace(/\s+/g, '')).join(' ');
-  return {
-    data: i.data, tipo: i.tipo, formato: i.formato, editorial: i.editorial || null, tema: i.tema,
-    legenda: i.tipo === 'post' ? (tags ? `${i.legenda || ''}\n\n${tags}`.trim() : (i.legenda || '')) : '',
-    briefing: i.briefing || '', palavra_chave: i.tipo === 'blog' ? (i.palavra_chave || '') : '',
+  const legenda = i.tipo === 'post' ? (tags ? `${i.legenda || ''}\n\n${tags}`.trim() : (i.legenda || '')) : '';
+  const briefing = i.tipo === 'post' ? (montarBriefing(i) || i.briefing || '') : (i.briefing || '');
+  const item = {
+    data: i.data, tipo: i.tipo, formato: i.formato, editorial: i.editorial || null, tema: i.tema, legenda, briefing,
+    palavra_chave: i.tipo === 'blog' ? (i.palavra_chave || '') : '',
     motivo: i.motivo || '', conferir: (i.conferir || []).filter(Boolean),
   };
+  if (i.tipo === 'post') item.pauta = textoPauta(item);
+  return item;
 }
 
 const TIPOS = Object.keys(INSTRUCOES_TIPO);
@@ -519,12 +575,12 @@ ${tipo === 'blog' ? `Palavra-chave principal: ${val(b.palavra_chave) || '(sugira
       materiais && `## MATERIAIS\n${materiais}`,
       exemplos && `## EXEMPLOS APROVADOS (imite o jeito de escrever, não o conteúdo)\n${exemplos}`,
       val(b.foco) && `## PEDIDO DA EQUIPE PARA ESTA SEMANA\n${texto(b.foco, 800)}`,
-      'Distribua posts e blog em dias diferentes, alterne os pilares e os formatos, encaixe datas especiais perto do dia certo e dê a cada dia de stories um objetivo diferente. Escreva as legendas por completo, nos mesmos moldes dos exemplos.',
+      'Distribua posts e blog em dias diferentes, alterne os pilares e os formatos, encaixe datas especiais perto do dia certo e dê a cada dia de stories um objetivo diferente. Escreva as legendas e os briefings criativos por completo (card a card ou cena a cena), nos mesmos moldes dos exemplos. Seja objetivo em imagem e direção de arte: uma ou duas frases cada.',
     ].filter(Boolean).join('\n\n');
 
     const { saida, uso } = await chamarClaude({
-      system: `${REGRAS_GERAIS}\n\n${TEXTO_COMPETENCIAS}\n\nTarefa: planejar e escrever o conteúdo de uma semana inteira do cliente, seguindo exatamente as quantidades pedidas. Posts levam legenda completa e hashtags; stories levam roteiro curto de 3 a 5 telas; blog leva só ângulo, palavra-chave e estrutura.`,
-      user, ferramenta: FERRAMENTA_SEMANA, maxTokens: 9000, timeoutMs: 100000,
+      system: `${REGRAS_GERAIS}\n\n${TEXTO_COMPETENCIAS}\n\nTarefa: planejar e escrever o conteúdo de uma semana inteira do cliente, seguindo exatamente as quantidades pedidas. Posts levam legenda completa, hashtags e briefing criativo por card, lâmina ou cena (campo briefing_pecas); stories levam roteiro curto de 3 a 5 telas; blog leva só ângulo, palavra-chave e estrutura.`,
+      user, ferramenta: FERRAMENTA_SEMANA, maxTokens: 12000, timeoutMs: 170000,
     });
 
     // Garante que o resultado respeita a semana e as quantidades contratadas
@@ -593,3 +649,4 @@ ${tipo === 'blog' ? `Palavra-chave principal: ${val(b.palavra_chave) || '(sugira
     res.json(r);
   }));
 };
+module.exports.__teste = { normalizarSemana, normalizar, montarBriefing, textoPauta };

@@ -59,3 +59,6 @@ Abra http://localhost:3000.
 - **App:** serviço web gratuito no Render (`render.yaml`). Ele "dorme" após um período sem acesso e leva alguns segundos para acordar.
 - **Banco:** Postgres gratuito no Supabase (projeto `por-boas-historias`, região São Paulo), que não expira (o Supabase pausa projetos gratuitos após uma semana sem nenhum acesso; basta reativar no painel deles). As tabelas ficam no schema `pbh`, acessado por um usuário próprio (`pbh_app`), fora da API pública do Supabase.
 - **Backup:** em **Clientes → Baixar backup** você guarda uma cópia de tudo em JSON, que pode ser restaurada em **Clientes → Restaurar backup**.
+
+### Formato de pauta
+Posts do agente saem no padrão da agência: legenda completa + briefing criativo por card/lâmina/cena (texto da arte, imagem, direção de arte), com as pastas do acervo (Materiais) citadas quando existirem. Em **Gerar semana**, o botão "Copiar pautas dos posts marcados" copia tudo no formato `dia. DD/MM/AA · Formato · Tema` / Data / Legenda / Briefing criativo / Link de imagens / Obs.
