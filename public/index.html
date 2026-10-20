@@ -42,17 +42,21 @@
           <span>Gestão de conteúdo</span>
         </div>
       </div>
-      <nav id="nav">
-        <a data-view="painel" class="active">Painel</a>
-        <a data-view="area">Área do cliente</a>
-        <a data-view="calendario">Calendário</a>
-        <a data-view="quadro">Quadro</a>
-        <a data-view="lista">Lista</a>
-        <a data-view="programacao">Programação</a>
-        <a data-view="captacao">Captação</a>
-        <a data-view="materiais">Materiais</a>
-        <a data-view="clientes">Clientes</a>
-        <a data-view="usuarios" id="navUsuarios" class="hidden">Usuários</a>
+      <nav id="nav" aria-label="Navegação principal">
+        <a data-view="painel" class="active"><i>◧</i>Painel</a>
+
+        <span class="nav-sec">Produção</span>
+        <a data-view="calendario" data-grupo="tarefas"><i>▦</i>Tarefas</a>
+        <a data-view="captacao"><i>◉</i>Captação</a>
+        <a data-view="programacao"><i>☰</i>Programação</a>
+
+        <span class="nav-sec">Clientes</span>
+        <a data-view="area"><i>★</i>Área do cliente</a>
+        <a data-view="materiais"><i>▤</i>Materiais</a>
+        <a data-view="clientes"><i>☺</i>Contratos</a>
+
+        <span class="nav-sec" id="secAdmin">Administração</span>
+        <a data-view="usuarios" id="navUsuarios" class="hidden"><i>⚙</i>Usuários</a>
       </nav>
       <div class="me">
         <div class="me-info"><strong id="meNome"></strong><span id="meEmail"></span></div>

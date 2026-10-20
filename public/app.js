@@ -15,8 +15,14 @@ const DOW = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const hoje = new Date();
 const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
+const VIEWS_TAREFAS = ['calendario', 'quadro', 'lista'];
+const VIEWS_VALIDAS = ['painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios'];
+const viewSalva = localStorageGet('pbh_view');
+const tarefasSalva = localStorageGet('pbh_view_tarefas');
+
 const S = {
-  view: 'painel',
+  view: VIEWS_VALIDAS.includes(viewSalva) ? viewSalva : 'painel',
+  viewTarefas: VIEWS_TAREFAS.includes(tarefasSalva) ? tarefasSalva : 'calendario',
   clients: [],
   cliente: localStorageGet('pbh_cliente') || '',
   mes: hojeISO.slice(0, 7),
@@ -83,6 +89,7 @@ function mostrarEu() {
   $('#meNome').textContent = S.me.nome || S.me.email.split('@')[0];
   $('#meEmail').textContent = S.me.email;
   $('#navUsuarios').classList.toggle('hidden', S.me.papel !== 'admin');
+  $('#secAdmin').classList.toggle('hidden', S.me.papel !== 'admin');
   if (S.view === 'usuarios' && S.me.papel !== 'admin') S.view = 'painel';
 }
 
@@ -159,7 +166,20 @@ $('#fCliente').addEventListener('change', (e) => { S.cliente = e.target.value; l
 $('#mesPrev').addEventListener('click', () => mudarMes(-1));
 $('#mesNext').addEventListener('click', () => mudarMes(1));
 $('#novaTarefa').addEventListener('click', () => abrirTarefa(null, {}));
-$$('#nav a').forEach((a) => a.addEventListener('click', () => { S.view = a.dataset.view; render(); }));
+$$('#nav a').forEach((a) => a.addEventListener('click', () => {
+  S.view = a.dataset.grupo === 'tarefas' ? S.viewTarefas : a.dataset.view;
+  render();
+}));
+
+// Seletor Calendário / Quadro / Lista: três jeitos de ver as mesmas tarefas
+const ROTULO_TAREFAS = { calendario: 'Calendário', quadro: 'Quadro', lista: 'Lista' };
+function seletorTarefas() {
+  return `<div class="seg" role="tablist" aria-label="Forma de ver as tarefas">${VIEWS_TAREFAS.map((k) =>
+    `<button role="tab" aria-selected="${S.view === k}" data-vt="${k}" class="${S.view === k ? 'on' : ''}">${ROTULO_TAREFAS[k]}</button>`).join('')}</div>`;
+}
+function ligarSeletorTarefas(el) {
+  $$('[data-vt]', el).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.vt; render(); }));
+}
 
 function mudarMes(delta) {
   const [y, m] = S.mes.split('-').map(Number);
@@ -175,10 +195,21 @@ async function carregarTarefas() {
 }
 
 async function render() {
-  $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === S.view));
+  if (VIEWS_TAREFAS.includes(S.view)) { S.viewTarefas = S.view; localStorageSet('pbh_view_tarefas', S.view); }
+  localStorageSet('pbh_view', S.view);
+  $$('#nav a').forEach((a) => {
+    const ativo = a.dataset.grupo === 'tarefas' ? VIEWS_TAREFAS.includes(S.view) : a.dataset.view === S.view;
+    a.classList.toggle('active', ativo);
+    if (ativo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
   $('#mesLabel').textContent = mesLabel(S.mes);
-  const semMes = ['materiais', 'clientes', 'captacao', 'usuarios', 'programacao', 'area'].includes(S.view);
+  const semMes = ['materiais', 'clientes', 'usuarios', 'programacao', 'area'].includes(S.view);
   $('.mes').style.display = semMes ? 'none' : '';
+  // "Nova tarefa" só aparece onde faz sentido criar tarefa
+  $('#novaTarefa').style.display = ['materiais', 'clientes', 'usuarios', 'programacao'].includes(S.view) ? 'none' : '';
+  // filtro de cliente não se aplica à gestão de usuários
+  $('#fCliente').style.display = S.view === 'usuarios' ? 'none' : '';
+  window.scrollTo({ top: 0 });
   const v = $('#view');
   try {
     if (!['materiais', 'clientes', 'usuarios', 'programacao', 'area'].includes(S.view)) await carregarTarefas();
@@ -285,7 +316,7 @@ function viewCalendario(v) {
     </div>`;
   }
   v.innerHTML = `
-    <div class="view-head"><div><h2>Calendário</h2><p>Clique em um item para editar ou no + para criar no dia.</p></div></div>
+    <div class="view-head"><div><h2>Tarefas</h2><p>Clique em um item para editar ou no + para criar no dia.</p></div>${seletorTarefas()}</div>
     <div class="cal">${html}</div>
     <div class="cal-legend">
       <span><span class="dot" style="background:var(--post)"></span> Post no feed</span>
@@ -294,6 +325,7 @@ function viewCalendario(v) {
       <span>Itens riscados já foram publicados</span>
     </div>`;
   ligarLinhas(v);
+  ligarSeletorTarefas(v);
   $$('[data-nova]', v).forEach((b) => b.addEventListener('click', () => abrirTarefa(null, { data: b.dataset.nova })));
 }
 
@@ -302,7 +334,8 @@ function viewQuadro(v) {
   const filtros = { post: 'Feed', story: 'Stories', blog: 'Blog SEO', captacao: 'Captação', '': 'Todos' };
   const lista = S.tasks.filter((t) => !S.quadroTipo || t.tipo === S.quadroTipo);
   v.innerHTML = `
-    <div class="view-head"><div><h2>Quadro de produção</h2><p>Arraste os cartões para mudar a etapa.</p></div>
+    <div class="view-head"><div><h2>Tarefas</h2><p>Arraste os cartões para mudar a etapa.</p></div>${seletorTarefas()}</div>
+    <div class="subbar"><span class="muted">Mostrar:</span>
       <div class="seg">${Object.entries(filtros).map(([k, l]) => `<button data-tipo="${k}" class="${S.quadroTipo === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="board">${STATUS.map((s) => {
     const cards = lista.filter((t) => t.status === s);
@@ -314,6 +347,7 @@ function viewQuadro(v) {
           <div class="meta">${t.formato ? esc(t.formato) : ''}${t.responsavel ? ' · ' + esc(t.responsavel) : ''}${S.cliente ? '' : ' · ' + esc(clienteNome(t.client_id))}</div>
         </div>`).join('')}</div>`;
   }).join('')}</div>`;
+  ligarSeletorTarefas(v);
   $$('[data-tipo]', v).forEach((b) => b.addEventListener('click', () => { S.quadroTipo = b.dataset.tipo; viewQuadro(v); }));
   $$('.kcard', v).forEach((c) => {
     c.addEventListener('click', () => abrirTarefa(S.tasks.find((t) => t.id === Number(c.dataset.id))));
@@ -342,7 +376,8 @@ function viewLista(v) {
   const lista = S.tasks.filter((t) => (!f.tipo || t.tipo === f.tipo) && (!f.status || t.status === f.status) &&
     (!b || [t.tema, t.legenda, t.editorial, t.responsavel, t.briefing].some((x) => (x || '').toLowerCase().includes(b))));
   v.innerHTML = `
-    <div class="view-head"><div><h2>Todas as tarefas</h2><p>${lista.length} itens em ${esc(mesLabel(S.mes))} (inclui tarefas sem data)</p></div>
+    <div class="view-head"><div><h2>Tarefas</h2><p>${lista.length} itens em ${esc(mesLabel(S.mes))} (inclui tarefas sem data)</p></div>${seletorTarefas()}</div>
+    <div class="subbar">
       <div class="toolbar">
         <input id="lBusca" placeholder="Buscar tema, legenda, responsável…" value="${esc(f.busca)}" style="width:240px">
         <select id="lTipo" style="width:auto"><option value="">Todos os tipos</option>${Object.entries(TIPO_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
@@ -365,6 +400,7 @@ function viewLista(v) {
     viewLista._t = setTimeout(() => { viewLista(v); const i = $('#lBusca'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250);
   });
   ligarLinhas(v);
+  ligarSeletorTarefas(v);
 }
 
 // ---------------- Captação ----------------
@@ -712,7 +748,13 @@ function abrirTarefa(t, padrao = {}) {
     .map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('');
   d.innerHTML = `<form method="dialog">
     <div class="modal-head"><h3>${novo ? 'Nova tarefa' : esc(tituloTarefa(t))}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="detalhes" class="on">Detalhes</button>
+      <button type="button" role="tab" data-tab="conteudo">Conteúdo</button>
+      <button type="button" role="tab" data-tab="materiais">Materiais<span class="n" id="nMateriais"></span></button>
+    </div>
     <div class="modal-body">
+     <div class="tab-pane on" data-pane="detalhes">
       <div class="row">
         <div><label>Cliente</label><select id="tCliente">${S.clients.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
         <div><label>Tipo</label><select id="tTipo">${Object.entries(TIPO_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
@@ -730,6 +772,8 @@ function abrirTarefa(t, padrao = {}) {
           <option value="Experiência do cliente / hospedagens"><option value="Dicas de conteúdos para hóspedes e investidores"><option value="Datas especiais"><option value="Programação dos resorts"></datalist></div>
       </div>
       <div id="kwWrap"><label>Palavra-chave SEO</label><input id="tKw" value="${esc(t.palavra_chave || '')}" placeholder="Ex.: apartamento em Muro Alto"></div>
+     </div>
+     <div class="tab-pane" data-pane="conteudo">
       <div class="ia-box">
         <div class="ia-head"><div><strong>Agente de conteúdo</strong><span class="muted"> · escreve a partir do tema, do briefing e do contexto do cliente</span></div>
           <button type="button" class="btn small primary" id="iaGerar">Gerar com IA</button></div>
@@ -738,10 +782,13 @@ function abrirTarefa(t, padrao = {}) {
       <div><label id="lblLegenda">Legenda / texto</label><textarea id="tLegenda" rows="8">${esc(t.legenda || '')}</textarea>
         <div class="counter"><span id="cont"></span><button type="button" id="copiar">Copiar texto</button></div></div>
       <div><label>Briefing visual / roteiro</label><textarea id="tBriefing" rows="6">${esc(t.briefing || '')}</textarea></div>
+     </div>
+     <div class="tab-pane" data-pane="materiais">
       <div><label>Links de material (um por linha)</label><textarea id="tLinks" rows="3" style="min-height:60px">${esc(t.links || '')}</textarea>
         <div class="linkified" id="linksVis">${linkify(t.links)}</div></div>
       <div><label>Checklist</label><div class="checklist" id="chk"></div>
         <div style="display:flex;gap:8px;margin-top:8px"><input id="chkNovo" placeholder="Adicionar item"><button type="button" class="btn small" id="chkAdd">Adicionar</button></div></div>
+     </div>
     </div>
     <div class="modal-foot">
       <div>${novo ? '' : '<button type="button" class="btn danger" id="tDel">Excluir</button>'}</div>
@@ -757,6 +804,18 @@ function abrirTarefa(t, padrao = {}) {
   ajustarTipo();
   $('#tTipo').addEventListener('change', ajustarTipo);
 
+  // Abas do modal: Detalhes · Conteúdo · Materiais
+  const irParaAba = (nome) => {
+    $$('.tabs [data-tab]', d).forEach((b) => { const on = b.dataset.tab === nome; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    $$('.tab-pane', d).forEach((p) => p.classList.toggle('on', p.dataset.pane === nome));
+  };
+  $$('.tabs [data-tab]', d).forEach((b) => b.addEventListener('click', () => irParaAba(b.dataset.tab)));
+  const contarMateriais = () => {
+    const links = ($('#tLinks').value.match(/https?:\/\/\S+/g) || []).length;
+    const n = links + t.checklist.length;
+    $('#nMateriais').textContent = n || '';
+  };
+
   const contar = () => {
     const txt = $('#tLegenda').value;
     const hashtags = (txt.match(/#[\p{L}\p{N}_]+/gu) || []).length;
@@ -768,7 +827,7 @@ function abrirTarefa(t, padrao = {}) {
   contar();
   $('#tLegenda').addEventListener('input', contar);
   $('#copiar').addEventListener('click', () => { navigator.clipboard.writeText($('#tLegenda').value); toast('Texto copiado'); });
-  $('#tLinks').addEventListener('input', (e) => { $('#linksVis').innerHTML = linkify(e.target.value); });
+  $('#tLinks').addEventListener('input', (e) => { $('#linksVis').innerHTML = linkify(e.target.value); contarMateriais(); });
 
   const desenharChk = () => {
     $('#chk').innerHTML = t.checklist.map((c, i) => `<div class="check ${c.feito ? 'feito' : ''}">
@@ -776,6 +835,7 @@ function abrirTarefa(t, padrao = {}) {
       || '<span class="muted">Sem itens.</span>';
     $$('#chk input').forEach((cb) => cb.addEventListener('change', () => { t.checklist[cb.dataset.i].feito = cb.checked; desenharChk(); }));
     $$('#chk [data-rm]').forEach((b) => b.addEventListener('click', () => { t.checklist.splice(Number(b.dataset.rm), 1); desenharChk(); }));
+    contarMateriais();
   };
   desenharChk();
   const addChk = () => { const v = $('#chkNovo').value.trim(); if (v) { t.checklist.push({ texto: v, feito: false }); $('#chkNovo').value = ''; desenharChk(); } };
