@@ -162,6 +162,21 @@ CREATE TABLE IF NOT EXISTS materials (
   evitar BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Quadros da home: pautas em A fazer / Em andamento / Finalizado
+CREATE TABLE IF NOT EXISTS pautas_home (
+  id SERIAL PRIMARY KEY,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  coluna TEXT NOT NULL DEFAULT 'fazer',       -- fazer | andamento | finalizado
+  nome TEXT NOT NULL,
+  link_pauta TEXT,
+  link_imagens TEXT,
+  descricao TEXT,
+  ordem INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS pautas_home_cliente ON pautas_home (client_id, coluna, ordem);
 `;
 
 const BLOG_CHECKLIST = [

@@ -259,7 +259,9 @@ function viewPainel(v) {
 
   v.innerHTML = `
     <div class="view-head"><div><h2>Painel · ${esc(mesLabel(S.mes))}</h2>
-      <p>${cls.length === 1 ? esc(cls[0].nome) : 'Todos os clientes'} · metas do contrato e andamento das entregas</p></div></div>
+      <p>${cls.length === 1 ? esc(cls[0].nome) : 'Todos os clientes'} · pautas e andamento das entregas</p></div></div>
+    <div id="pautas"></div>
+    <h3 class="secao-h">Metas do mês</h3>
     <div class="grid cols-3">
       <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--post)"></span>Posts no feed</div>
         <div class="big">${pub(posts)}<small> / ${metaPosts} publicados</small></div>
@@ -279,6 +281,116 @@ function viewPainel(v) {
     </div>`;
   ligarLinhas(v);
   $$('[data-go]', v).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.view = a.dataset.go; render(); }));
+  carregarPautas();
+}
+
+// ---------------- Quadros da home: A fazer / Em andamento / Finalizado ----------------
+const COLUNAS_PAUTA = [['fazer', 'A fazer'], ['andamento', 'Em andamento'], ['finalizado', 'Finalizado']];
+S.pautas = [];
+
+async function carregarPautas() {
+  const box = $('#pautas');
+  if (!box) return;
+  try {
+    S.pautas = await api('/api/pautas' + (S.cliente ? '?client_id=' + S.cliente : ''));
+    desenharPautas();
+  } catch (e) {
+    box.innerHTML = `<div class="empty">Não foi possível carregar as pautas: ${esc(e.message)}</div>`;
+  }
+}
+
+function cardPauta(p) {
+  const i = COLUNAS_PAUTA.findIndex(([k]) => k === p.coluna);
+  return `<article class="pcard" draggable="true" data-p="${p.id}">
+    <div class="pcard-top"><strong class="pcard-nome">${esc(p.nome)}</strong>
+      <span class="pcard-mv">${i > 0 ? `<button type="button" data-mv="${p.id}" data-to="${COLUNAS_PAUTA[i - 1][0]}" title="Mover para ${COLUNAS_PAUTA[i - 1][1]}" aria-label="Mover para ${COLUNAS_PAUTA[i - 1][1]}">‹</button>` : ''}${i < COLUNAS_PAUTA.length - 1 ? `<button type="button" data-mv="${p.id}" data-to="${COLUNAS_PAUTA[i + 1][0]}" title="Mover para ${COLUNAS_PAUTA[i + 1][1]}" aria-label="Mover para ${COLUNAS_PAUTA[i + 1][1]}">›</button>` : ''}</span></div>
+    ${S.cliente ? '' : `<div class="pcard-cli">${esc(clienteNome(p.client_id))}</div>`}
+    ${p.descricao ? `<p class="pcard-desc">${esc(p.descricao)}</p>` : ''}
+    <div class="pcard-links">
+      ${p.link_pauta ? `<a class="chip-link" href="${esc(p.link_pauta)}" target="_blank" rel="noopener">Pauta ↗</a>` : '<span class="chip-link vazio">Sem link da pauta</span>'}
+      ${p.link_imagens ? `<a class="chip-link" href="${esc(p.link_imagens)}" target="_blank" rel="noopener">Imagens ↗</a>` : '<span class="chip-link vazio">Sem imagens</span>'}
+    </div>
+    <button type="button" class="pcard-edit" data-edit-p="${p.id}">Editar</button>
+  </article>`;
+}
+
+function desenharPautas() {
+  const box = $('#pautas');
+  if (!box) return;
+  box.innerHTML = `<div class="pboard">${COLUNAS_PAUTA.map(([k, rot]) => {
+    const cards = S.pautas.filter((p) => p.coluna === k);
+    return `<section class="pcol" data-col="${k}" aria-label="${rot}">
+      <header><h4>${rot} <span class="n">${cards.length}</span></h4>
+        <button type="button" class="btn small" data-add-p="${k}">+ Adicionar</button></header>
+      <div class="pcol-body">${cards.map(cardPauta).join('') || '<div class="pvazio">Nenhuma pauta aqui.</div>'}</div>
+    </section>`;
+  }).join('')}</div>`;
+
+  $$('[data-add-p]', box).forEach((b) => b.addEventListener('click', () => abrirPauta(null, b.dataset.addP)));
+  $$('[data-edit-p]', box).forEach((b) => b.addEventListener('click', () => abrirPauta(S.pautas.find((p) => p.id === Number(b.dataset.editP)))));
+  $$('[data-mv]', box).forEach((b) => b.addEventListener('click', () => moverPauta(Number(b.dataset.mv), b.dataset.to)));
+  $$('.pcard', box).forEach((c) => c.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', 'p' + c.dataset.p); c.classList.add('arrastando'); }));
+  $$('.pcard', box).forEach((c) => c.addEventListener('dragend', () => c.classList.remove('arrastando')));
+  $$('.pcol', box).forEach((col) => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drop'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drop'));
+    col.addEventListener('drop', (e) => {
+      e.preventDefault(); col.classList.remove('drop');
+      const raw = e.dataTransfer.getData('text/plain');
+      if (raw.startsWith('p')) moverPauta(Number(raw.slice(1)), col.dataset.col);
+    });
+  });
+}
+
+async function moverPauta(id, coluna) {
+  const p = S.pautas.find((x) => x.id === id);
+  if (!p || p.coluna === coluna) return;
+  const antes = p.coluna;
+  p.coluna = coluna; desenharPautas();
+  try {
+    await api('/api/pautas/' + id, { method: 'PUT', body: { coluna } });
+    toast(`Movida para ${COLUNAS_PAUTA.find(([k]) => k === coluna)[1]}`);
+  } catch (e) { p.coluna = antes; desenharPautas(); toast(e.message); }
+}
+
+function abrirPauta(p, colunaPadrao = 'fazer') {
+  const novo = !p;
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>${novo ? 'Nova pauta' : 'Editar pauta'}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <div class="row">
+        <div><label>Cliente</label><select id="pCliente">${S.clients.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+        <div><label>Coluna</label><select id="pColuna">${COLUNAS_PAUTA.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
+      </div>
+      <div><label>Nome da pauta</label><input id="pNome" value="${esc(p?.nome || '')}" placeholder="Ex.: Passeio de buggy em Muro Alto" required></div>
+      <div><label>Link da pauta</label><input id="pLink" type="url" value="${esc(p?.link_pauta || '')}" placeholder="https://docs.google.com/…"></div>
+      <div><label>Link de imagens da pauta</label><input id="pImg" type="url" value="${esc(p?.link_imagens || '')}" placeholder="https://drive.google.com/…"></div>
+      <div><label>Descrição</label><textarea id="pDesc" rows="5" placeholder="O que precisa ser feito, referências, observações…">${esc(p?.descricao || '')}</textarea></div>
+    </div>
+    <div class="modal-foot"><div>${novo ? '' : '<button type="button" class="btn danger" id="pDel">Excluir</button>'}</div>
+      <div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="pSalvar">Salvar</button></div></div>
+  </form>`;
+  $('#pCliente').value = p?.client_id || Number(S.cliente) || S.clients[0]?.id;
+  $('#pColuna').value = p?.coluna || colunaPadrao;
+  d.showModal();
+  $('#pNome').focus();
+  $('#pSalvar').addEventListener('click', async () => {
+    const body = {
+      client_id: Number($('#pCliente').value), coluna: $('#pColuna').value, nome: $('#pNome').value.trim(),
+      link_pauta: $('#pLink').value.trim(), link_imagens: $('#pImg').value.trim(), descricao: $('#pDesc').value,
+    };
+    if (!body.nome) { toast('Informe o nome da pauta'); return $('#pNome').focus(); }
+    try {
+      if (novo) await api('/api/pautas', { method: 'POST', body });
+      else await api('/api/pautas/' + p.id, { method: 'PUT', body });
+      d.close(); toast('Pauta salva'); carregarPautas();
+    } catch (e) { toast(e.message); }
+  });
+  $('#pDel')?.addEventListener('click', async () => {
+    if (!confirm('Excluir esta pauta?')) return;
+    await api('/api/pautas/' + p.id, { method: 'DELETE' }); d.close(); toast('Pauta excluída'); carregarPautas();
+  });
 }
 
 function linhaTarefa(t) {

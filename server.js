@@ -489,15 +489,60 @@ app.delete('/api/materials/:id', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- Quadros da home (pautas) ----------
+const COLUNAS_PAUTA = ['fazer', 'andamento', 'finalizado'];
+const linkOpcional = (u) => { const s = String(u || '').trim(); return !s || /^https?:\/\/\S+$/i.test(s); };
+
+app.get('/api/pautas', wrap(async (req, res) => {
+  const { rows } = req.query.client_id
+    ? await pool.query('SELECT * FROM pautas_home WHERE client_id=$1 ORDER BY ordem, id', [req.query.client_id])
+    : await pool.query('SELECT * FROM pautas_home ORDER BY ordem, id');
+  res.json(rows);
+}));
+
+app.post('/api/pautas', wrap(async (req, res) => {
+  const b = req.body;
+  if (!b.client_id || !String(b.nome || '').trim()) return res.status(400).json({ erro: 'Informe o cliente e o nome da pauta' });
+  if (!linkOpcional(b.link_pauta) || !linkOpcional(b.link_imagens)) return res.status(400).json({ erro: 'Os links precisam começar com https://' });
+  const coluna = COLUNAS_PAUTA.includes(b.coluna) ? b.coluna : 'fazer';
+  const { rows: [p] } = await pool.query(
+    `INSERT INTO pautas_home (client_id, coluna, nome, link_pauta, link_imagens, descricao, ordem)
+     VALUES ($1,$2,$3,$4,$5,$6,(SELECT COALESCE(MAX(ordem),0)+1 FROM pautas_home WHERE client_id=$1 AND coluna=$2)) RETURNING *`,
+    [b.client_id, coluna, b.nome.trim(), (b.link_pauta || '').trim() || null, (b.link_imagens || '').trim() || null, b.descricao || null]);
+  res.json(p);
+}));
+
+app.put('/api/pautas/:id', wrap(async (req, res) => {
+  const b = req.body;
+  const { rows: [atual] } = await pool.query('SELECT * FROM pautas_home WHERE id=$1', [req.params.id]);
+  if (!atual) return res.status(404).json({ erro: 'Pauta não encontrada' });
+  const n = { ...atual, ...b };
+  if (!String(n.nome || '').trim()) return res.status(400).json({ erro: 'Informe o nome da pauta' });
+  if (!linkOpcional(n.link_pauta) || !linkOpcional(n.link_imagens)) return res.status(400).json({ erro: 'Os links precisam começar com https://' });
+  if (!COLUNAS_PAUTA.includes(n.coluna)) return res.status(400).json({ erro: 'Coluna inválida' });
+  const mudouColuna = n.coluna !== atual.coluna;
+  const { rows: [p] } = await pool.query(
+    `UPDATE pautas_home SET coluna=$1, nome=$2, link_pauta=$3, link_imagens=$4, descricao=$5, client_id=$6,
+       ordem = CASE WHEN $7 THEN (SELECT COALESCE(MAX(ordem),0)+1 FROM pautas_home WHERE client_id=$6 AND coluna=$1) ELSE ordem END,
+       updated_at=now() WHERE id=$8 RETURNING *`,
+    [n.coluna, n.nome.trim(), (n.link_pauta || '').trim() || null, (n.link_imagens || '').trim() || null, n.descricao || null, n.client_id, mudouColuna, req.params.id]);
+  res.json(p);
+}));
+
+app.delete('/api/pautas/:id', wrap(async (req, res) => {
+  await pool.query('DELETE FROM pautas_home WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+}));
+
 // ---------- Agente de conteúdo ----------
 require('./agente')(app, { pool, wrap });
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {
-  const [c, t, m, l] = await Promise.all(['clients', 'tasks', 'materials', 'links']
+  const [c, t, m, l, p] = await Promise.all(['clients', 'tasks', 'materials', 'links', 'pautas_home']
     .map((tb) => pool.query(`SELECT * FROM ${tb} ORDER BY id`)));
   res.setHeader('Content-Disposition', `attachment; filename="por-boas-historias-backup-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ versao: 1, gerado_em: new Date().toISOString(), clients: c.rows, tasks: t.rows, materials: m.rows, links: l.rows });
+  res.json({ versao: 1, gerado_em: new Date().toISOString(), clients: c.rows, tasks: t.rows, materials: m.rows, links: l.rows, pautas: p.rows });
 }));
 
 app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
@@ -512,6 +557,7 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
     const { rows: linksAntes } = await c.query('SELECT * FROM links');
     const { rows: contextoAntes } = await c.query('SELECT * FROM contexto_cliente');
     const { rows: geradosAntes } = await c.query('SELECT * FROM conteudos_gerados');
+    const { rows: pautasAntes } = await c.query('SELECT * FROM pautas_home');
     await c.query('TRUNCATE materials, tasks, clients RESTART IDENTITY CASCADE');
     const restore = async (tb, rows) => {
       for (const r of rows) {
@@ -531,6 +577,7 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
     await restore('acessos', acessosAntes.filter((a) => ids.has(a.client_id)));
     await restore('experiencias', expAntes.filter((e) => ids.has(e.client_id))
       .map((e) => ({ ...e, task_id: tarefas.has(e.task_id) ? e.task_id : null })));
+    await restore('pautas_home', (Array.isArray(b.pautas) ? b.pautas : pautasAntes).filter((x) => ids.has(x.client_id)));
     await restore('contexto_cliente', contextoAntes.filter((x) => ids.has(x.client_id)));
     await restore('conteudos_gerados', geradosAntes.filter((x) => ids.has(x.client_id))
       .map((x) => ({ ...x, task_id: tarefas.has(x.task_id) ? x.task_id : null })));
