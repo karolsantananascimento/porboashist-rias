@@ -17,7 +17,7 @@ const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2,
 
 const VIEWS_TAREFAS = ['calendario', 'quadro', 'lista'];
 const VIEWS_EXTRA_NOMES = ['inicio', 'criar', 'solicitacoes', 'mensagens', 'empregos', 'integracoes'];
-const VIEWS_VALIDAS = ['painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios', ...VIEWS_EXTRA_NOMES];
+const VIEWS_VALIDAS = ['visao', 'painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios', ...VIEWS_EXTRA_NOMES];
 const viewSalva = localStorageGet('pbh_view');
 const tarefasSalva = localStorageGet('pbh_view_tarefas');
 
@@ -161,7 +161,7 @@ async function carregarProjetos() {
   if (S.projeto && !S.projetos.some((p) => String(p.id) === String(S.projeto))) S.projeto = '';
 }
 
-async function abrirProjeto(id, view = 'painel') {
+async function abrirProjeto(id, view = 'visao') {
   S.projeto = id ? String(id) : '';
   S.cliente = '';
   localStorageSet('pbh_cliente', '');
@@ -228,7 +228,7 @@ async function render() {
   // "Nova tarefa" só aparece onde faz sentido criar tarefa
   $('#novaTarefa').style.display = ['materiais', 'clientes', 'usuarios', 'programacao', ...VIEWS_EXTRA_NOMES].includes(S.view) ? 'none' : '';
   // filtro de cliente não se aplica à gestão de usuários nem às telas globais
-  $('#fCliente').style.display = ['usuarios', 'inicio', 'solicitacoes', 'mensagens', 'empregos', 'integracoes'].includes(S.view) ? 'none' : '';
+  $('#fCliente').style.display = (S.projeto || ['usuarios', 'inicio', 'solicitacoes', 'mensagens', 'empregos', 'integracoes'].includes(S.view)) ? 'none' : '';
   mostrarProjetoAtual();
   window.scrollTo({ top: 0 });
   const v = $('#view');

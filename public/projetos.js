@@ -22,12 +22,52 @@ function fallbackCopiar(texto, ok) {
   t.remove();
 }
 
+// ---------------- Navegação: projeto > cliente > abas ----------------
+const ABAS = [
+  ['visao', 'Visão geral'], ['painel', 'Painel do mês'], ['tarefas', 'Tarefas'], ['captacao', 'Captação'], ['programacao', 'Programação'],
+  ['materiais', 'Materiais'], ['area', 'Links e acessos'], ['solicitacoes', 'Solicitações'], ['criar', 'Criar'], ['clientes', 'Contrato e agente'],
+];
+const VIEWS_DO_PROJETO = ['visao', 'painel', 'calendario', 'quadro', 'lista', 'captacao', 'programacao', 'materiais', 'area', 'solicitacoes', 'criar', 'clientes'];
+const clienteAtual = () => (S.cliente ? S.clients.find((c) => String(c.id) === String(S.cliente)) : null);
+
 function mostrarProjetoAtual() {
   const p = S.projeto ? projetoPorId(S.projeto) : null;
   const box = $('#projAtual');
   box.classList.toggle('hidden', !p);
-  if (p) box.innerHTML = `<span class="proj-dot" style="background:${esc(p.cor)}"></span><div><small>Projeto aberto</small><strong>${esc(p.nome)}</strong></div>`;
-  $$('#nav a[data-proj]').forEach((a) => a.classList.toggle('hidden', !p));
+  if (p) {
+    const c = clienteAtual();
+    box.innerHTML = `<span class="proj-dot" style="background:${esc(p.cor)}"></span><div><small>Projeto aberto</small><strong>${esc(p.nome)}</strong>${c ? `<small>${esc(c.nome)}</small>` : ''}</div>`;
+  }
+  // "Projetos" fica marcado em qualquer tela de dentro do projeto
+  if (p && ['visao', 'painel', 'calendario', 'quadro', 'lista', 'captacao', 'programacao', 'materiais', 'area', 'clientes'].includes(S.view)) {
+    $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === 'inicio'));
+  }
+  desenharContexto(p);
+}
+
+function desenharContexto(p) {
+  const el = $('#ctx');
+  if (!p || !VIEWS_DO_PROJETO.includes(S.view)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const c = clienteAtual();
+  const abaAtiva = ['calendario', 'quadro', 'lista'].includes(S.view) ? 'tarefas' : S.view;
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <nav class="crumbs" aria-label="Você está em">
+      <a href="#" data-crumb="inicio">Projetos</a><span>›</span>
+      <a href="#" data-crumb="projeto" ${c ? '' : 'aria-current="page"'}>${esc(p.nome)}</a>
+      ${c ? `<span>›</span><a href="#" data-crumb="cliente" aria-current="page">${esc(c.nome)}</a>` : ''}
+    </nav>
+    ${S.clients.length > 1 || c ? `<div class="chips" role="group" aria-label="Cliente">
+      <button class="chip ${c ? '' : 'on'}" data-cli="">Todos</button>
+      ${S.clients.map((x) => `<button class="chip ${c && c.id === x.id ? 'on' : ''}" data-cli="${x.id}">${esc(x.nome)}</button>`).join('')}</div>` : ''}
+    <div class="ctx-tabs" role="tablist">${ABAS.map(([k, l]) => `<button role="tab" data-aba="${k}" aria-selected="${abaAtiva === k}" class="${abaAtiva === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  $$('[data-crumb]', el).forEach((a) => a.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (a.dataset.crumb === 'inicio') return abrirProjeto('', 'inicio');
+    S.cliente = ''; localStorageSet('pbh_cliente', ''); S.view = 'visao'; render();
+  }));
+  $$('[data-cli]', el).forEach((b) => b.addEventListener('click', () => { S.cliente = b.dataset.cli; localStorageSet('pbh_cliente', S.cliente); render(); }));
+  $$('[data-aba]', el).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.aba === 'tarefas' ? S.viewTarefas : b.dataset.aba; render(); }));
 }
 
 const opcoesProjetos = (sel) => S.projetos.map((p) => `<option value="${p.id}" ${String(p.id) === String(sel) ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');
@@ -49,7 +89,7 @@ async function viewInicio(v) {
         ${p.nomes_clientes.length ? `<div class="proj-tags">${p.nomes_clientes.slice(0, 6).map((n) => `<i>${esc(n)}</i>`).join('')}</div>` : ''}
       </button>
       <div class="proj-acts">
-        <button class="btn small" data-abrir="${p.id}">Abrir painel</button>
+        <button class="btn small" data-abrir="${p.id}">Abrir projeto</button>
         <button class="btn small" data-criar-em="${p.id}">✦ Criar</button>
         <button class="btn small" data-solic-em="${p.id}">✉ Solicitações</button>
         <button class="btn ghost small" data-editar="${p.id}">Contexto</button>
@@ -79,7 +119,7 @@ async function viewInicio(v) {
     ${AGENTES.length && !AGENTES[0].ativo ? '<div class="alerta">Os agentes ainda não estão ativos: falta configurar <b>ANTHROPIC_API_KEY</b> no Render.</div>' : ''}
     <div class="ag-grid">${acoes}</div>`;
 
-  $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.abrir, 'painel')));
+  $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.abrir, 'visao')));
   $$('[data-criar-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.criarEm, 'criar')));
   $$('[data-solic-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.solicEm, 'solicitacoes')));
   $$('[data-editar]', v).forEach((b) => b.addEventListener('click', () => abrirContextoProjeto(projetoPorId(b.dataset.editar))));
@@ -279,6 +319,129 @@ async function viewCriar(v) {
     mostrarCriacao(c, $('#crSaida'));
     d.addEventListener('close', () => render(), { once: true });
   }));
+}
+
+// ---------------- Visão geral: tudo do projeto ou do cliente num lugar só ----------------
+async function viewVisao(v) {
+  await Promise.all([carregarProjetos(), carregarAgentes()]);
+  const p = S.projeto ? projetoPorId(S.projeto) : null;
+  if (!p) { S.view = 'inicio'; return render(); }
+  const c = clienteAtual();
+  return c ? visaoCliente(v, p, c) : visaoProjeto(v, p);
+}
+
+const statsCliente = (tasks, cl) => {
+  const doMes = tasks.filter((t) => t.client_id === cl.id && t.data && t.data.startsWith(S.mes));
+  const posts = doMes.filter((t) => t.tipo === 'post');
+  return {
+    posts: posts.length, publicados: posts.filter((t) => t.status === 'publicado').length, meta: cl.meta_posts,
+    atrasadas: doMes.filter((t) => t.tipo !== 'story' && t.data < hojeISO && t.status !== 'publicado').length,
+    capt: tasks.filter((t) => t.client_id === cl.id && t.tipo === 'captacao' && t.status !== 'publicado').length,
+  };
+};
+
+async function visaoProjeto(v, p) {
+  const [sols] = await Promise.all([api('/api/solicitacoes?project_id=' + p.id)]);
+  const abertas = sols.filter((x) => ['nova', 'andamento'].includes(x.status));
+  const proximas = S.tasks.filter((t) => t.tipo !== 'story' && t.status !== 'publicado' && t.data && t.data >= hojeISO).slice(0, 8);
+  const cartoes = S.clients.map((cl) => {
+    const st = statsCliente(S.tasks, cl);
+    return `<button class="card cli-card" data-cli="${cl.id}">
+      <h3>${esc(cl.nome)}</h3>
+      <div class="muted" style="margin:2px 0 10px">${esc((cl.marcas || []).join(' · ') || cl.site || '')}</div>
+      <div class="proj-stats"><span><b>${st.publicados}</b>/${st.meta} posts</span><span class="${st.atrasadas ? 'late' : ''}"><b>${st.atrasadas}</b> atrasadas</span><span><b>${st.capt}</b> captações</span></div></button>`;
+  }).join('');
+  v.innerHTML = `
+    <div class="view-head"><div><h2>${esc(p.nome)}</h2><p>${esc(p.descricao || '')}</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vpCtx">Contexto do projeto</button><button class="btn" id="vpLink">🔗 Link de solicitações</button></div></div>
+    <h3 class="secao-h" style="margin-top:0">Clientes</h3>
+    ${cartoes ? `<div class="proj-grid">${cartoes}</div>` : '<div class="empty">Este projeto ainda não tem clientes. Adicione em Contrato e agente.</div>'}
+    <div class="grid cols-2" style="margin-top:18px">
+      <div class="card"><h3 style="margin-bottom:8px">Próximas entregas</h3>
+        ${proximas.length ? proximas.map(linhaTarefa).join('') : '<div class="empty">Nenhuma entrega pendente a partir de hoje.</div>'}</div>
+      <div class="card"><h3 style="margin-bottom:8px">Solicitações em aberto <span class="pill">${abertas.length}</span></h3>
+        ${abertas.length ? abertas.slice(0, 6).map((x) => `<div class="alerta">${esc(x.titulo)} <small class="muted">· ${esc(SOL_TIPOS[x.tipo])}${x.prazo ? ' · prazo ' + fmtPrazo(x.prazo) : ''}</small></div>`).join('') : '<div class="empty">Nada pendente.</div>'}
+        <div class="acoes-res"><button class="btn small" id="vpSol">Abrir solicitações</button></div></div>
+    </div>
+    <h3 class="secao-h">Criar neste projeto</h3>
+    <div class="ag-grid">${['hugo', 'luiz', 'davi', 'camila'].map((id) => { const a = agente(id); return `<button class="ag-card" data-ag="${id}"><span class="ag-ico">${a.icone}</span><span><b>${esc(a.nome)}</b><small>${esc(a.cargo)}</small></span></button>`; }).join('')}</div>`;
+  ligarLinhas(v);
+  $$('[data-cli]', v).forEach((b) => b.addEventListener('click', () => { S.cliente = b.dataset.cli; localStorageSet('pbh_cliente', S.cliente); render(); }));
+  $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag)));
+  $('#vpCtx', v).onclick = () => abrirContextoProjeto(p);
+  $('#vpLink', v).onclick = () => abrirLinkSolicitacao(p);
+  $('#vpSol', v).onclick = () => { S.view = 'solicitacoes'; render(); };
+}
+
+async function visaoCliente(v, p, cl) {
+  const [ctx, links, mats, exps, ac, sols] = await Promise.all([
+    api(`/api/clients/${cl.id}/contexto`), api(`/api/clients/${cl.id}/links`), api(`/api/materials?client_id=${cl.id}`),
+    api(`/api/experiencias?client_id=${cl.id}`), api(`/api/clients/${cl.id}/acessos`), api('/api/solicitacoes?project_id=' + p.id)]);
+  const st = statsCliente(S.tasks, cl);
+  const tarefasCl = S.tasks.filter((t) => t.client_id === cl.id);
+  const proximas = tarefasCl.filter((t) => t.tipo !== 'story' && t.status !== 'publicado' && t.data && t.data >= hojeISO).slice(0, 6);
+  const abertas = sols.filter((x) => ['nova', 'andamento'].includes(x.status) && (!x.client_id || x.client_id === cl.id));
+  const porCat = {}; mats.forEach((m) => { if (!m.evitar) porCat[m.categoria || 'Sem categoria'] = (porCat[m.categoria || 'Sem categoria'] || 0) + 1; });
+  const contato = [
+    cl.site && `<a href="https://${esc(String(cl.site).replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${esc(cl.site)}</a>`,
+    cl.whatsapp && `<a href="https://wa.me/${esc(String(cl.whatsapp).replace(/\D/g, ''))}" target="_blank" rel="noopener">WhatsApp ${esc(cl.whatsapp)}</a>`,
+    cl.instagram && `<a href="https://instagram.com/${esc(String(cl.instagram).replace(/^@/, ''))}" target="_blank" rel="noopener">@${esc(String(cl.instagram).replace(/^@/, ''))}</a>`,
+  ].filter(Boolean).join(' · ');
+  const campo = (rot, txt) => (txt && txt.trim() ? `<div class="info-l"><label>${rot}</label><p>${esc(txt)}</p></div>` : '');
+  const aprovados = exps.filter((e) => /confirm/i.test(e.status || '')).length;
+
+  v.innerHTML = `
+    <div class="view-head"><div><h2>${esc(cl.nome)}</h2>
+      ${(cl.marcas || []).length ? `<div class="marcas">${cl.marcas.map((m) => `<span class="tag">${esc(m)}</span>`).join('')}</div>` : ''}
+      ${contato ? `<p>${contato}</p>` : ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vcCtx">Editar contexto do agente</button></div></div>
+
+    <div class="grid cols-3">
+      <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--post)"></span>Posts no feed · ${esc(mesLabel(S.mes))}</div>
+        <div class="big">${st.publicados}<small> / ${cl.meta_posts} publicados</small></div><div class="muted">${st.posts} no calendário</div></div>
+      <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--story)"></span>Contrato</div>
+        <div class="big">${cl.meta_posts}<small> posts/mês</small></div><div class="muted">${cl.meta_stories_dia ? cl.meta_stories_dia + ' stories por dia · ' : 'sem stories · '}${cl.meta_blog} blog/mês</div></div>
+      <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--captacao)"></span>Atenção</div>
+        <div class="big">${st.atrasadas}<small> atrasadas</small></div><div class="muted">${st.capt} captações em aberto · ${abertas.length} solicitações</div></div>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:16px">
+      <div class="card"><h3 style="margin-bottom:8px">Próximas entregas</h3>
+        ${proximas.length ? proximas.map(linhaTarefa).join('') : '<div class="empty">Nenhuma entrega pendente a partir de hoje.</div>'}
+        <div class="acoes-res"><button class="btn small" data-aba-ir="calendario">Calendário</button><button class="btn small" data-aba-ir="quadro">Quadro</button><button class="btn small" data-aba-ir="captacao">Captação</button></div></div>
+      <div class="card"><h3 style="margin-bottom:8px">Solicitações em aberto <span class="pill">${abertas.length}</span></h3>
+        ${abertas.length ? abertas.slice(0, 5).map((x) => `<div class="alerta">${esc(x.titulo)} <small class="muted">· ${esc(SOL_TIPOS[x.tipo])}</small></div>`).join('') : '<div class="empty">Nada pendente.</div>'}
+        <div class="acoes-res"><button class="btn small" data-aba-ir="solicitacoes">Abrir solicitações</button></div></div>
+    </div>
+
+    <h3 class="secao-h">Sobre o cliente e como escrever por ele</h3>
+    <div class="card info-grid">
+      ${cl.observacoes ? `<div class="info-l" style="grid-column:1/-1"><label>Observações</label><p>${esc(cl.observacoes)}</p></div>` : ''}
+      ${campo('Tom de voz', ctx.tom_de_voz)}${campo('Público', ctx.publico)}${campo('Pilares de conteúdo', ctx.pilares)}
+      ${campo('Regras', ctx.regras)}${campo('Rodapé padrão', ctx.rodape)}
+      ${ctx.conhecimento ? `<details class="info-l" style="grid-column:1/-1"><summary><b>Base de conhecimento</b> (${ctx.conhecimento.split('\n').filter(Boolean).length} fatos)</summary><p>${esc(ctx.conhecimento)}</p></details>` : ''}
+    </div>
+
+    <div class="secao-titulo"><h3>Links rápidos <span class="tag">${links.length}</span></h3><button class="btn small" data-aba-ir="area">Ver tudo e acessos</button></div>
+    ${links.length ? `<div class="atalhos">${links.slice(0, 9).map((l) => { const [ic, cor] = iconeLink(l.url); return `
+      <a class="atalho" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="ic" style="background:${cor}">${ic}</span>
+        <span class="tx"><strong>${esc(l.titulo)}</strong><span>${esc(l.observacao || dominio(l.url))}</span></span></a>`; }).join('')}</div>` : '<div class="empty" style="padding:16px">Nenhum link ainda.</div>'}
+
+    <div class="grid cols-2" style="margin-top:16px">
+      <div class="card"><h3 style="margin-bottom:8px">Materiais <span class="tag">${mats.length}</span></h3>
+        <div class="proj-tags">${Object.entries(porCat).map(([k, n]) => `<i>${esc(k)} · ${n}</i>`).join('') || '<span class="muted">Sem materiais.</span>'}</div>
+        <div class="acoes-res"><button class="btn small" data-aba-ir="materiais">Abrir materiais</button></div></div>
+      <div class="card"><h3 style="margin-bottom:8px">Programação e acessos</h3>
+        <p class="muted" style="margin:0 0 8px">${exps.length ? `${exps.length} experiências e datas na planilha${aprovados ? ` (${aprovados} confirmadas)` : ''}.` : 'Sem planilha de programação.'} ${ac.acessos.length + ac.ocultos} acessos cadastrados.</p>
+        <div class="acoes-res">${exps.length ? '<button class="btn small" data-aba-ir="programacao">Programação</button>' : ''}<button class="btn small" data-aba-ir="area">Acessos</button></div></div>
+    </div>
+
+    <h3 class="secao-h">Criar para ${esc(cl.nome)}</h3>
+    <div class="ag-grid">${['hugo', 'luiz', 'davi', 'camila'].map((id) => { const a = agente(id); return `<button class="ag-card" data-ag="${id}"><span class="ag-ico">${a.icone}</span><span><b>${esc(a.nome)}</b><small>${esc(a.cargo)}</small></span></button>`; }).join('')}</div>`;
+  ligarLinhas(v);
+  $$('[data-aba-ir]', v).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.abaIr; render(); }));
+  $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag, { projeto: p.id, cliente: cl.id })));
+  $('#vcCtx', v).onclick = () => abrirContextoAgente(cl.id);
 }
 
 // ---------------- Solicitações (janela de cada projeto) ----------------
@@ -774,4 +937,4 @@ async function abrirPublicar(texto) {
   setTimeout(() => toast(msg), 1500);
 })();
 
-window.VIEWS_EXTRA = { inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };
+window.VIEWS_EXTRA = { visao: viewVisao, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };

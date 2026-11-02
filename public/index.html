@@ -45,19 +45,10 @@
       <div class="proj-atual hidden" id="projAtual"></div>
       <nav id="nav" aria-label="Navegação principal">
         <a data-view="inicio" class="active"><i>⌂</i>Projetos</a>
+
+        <span class="nav-sec">Central</span>
         <a data-view="criar"><i>✦</i>Criar</a>
         <a data-view="solicitacoes"><i>✉</i>Solicitações</a>
-        <a data-view="painel" data-proj="1"><i>◧</i>Painel do projeto</a>
-
-        <span class="nav-sec">Produção</span>
-        <a data-view="calendario" data-grupo="tarefas"><i>▦</i>Tarefas</a>
-        <a data-view="captacao"><i>◉</i>Captação</a>
-        <a data-view="programacao"><i>☰</i>Programação</a>
-
-        <span class="nav-sec">Clientes</span>
-        <a data-view="area"><i>★</i>Área do cliente</a>
-        <a data-view="materiais"><i>▤</i>Materiais</a>
-        <a data-view="clientes"><i>☺</i>Contratos</a>
 
         <span class="nav-sec">Equipe de agentes</span>
         <a data-view="mensagens"><i>💬</i>Mensagens (Meta)</a>
@@ -85,6 +76,7 @@
         </div>
         <button class="btn primary" id="novaTarefa">+ Nova tarefa</button>
       </header>
+      <div id="ctx" class="ctx hidden"></div>
       <section id="view"></section>
     </main>
   </div>
