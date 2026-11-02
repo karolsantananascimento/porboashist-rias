@@ -11,6 +11,8 @@ const CHAVES = {
   META_VERIFY_TOKEN: { grupo: 'meta', rotulo: 'Meta · Token de verificação do webhook (opcional)', secreto: false, porCliente: true },
   LINKEDIN_CLIENT_ID: { grupo: 'linkedin', rotulo: 'LinkedIn · Client ID', secreto: false, porCliente: true },
   LINKEDIN_CLIENT_SECRET: { grupo: 'linkedin', rotulo: 'LinkedIn · Client Secret', secreto: true, porCliente: true },
+  GOOGLE_CLIENT_ID: { grupo: 'google', rotulo: 'Google · ID do cliente OAuth', secreto: false, porCliente: true },
+  GOOGLE_CLIENT_SECRET: { grupo: 'google', rotulo: 'Google · Chave secreta do cliente OAuth', secreto: true, porCliente: true },
 };
 
 const cache = new Map(); // `${clienteId}|${chave}`

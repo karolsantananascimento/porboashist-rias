@@ -10,6 +10,10 @@ const GRAPH = 'https://graph.facebook.com/v21.0';
 const META_ESCOPOS = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'pages_messaging',
   'instagram_basic', 'instagram_content_publish', 'instagram_manage_messages'];
 const LINKEDIN_ESCOPOS = ['openid', 'profile', 'w_member_social'];
+// Google: ler fotos e vídeos do Drive e criar os documentos de pauta (drive.file só enxerga o que o sistema cria)
+const GOOGLE_ESCOPOS = ['openid', 'email', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file'];
+const GOOGLE_AUTH = process.env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN = process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token';
 
 const base = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
@@ -145,6 +149,39 @@ function registrar(app, { pool, wrap, soAdmin }) {
     } catch (e) { console.error('Erro OAuth LinkedIn', e.message); voltar(res, 'Não consegui concluir a conexão com o LinkedIn: ' + e.message, false, cid); }
   }));
 
+  // ----- Google (Drive e Docs) -----
+  app.get('/oauth/google/iniciar', wrap(async (req, res) => {
+    const cid = Number(req.query.client_id);
+    const cl = cid ? await clienteDe(cid) : null;
+    if (!cl) return voltar(res, 'Escolha o cliente antes de conectar.', false);
+    if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false, cid);
+    if (!cfg('GOOGLE_CLIENT_ID', cid) || !cfg('GOOGLE_CLIENT_SECRET', cid)) return voltar(res, 'Falta o cliente OAuth do Google: cole o ID e a chave secreta (do cliente ou as padrão).', false, cid);
+    const u = new URL(GOOGLE_AUTH);
+    u.search = new URLSearchParams({
+      client_id: cfg('GOOGLE_CLIENT_ID', cid), redirect_uri: `${base(req)}/oauth/google/retorno`, response_type: 'code',
+      scope: GOOGLE_ESCOPOS.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state: novoState(req.user.id, cid),
+    });
+    res.redirect(u.toString());
+  }));
+
+  app.get('/oauth/google/retorno', wrap(async (req, res) => {
+    const cid = lerState(req.query.state, req.user.id);
+    if (req.query.error) return voltar(res, 'O Google cancelou a conexão: ' + req.query.error, false, cid);
+    if (!cid || req.user.papel !== 'admin') return voltar(res, 'Conexão inválida. Tente de novo.', false, cid);
+    try {
+      const t = await jsonDe(GOOGLE_TOKEN, {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code: String(req.query.code), redirect_uri: `${base(req)}/oauth/google/retorno`,
+          client_id: cfg('GOOGLE_CLIENT_ID', cid), client_secret: cfg('GOOGLE_CLIENT_SECRET', cid) }) });
+      if (!t.refresh_token) return voltar(res, 'O Google não devolveu a permissão permanente. Remova o acesso do app na sua conta Google e conecte de novo.', false, cid);
+      if (!String(t.scope || '').includes('drive.readonly')) return voltar(res, 'Faltou liberar a leitura do Drive. Conecte de novo e marque todas as permissões.', false, cid);
+      let email = null;
+      try { const eu = await jsonDe('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${t.access_token}` } }); email = eu.email || null; } catch { /* e-mail é só informativo */ }
+      await salvarConexao(pool, 'google', cid, { token: t.access_token, refresh_token: t.refresh_token, expira_em: Date.now() + (t.expires_in || 3600) * 1000, email });
+      voltar(res, `Google conectado${email ? ': ' + email : ''}`, true, cid);
+    } catch (e) { console.error('Erro OAuth Google', e.message); voltar(res, 'Não consegui concluir a conexão com o Google: ' + e.message, false, cid); }
+  }));
+
   // ----- Chaves das APIs: padrão do sistema (client_id ausente) ou do cliente -----
   const escopo = (req) => Number(req.query.client_id || req.body?.client_id || 0) || 0;
   app.get('/api/configuracoes', soAdmin, (req, res) => res.json(listar(escopo(req))));
@@ -162,7 +199,7 @@ function registrar(app, { pool, wrap, soAdmin }) {
   app.get('/api/conexoes', wrap(async (req, res) => {
     const cid = Number(req.query.client_id) || 0;
     if (!cid) return res.status(400).json({ erro: 'Escolha o cliente' });
-    const [meta, li] = await Promise.all([lerConexao(pool, 'meta', cid), lerConexao(pool, 'linkedin', cid)]);
+    const [meta, li, go] = await Promise.all([lerConexao(pool, 'meta', cid), lerConexao(pool, 'linkedin', cid), lerConexao(pool, 'google', cid)]);
     const pg = meta && meta.paginas.find((p) => p.id === meta.pagina_id);
     const admin = req.user.papel === 'admin';
     res.json({
@@ -173,6 +210,10 @@ function registrar(app, { pool, wrap, soAdmin }) {
         facebook: pg ? pg.nome : null, instagram: pg?.ig_usuario || null,
         webhook: `${base(req)}/webhook/meta`, verify_token: admin ? verifyToken(cid) : null,
         redirect: `${base(req)}/oauth/meta/retorno`,
+      },
+      google: {
+        app_configurado: !!(cfg('GOOGLE_CLIENT_ID', cid) && cfg('GOOGLE_CLIENT_SECRET', cid)),
+        conectado: !!go, email: go?.email || null, redirect: `${base(req)}/oauth/google/retorno`,
       },
       linkedin: {
         app_configurado: !!(cfg('LINKEDIN_CLIENT_ID', cid) && cfg('LINKEDIN_CLIENT_SECRET', cid)),
@@ -193,7 +234,7 @@ function registrar(app, { pool, wrap, soAdmin }) {
   }));
 
   app.delete('/api/conexoes/:provedor', soAdmin, wrap(async (req, res) => {
-    if (!['meta', 'linkedin'].includes(req.params.provedor)) return res.status(400).json({ erro: 'Provedor inválido' });
+    if (!['meta', 'linkedin', 'google'].includes(req.params.provedor)) return res.status(400).json({ erro: 'Provedor inválido' });
     const cid = Number(req.query.client_id) || 0;
     await pool.query('DELETE FROM conexoes WHERE provedor=$1 AND client_id=$2', [req.params.provedor, cid]);
     if (req.params.provedor === 'meta') await pool.query('DELETE FROM meta_paginas WHERE client_id=$1', [cid]);
@@ -296,4 +337,4 @@ function registrar(app, { pool, wrap, soAdmin }) {
 }
 
 let publicarCoreRef = null;
-module.exports = { registrar, tokenDaPagina, verifyToken, lerConexao, publicar: (...a) => publicarCoreRef(...a) };
+module.exports = { registrar, tokenDaPagina, verifyToken, lerConexao, salvarConexao, jsonDe, GOOGLE_TOKEN, publicar: (...a) => publicarCoreRef(...a) };

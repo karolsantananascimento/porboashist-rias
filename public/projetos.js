@@ -501,6 +501,74 @@ function filaAprovacao(el, filtro) {
 }
 
 
+
+// ---------------- Google Drive: escolher fotos e vídeos ----------------
+async function abrirDrive(opts = {}) {
+  const q0 = opts.clienteId ? 'client_id=' + opts.clienteId : opts.projetoId ? 'project_id=' + opts.projetoId : '';
+  const d = document.createElement('dialog'); d.className = 'dlg-drive';
+  const escolhidos = new Map(); let pilha = [{ id: 'root', nome: 'Meu Drive' }]; let busca = '';
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>📁 Google Drive</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div id="dvCaminho" class="muted" style="flex:1"></div><input id="dvBusca" placeholder="Buscar por nome…" style="max-width:220px"></div>
+      <div id="dvGrade" class="dv-grade"><div class="empty" style="padding:20px">Carregando…</div></div>
+      <p class="erro" id="dvErro" style="margin:0"></p></div>
+    <div class="modal-foot"><div id="dvSel" class="muted"></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${opts.pautas ? `<select id="dvPauta" aria-label="Pauta"><option value="">Anexar à pauta…</option>${opts.pautas.map((t) => `<option value="${t.id}">${esc((t.data ? String(t.data).slice(5, 10).split('-').reverse().join('/') + ' · ' : '') + (t.tema || 'Sem título'))}</option>`).join('')}</select>` : ''}
+      <button class="btn" value="x">Fechar</button><button type="button" class="btn primary" id="dvOk" disabled>${opts.rotuloOk || 'Anexar'}</button></div></div></form>`;
+  document.body.appendChild(d); d.showModal(); d.addEventListener('close', () => d.remove());
+  const atualizaSel = () => { $('#dvSel', d).textContent = escolhidos.size ? `${escolhidos.size} selecionado(s)` : 'Clique nas fotos e vídeos para selecionar'; $('#dvOk', d).disabled = !escolhidos.size; };
+  const carrega = async () => {
+    const atual = pilha[pilha.length - 1];
+    $('#dvCaminho', d).innerHTML = busca ? `Busca: <b>${esc(busca)}</b>` : pilha.map((x, i) => `<a href="#" data-n="${i}">${esc(x.nome)}</a>`).join(' › ');
+    $$('[data-n]', d).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); pilha = pilha.slice(0, Number(a.dataset.n) + 1); carrega(); }));
+    const g = $('#dvGrade', d); g.innerHTML = '<div class="empty" style="padding:20px">Carregando…</div>'; $('#dvErro', d).textContent = '';
+    try {
+      const r = await api(`/api/drive/arquivos?${q0}&pasta=${encodeURIComponent(atual.id)}${busca ? '&q=' + encodeURIComponent(busca) : ''}`);
+      g.innerHTML = r.arquivos.length ? r.arquivos.map((f) => `<button type="button" class="dv-item ${escolhidos.has(f.id) ? 'on' : ''}" data-f="${esc(f.id)}" title="${esc(f.nome)}">
+          ${f.pasta ? '<span class="dv-ico">📁</span>' : f.thumb ? `<img loading="lazy" alt="" src="${esc(f.thumb)}" referrerpolicy="no-referrer">` : '<span class="dv-ico">🎞</span>'}
+          ${f.video ? `<i class="dv-play">▶ ${f.duracao ? f.duracao + 's' : ''}</i>` : ''}<span class="dv-nome">${esc(f.nome)}</span></button>`).join('') : '<div class="empty" style="padding:20px">Nenhuma pasta, foto ou vídeo aqui.</div>';
+      $$('.dv-item', g).forEach((b) => b.addEventListener('click', () => {
+        const f = r.arquivos.find((x) => x.id === b.dataset.f);
+        if (f.pasta) { busca = ''; $('#dvBusca', d).value = ''; pilha.push({ id: f.id, nome: f.nome }); return carrega(); }
+        if (escolhidos.has(f.id)) { escolhidos.delete(f.id); b.classList.remove('on'); } else { if (opts.unico) { escolhidos.clear(); $$('.dv-item.on', g).forEach((x) => x.classList.remove('on')); } escolhidos.set(f.id, f); b.classList.add('on'); }
+        atualizaSel();
+      }));
+    } catch (e) { g.innerHTML = ''; $('#dvErro', d).textContent = e.message; }
+  };
+  let tm; $('#dvBusca', d).addEventListener('input', (e) => { clearTimeout(tm); tm = setTimeout(() => { busca = e.target.value.trim(); carrega(); }, 400); });
+  $('#dvOk', d).onclick = async () => {
+    const arquivos = [...escolhidos.values()];
+    if (opts.aoEscolher) { const ok = await opts.aoEscolher(arquivos, d); if (ok !== false) d.close(); return; }
+    const pid = $('#dvPauta', d) && $('#dvPauta', d).value; if (!pid) return ($('#dvErro', d).textContent = 'Escolha a pauta que vai receber os arquivos');
+    try { await api(`/api/tasks/${pid}/midias`, { method: 'POST', body: { arquivos } }); toast('Anexado à pauta'); d.close(); opts.depois && opts.depois(); }
+    catch (e) { $('#dvErro', d).textContent = e.message; }
+  };
+  atualizaSel(); carrega();
+}
+
+// ---------------- Documento único de pauta ----------------
+function abrirDocPauta(filtro) {
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
+  const d = document.createElement('dialog');
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>📄 Gerar doc de pauta</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body"><p class="muted" style="margin:0">Um documento único com as datas, as legendas e os criativos (links do Canva e fotos/vídeos do Drive) de todas as pautas do mês.</p>
+      <div><label>Mês</label><input type="month" id="dcMes" value="${hoje}"></div>
+      <p class="erro" id="dcErro" style="margin:0"></p><div id="dcRes"></div></div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary" id="dcOk">Gerar documento</button></div></div></form>`;
+  document.body.appendChild(d); d.showModal(); d.addEventListener('close', () => d.remove());
+  $('#dcOk', d).onclick = async () => {
+    const b = $('#dcOk', d); b.disabled = true; b.textContent = 'Gerando…'; $('#dcErro', d).textContent = '';
+    try {
+      const r = await api('/api/docs/pauta', { method: 'POST', body: { ...filtro, mes: $('#dcMes', d).value } });
+      if (r.via === 'google') $('#dcRes', d).innerHTML = `<div class="alerta ok">✅ Documento criado no seu Google Drive com ${r.total} pauta(s).<br><a class="btn small primary" style="margin-top:8px" href="${esc(r.link)}" target="_blank" rel="noopener">Abrir no Google Docs ↗</a></div>`;
+      else {
+        const url = URL.createObjectURL(new Blob([r.html], { type: 'application/msword' })); const a = document.createElement('a'); a.href = url; a.download = r.nome.replace(/[^\w\- ·]/g, '') + '.doc'; document.body.appendChild(a); a.click(); a.remove();
+        $('#dcRes', d).innerHTML = `<div class="alerta">O Google ainda não está conectado, então baixei o documento (${r.total} pauta(s)). Ele abre no Word e no Google Docs. Para criar direto no Drive, conecte o Google em <b>Acessos e APIs</b>.</div>`;
+      }
+    } catch (e) { $('#dcErro', d).textContent = e.message; }
+    b.disabled = false; b.textContent = 'Gerar documento';
+  };
+}
+
 // ---------------- Painel Conteúdo: metas da semana e colunas por etapa (modelo do Agente de Tráfego) ----------------
 const COLUNAS_CT = [
   ['✍ Em arte', ['executando', 'erro'], '#7c5cff', 'Nada aqui. Peça uma pauta ao time ou clique em Rodar agora.'],
@@ -529,6 +597,7 @@ function painelConteudo(v, filtro, ctx) {
       ${t.esteira === 'aprovada' && /falhou|interrompida|cancelado/i.test(t.esteira_msg || '') ? `<p class="erro" style="margin:4px 0">${esc(t.esteira_msg)}</p>` : ''}
       ${['aguardando_aprovacao', 'aprovada', 'agendada', 'publicada', 'legado'].includes(col) ? `<div class="ct-texto">${esc(conteudoDaTarefa(t))}</div>` : ''}
       ${t.arte_url ? `<a class="est-arte" href="${esc(t.arte_url)}" target="_blank" rel="noopener">🎨 Abrir criativo no Canva ↗</a>` : (['aguardando_aprovacao', 'aprovada'].includes(col) ? '<small class="muted">Sem link do criativo</small>' : '')}
+      ${(t.midias || []).length ? `<div class="ct-midias" title="Fotos e vídeos do Drive">${t.midias.slice(0, 6).map((m) => `<a href="${esc(m.link || '#')}" target="_blank" rel="noopener" title="${esc(m.nome)}">${m.thumb ? `<img loading="lazy" alt="" src="${esc(m.thumb)}" referrerpolicy="no-referrer">` : '<span>📄</span>'}${m.video ? '<i>▶</i>' : ''}</a>`).join('')}${t.midias.length > 6 ? `<small>+${t.midias.length - 6}</small>` : ''}</div>` : ''}
       ${chips ? `<div class="ct-chips">${chips}</div>` : ''}
       <div class="acoes-res">
         ${col === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">Aprovar…</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
@@ -566,6 +635,8 @@ function painelConteudo(v, filtro, ctx) {
     if (lista.some((t) => t.esteira === 'executando')) timer = setTimeout(desenhar, 5000);
   };
   $('#ctRef', v).onclick = desenhar;
+  $('#ctDrive', v).onclick = () => abrirDrive({ clienteId: filtro.client_id, projetoId: filtro.project_id, pautas: lista.filter((t) => !['publicada'].includes(t.esteira)), depois: desenhar });
+  $('#ctDoc', v).onclick = () => abrirDocPauta(filtro);
   $('#ctNova', v).onclick = () => abrirTarefa(null, { client_id: ctx.cliente ? ctx.cliente.id : undefined, _onSalvo: desenhar });
   $('#ctRodar', v).onclick = async () => {
     const b = $('#ctRodar', v); b.disabled = true;
@@ -589,7 +660,7 @@ async function viewSolicitar(v) {
   v.innerHTML = `
     <div class="view-head"><div><h2>Conteúdo · ${esc(alvo)}</h2>
         <div class="pipe"><span>✍ Hugo escreve a pauta</span><i>→</i><span>🎨 Luiz faz a arte</span><i>→</i><span class="on">✅ Você aprova</span><i>→</i><span>📅 Mariana agenda</span><i>↻</i></div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start"><button class="btn" id="ctRef" title="Atualizar">↻</button><button class="btn" id="ctNova">+ Nova pauta</button><button class="btn primary" id="ctRodar">▶ Rodar agora</button></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start"><button class="btn" id="ctRef" title="Atualizar">↻</button><button class="btn" id="ctDrive">📁 Drive</button><button class="btn" id="ctDoc">📄 Gerar doc de pauta</button><button class="btn" id="ctNova">+ Nova pauta</button><button class="btn primary" id="ctRodar">▶ Rodar agora</button></div></div>
     <div class="metas" id="ctMetas"></div>
     <div class="paineis2">
       <details class="painel"><summary>💬 Pedir ao time <span class="note">descreva o post que você quer</span></summary><div class="in">${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + alvo, clienteFixo: !!c })}</div></details>
@@ -1256,7 +1327,7 @@ async function blocoIntegracoes(el, cl) {
   const [c, pubs, chaves] = await Promise.all([
     api('/api/conexoes?client_id=' + cl.id), api('/api/publicacoes?client_id=' + cl.id), adm ? api('/api/configuracoes?client_id=' + cl.id) : []]);
   const st = (ok, sim, nao) => `<span class="pill ${ok ? 'ok' : ''}">${ok ? sim : nao}</span>`;
-  const m = c.meta, li = c.linkedin;
+  const m = c.meta, li = c.linkedin, go = c.google;
   const conectar = (prov) => `/oauth/${prov}/iniciar?client_id=${cl.id}`;
   const exp = li.expira_em ? new Date(li.expira_em).toLocaleDateString('pt-BR') : '';
 
@@ -1279,6 +1350,13 @@ async function blocoIntegracoes(el, cl) {
       <p class="muted">Falta o app do LinkedIn. Cole o Client ID e o Secret nas chaves deste cliente (abaixo) ou nas <b>APIs padrão</b>. Retorno do login: <code class="url">${esc(li.redirect)}</code></p>`}
   </div>`;
 
+  const cartaoGo = `<div class="card"><h3>Google Drive e Docs ${st(go.conectado, 'Conectado', go.app_configurado ? 'Não conectado' : 'Falta o cliente OAuth do Google')}</h3>
+    ${go.conectado ? `<p>Conta: <b>${esc(go.email || '')}</b></p><p class="muted">Puxa fotos e vídeos do Drive para as pautas e cria o documento de pauta. O sistema só lê o Drive e cria documentos; nunca apaga nada.</p>
+      ${adm ? `<div class="acoes-res"><a class="btn small" href="${conectar('google')}">Reconectar</a><button class="btn small danger" id="goDesc">Desconectar</button></div>` : ''}`
+      : go.app_configurado ? `<p class="muted">Conecte o Google de <b>${esc(cl.nome)}</b> para escolher fotos e vídeos do Drive e gerar o doc de pauta.</p>${adm ? `<a class="btn primary" href="${conectar('google')}">Conectar Google</a>` : ''}` : `
+      <p class="muted">Falta o cliente OAuth do Google. No Google Cloud: ative a <b>Google Drive API</b>, crie um <b>ID do cliente OAuth (Aplicativo da Web)</b> e cadastre este retorno: <code class="url">${esc(go.redirect)}</code>. Depois cole o ID e a chave secreta nas chaves deste cliente (abaixo) ou nas <b>APIs padrão</b>.</p>`}
+  </div>`;
+
   const cartaoHook = `<div class="card"><h3>Receber mensagens ${st(m.conectado, 'Pronto', 'Conecte primeiro')}</h3>
     <p class="muted">No app da Meta, em Webhooks (Page e Instagram), use a URL e o token abaixo e assine <b>messages</b>. As mensagens aparecem na aba <b>Mensagens</b> deste cliente.</p>
     <label>URL de callback</label><p><code class="url">${esc(m.webhook)}</code> <button class="btn small" id="cpWh">Copiar</button></p>
@@ -1289,7 +1367,7 @@ async function blocoIntegracoes(el, cl) {
     <div id="chavesCli">${formChaves(chaves, cl.id)}</div><p class="erro chv-erro"></p></div>` : '';
 
   el.innerHTML = `<div class="secao-titulo"><h3>Contas e APIs · ${esc(cl.nome)}</h3></div>
-    <div class="grid cols-2" style="margin-bottom:18px">${cartaoMeta}${cartaoLi}${cartaoHook}${cartaoChaves}</div>
+    <div class="grid cols-2" style="margin-bottom:18px">${cartaoMeta}${cartaoLi}${cartaoGo}${cartaoHook}${cartaoChaves}</div>
     <div class="card" style="margin-bottom:18px"><h3 style="margin-bottom:8px">Últimas publicações de ${esc(cl.nome)}</h3>
       ${pubs.length ? pubs.slice(0, 8).map((x) => `<div class="linha-cr" style="cursor:default"><span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${esc({ facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn' }[x.plataforma])}</span>
         <span class="lc-t"><b>${esc((x.texto || '').split('\n')[0].slice(0, 90))}</b><small>${esc(new Date(x.created_at).toLocaleString('pt-BR'))}${x.erro ? ' · ' + esc(x.erro) : ''}</small></span>
@@ -1302,7 +1380,7 @@ async function blocoIntegracoes(el, cl) {
   const sel = $('#mtPagina', el);
   if (sel) sel.onchange = async () => { try { await api('/api/conexoes/meta/pagina', { method: 'PUT', body: { client_id: cl.id, pagina_id: sel.value } }); toast('Página atualizada'); recarregar(); } catch (e) { toast(e.message); } };
   const desc = (id, prov, nome) => { const b = $(id, el); if (b) b.onclick = async () => { if (!confirm(`Desconectar ${nome} de ${cl.nome}?`)) return; await api(`/api/conexoes/${prov}?client_id=${cl.id}`, { method: 'DELETE' }); recarregar(); }; };
-  desc('#mtDesc', 'meta', 'o Facebook e o Instagram'); desc('#liDesc', 'linkedin', 'o LinkedIn');
+  desc('#mtDesc', 'meta', 'o Facebook e o Instagram'); desc('#liDesc', 'linkedin', 'o LinkedIn'); desc('#goDesc', 'google', 'o Google');
 }
 window.blocoIntegracoes = blocoIntegracoes;
 
@@ -1323,13 +1401,19 @@ async function abrirPublicar(texto, opts = {}) {
       <div id="pbQuando"><label>Data e hora</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="datetime-local" id="pbData"><button type="button" class="btn small" id="pbSug">💡 Sugestão da Mariana</button></div><p class="muted" id="pbSugTxt" style="margin:4px 0 0"></p></div>` : ''}
       <div><label>Onde publicar</label>${opcoes.map(([k, l, ok, aviso]) => `<label class="chk ${ok ? '' : 'off'}"><input type="checkbox" data-pl="${k}" ${ok ? '' : 'disabled'}> ${esc(l)}${ok ? '' : ` <small>(${esc(aviso)})</small>`}</label>`).join('')}</div>
       <div><label>Texto</label><textarea id="pbTexto" rows="9">${esc(texto)}</textarea></div>
-      <div><label>Link da imagem (https://, obrigatório no Instagram)</label><div style="display:flex;gap:8px"><input id="pbImg" placeholder="https://" value="${esc(opts.imagem || '')}"><button type="button" class="btn small" id="pbGuardar" title="Baixa a imagem do link de exportação (Canva, PNG/JPG), converte para JPEG e guarda aqui com um link estável">📥 Guardar</button></div><small class="muted">Cole o link de exportação da arte (PNG/JPG) e clique em Guardar: o link do Canva expira, o do sistema não.</small></div>
+      <div><label>Link da imagem (https://, obrigatório no Instagram)</label><div style="display:flex;gap:8px"><input id="pbImg" placeholder="https://" value="${esc(opts.imagem || '')}"><button type="button" class="btn small" id="pbDrive" title="Escolher uma foto do Google Drive">📁 Drive</button><button type="button" class="btn small" id="pbGuardar" title="Baixa a imagem do link de exportação (Canva, PNG/JPG), converte para JPEG e guarda aqui com um link estável">📥 Guardar</button></div><small class="muted">Cole o link de exportação da arte (PNG/JPG) e clique em Guardar: o link do Canva expira, o do sistema não.</small></div>
       <p class="muted" style="margin:0">${opts.taskId ? 'Confira se o texto é só a legenda que vai ao ar. ' : ''}LinkedIn: sai só o texto. ${opts.aprovar ? 'Agendada, a Mariana publica sozinha no horário escolhido; "Publicar agora" é imediato e público.' : 'A publicação é imediata e pública.'}</p>
       <p class="erro" id="pbErro" style="margin:0"></p><div id="pbRes"></div>
     </div>
     <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button>${opts.aprovar ? '<button type="button" class="btn" id="pbSo">Só aprovar</button>' : ''}<button type="button" class="btn primary" id="pbOk">${opts.aprovar ? 'Aprovar e agendar' : 'Publicar agora'}</button></div></div></form>`;
   document.body.appendChild(d); d.showModal();
   d.addEventListener('close', () => d.remove());
+  $('#pbDrive', d).onclick = () => abrirDrive({ clienteId, unico: true, rotuloOk: 'Usar como imagem', aoEscolher: async (arqs) => {
+    const f = arqs[0]; if (!f) return false;
+    if (f.video) { $('#pbErro', d).textContent = 'Vídeo não serve como imagem do post. Escolha uma foto.'; return false; }
+    try { const r = await api('/api/drive/importar', { method: 'POST', body: { file_id: f.id, task_id: opts.taskId || null } }); $('#pbImg', d).value = r.url; toast('Foto do Drive guardada'); return true; }
+    catch (e) { $('#pbErro', d).textContent = e.message; return false; }
+  } });
   $('#pbGuardar', d).onclick = async () => {
     const b = $('#pbGuardar', d); const u = $('#pbImg', d).value.trim(); if (!u) return ($('#pbErro', d).textContent = 'Cole o link da imagem');
     b.disabled = true; b.textContent = 'Guardando…'; $('#pbErro', d).textContent = '';

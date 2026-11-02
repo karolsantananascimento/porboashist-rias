@@ -249,6 +249,7 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_por TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMPTZ;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS meta_semanal INT NOT NULL DEFAULT 2;   -- posts por semana
 CREATE TABLE IF NOT EXISTS midia (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, dados BYTEA NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS midias JSONB NOT NULL DEFAULT '[]'::jsonb;   -- fotos e vídeos escolhidos no Google Drive
 -- Social media: agendamento depois da aprovação humana (esteira = agendada -> publicando -> publicada)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agendada_para TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS plataformas TEXT;       -- facebook,instagram,linkedin

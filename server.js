@@ -558,6 +558,7 @@ projetos.webhook(app, { pool, wrap });
 require('./integracoes').registrar(app, { pool, wrap, soAdmin });
 require('./esteira').registrar(app, { pool, wrap });
 require('./midia').registrar(app, { pool, wrap });
+require('./google').registrar(app, { pool, wrap });
 require('./midia').registrarPublico(app, { pool, wrap });
 require('./relatorios').registrar(app, { pool, wrap });
 const solic = require('./solicitacoes');

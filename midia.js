@@ -20,7 +20,12 @@ async function baixarImagem(url) {
   if (!r.ok) throw new Error(`Não consegui baixar a imagem (HTTP ${r.status})`);
   const tipo = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (!/^image\/(png|jpe?g|webp)$/.test(tipo)) throw new Error(`O link não é uma imagem PNG/JPG (${tipo || 'tipo desconhecido'})`);
-  let buf = Buffer.from(await r.arrayBuffer());
+  const buf0 = Buffer.from(await r.arrayBuffer());
+  return prepararImagem(buf0, tipo);
+}
+
+// Converte para JPEG (o Instagram só aceita JPEG) e confere o tamanho
+async function prepararImagem(buf, tipo) {
   if (buf.length > MAX_BAIXAR) throw new Error('Imagem maior que 12 MB');
   let saida = tipo;
   try { // o Instagram só aceita JPEG: converte e reduz o peso
@@ -55,4 +60,4 @@ function registrarPublico(app, { pool, wrap }) {
   }));
 }
 
-module.exports = { registrar, registrarPublico, urlPermitida };
+module.exports = { registrar, registrarPublico, urlPermitida, prepararImagem };
