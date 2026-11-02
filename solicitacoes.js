@@ -50,6 +50,7 @@ async function importarPautas(pool, body) {
       legenda, briefing: texto(it.briefing, 12000) || null, links: texto(it.links, 2000) || null,
       palavra_chave: texto(it.palavra_chave, 120) || null, responsavel: texto(it.responsavel, 80) || null,
       prioridade: ['baixa', 'normal', 'alta'].includes(it.prioridade) ? it.prioridade : 'normal',
+      arte_url: /^https:\/\/\S+$/i.test(String(it.arte_url || '').trim()) ? String(it.arte_url).trim() : null,
     };
     // Ocupa a tarefa vazia do mesmo dia/tipo (estrutura criada em "Gerar mês"), senão cria uma nova
     let vazia = null;
@@ -61,15 +62,15 @@ async function importarPautas(pool, body) {
     if (vazia) {
       await pool.query(
         `UPDATE tasks SET formato=COALESCE($1,formato), editorial=$2, tema=$3, legenda=$4, briefing=$5, links=$6, palavra_chave=$7,
-           responsavel=$8, prioridade=$9, status=$10, updated_at=now() WHERE id=$11`,
-        [campos.formato, campos.editorial, campos.tema, campos.legenda, campos.briefing, campos.links, campos.palavra_chave, campos.responsavel, campos.prioridade, status, vazia.id]);
+           responsavel=$8, prioridade=$9, status=$10, arte_url=COALESCE($11,arte_url), updated_at=now() WHERE id=$12`,
+        [campos.formato, campos.editorial, campos.tema, campos.legenda, campos.briefing, campos.links, campos.palavra_chave, campos.responsavel, campos.prioridade, status, campos.arte_url, vazia.id]);
       r.preenchidas++;
     } else {
       await pool.query(
-        `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, legenda, briefing, links, palavra_chave, responsavel, prioridade, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, legenda, briefing, links, palavra_chave, responsavel, prioridade, status, arte_url)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [cl.id, tipo, campos.formato, it.data || null, campos.editorial, campos.tema, campos.legenda, campos.briefing, campos.links,
-          campos.palavra_chave, campos.responsavel, campos.prioridade, status]);
+          campos.palavra_chave, campos.responsavel, campos.prioridade, status, campos.arte_url]);
       r.criadas++;
     }
   }

@@ -915,6 +915,8 @@ function abrirTarefa(t, padrao = {}) {
       <div><label id="lblLegenda">Legenda / texto</label><textarea id="tLegenda" rows="8">${esc(t.legenda || '')}</textarea>
         <div class="counter"><span id="cont"></span><button type="button" id="copiar">Copiar texto</button></div></div>
       <div><label>Briefing visual / roteiro</label><textarea id="tBriefing" rows="6">${esc(t.briefing || '')}</textarea></div>
+      <div><label>Arte no Canva (link)</label><div style="display:flex;gap:8px"><input id="tArte" placeholder="https://www.canva.com/design/..." value="${esc(t.arte_url || '')}">
+        <a class="btn" id="tArteAbrir" target="_blank" rel="noopener" ${t.arte_url ? `href="${esc(t.arte_url)}"` : 'hidden'}>Abrir ↗</a></div></div>
      </div>
      <div class="tab-pane" data-pane="materiais">
       <div><label>Links de material (um por linha)</label><textarea id="tLinks" rows="3" style="min-height:60px">${esc(t.links || '')}</textarea>
@@ -1042,7 +1044,7 @@ function abrirTarefa(t, padrao = {}) {
       data: $('#tData').value || null, status: $('#tStatus').value, prioridade: $('#tPrio').value,
       responsavel: $('#tResp').value.trim(), tema: $('#tTema').value.trim(), editorial: $('#tEditorial').value.trim(),
       palavra_chave: $('#tKw').value.trim(), legenda: $('#tLegenda').value, briefing: $('#tBriefing').value,
-      links: $('#tLinks').value.trim(), checklist: t.checklist,
+      links: $('#tLinks').value.trim(), checklist: t.checklist, arte_url: $('#tArte').value.trim() || null,
     };
     try {
       const salvo = novo ? await api('/api/tasks', { method: 'POST', body }) : await api('/api/tasks/' + t.id, { method: 'PUT', body });

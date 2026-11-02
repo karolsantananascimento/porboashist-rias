@@ -301,7 +301,7 @@ app.post('/api/clients/:id/gerar-mes', wrap(async (req, res) => {
 
 // ---------- Tarefas ----------
 const TASK_FIELDS = ['client_id', 'tipo', 'formato', 'data', 'editorial', 'tema', 'legenda', 'briefing', 'links',
-  'status', 'responsavel', 'prioridade', 'palavra_chave', 'checklist'];
+  'status', 'responsavel', 'prioridade', 'palavra_chave', 'checklist', 'arte_url'];
 
 function clean(f, v) {
   if (f === 'checklist') return JSON.stringify(Array.isArray(v) ? v : []);

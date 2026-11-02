@@ -104,13 +104,16 @@ function abrirContextoProjeto(p) {
       <div><label>Descrição (aparece no card)</label><input id="pjDesc" value="${esc(p?.descricao || '')}" maxlength="600"></div>
       <div><label>Identidade, tom de voz, público e regras (os agentes seguem isto em tudo o que criam)</label>
         <textarea id="pjCtx" rows="9">${esc(p?.contexto || '')}</textarea></div>
+      <div class="row"><div><label>Kit de marca no Canva (nome)</label><input id="pjKitNome" value="${esc(p?.canva_kit_nome || '')}" placeholder="Ex.: Disco Mídia"></div>
+        <div><label>ID do kit no Canva</label><input id="pjKitId" value="${esc(p?.canva_kit_id || '')}" placeholder="Ex.: kAHVxV_gqbI"></div></div>
       <p class="erro" id="pjErro" style="margin:0"></p>
     </div>
     <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="pjSalvar">Salvar</button></div></div>
   </form>`;
   d.showModal();
   $('#pjSalvar').addEventListener('click', async () => {
-    const body = { nome: $('#pjNome').value, cor: $('#pjCor').value, descricao: $('#pjDesc').value, contexto: $('#pjCtx').value };
+    const body = { nome: $('#pjNome').value, cor: $('#pjCor').value, descricao: $('#pjDesc').value, contexto: $('#pjCtx').value,
+      canva_kit_nome: $('#pjKitNome').value, canva_kit_id: $('#pjKitId').value };
     try {
       await api(p ? '/api/projects/' + p.id : '/api/projects', { method: p ? 'PUT' : 'POST', body });
       d.close(); await carregarProjetos(); toast('Projeto salvo'); render();
@@ -171,8 +174,24 @@ async function abrirCriar(agId, opcoes = {}) {
   });
 }
 
+const CANVA_CRIAR = [
+  [/stor|reels|1080x1920|vertical/i, 'https://www.canva.com/create/instagram-stories/'],
+  [/linkedin/i, 'https://www.canva.com/create/linkedin-posts/'],
+  [/an[uú]ncio|criativo/i, 'https://www.canva.com/create/facebook-ads/'],
+  [/thumbnail|capa de v[ií]deo/i, 'https://www.canva.com/create/youtube-thumbnails/'],
+];
+const canvaUrlPara = (formato) => (CANVA_CRIAR.find(([r]) => r.test(formato || '')) || [0, 'https://www.canva.com/create/instagram-posts/'])[1];
+
 function mostrarCriacao(c, el) {
-  el.innerHTML = `<label>Resultado (pode editar)</label>
+  const luiz = c.agente === 'luiz';
+  const proj = c.project_id ? projetoPorId(c.project_id) : null;
+  el.innerHTML = `${luiz ? `<div class="canva-box"><b>🎨 Canva</b>
+      <p class="muted" style="margin:4px 0 8px">${proj && proj.canva_kit_nome ? `Kit de marca do projeto: <b>${esc(proj.canva_kit_nome)}</b>. ` : 'Este projeto ainda não tem kit de marca (defina em Contexto do projeto). '}
+      Para criar a arte pronta, peça no Claude: <i>"crie no Canva a arte da criação #${c.id}"</i>. Ou monte você mesma: copie o prompt e abra o Canva.</p>
+      <div class="acoes-res"><button type="button" class="btn small" id="cvAbrir">Copiar e abrir Canva</button></div>
+      <label style="margin-top:8px">Link da arte no Canva</label>
+      <div style="display:flex;gap:8px"><input id="cvLink" placeholder="https://www.canva.com/design/..." value="${esc(c.arte_url || '')}"><button type="button" class="btn small" id="cvSalvar">Salvar link</button></div></div>` : ''}
+    <label>Resultado (pode editar)</label>
     <textarea id="crTexto" rows="16" class="resultado">${esc(c.saida)}</textarea>
     <div class="acoes-res">
       <button type="button" class="btn small" id="crCopiar">Copiar</button>
@@ -183,6 +202,13 @@ function mostrarCriacao(c, el) {
       <button type="button" class="btn small danger" id="crExcluir">Excluir</button>
     </div>`;
   $('#crCopiar').onclick = () => copiar($('#crTexto').value);
+  if (luiz) {
+    $('#cvAbrir').onclick = () => { copiar($('#crTexto').value); window.open(canvaUrlPara(c.formato), '_blank', 'noopener'); };
+    $('#cvSalvar').onclick = async () => {
+      try { c = await api('/api/criacoes/' + c.id, { method: 'PUT', body: { arte_url: $('#cvLink').value.trim() } }); toast(c.arte_url ? 'Link salvo' : 'Link removido'); }
+      catch (e) { toast(e.message); }
+    };
+  }
   $('#crSalvar').onclick = async () => { try { c = await api('/api/criacoes/' + c.id, { method: 'PUT', body: { saida: $('#crTexto').value } }); toast('Salvo'); } catch (e) { toast(e.message); } };
   $('#crAprovar').onclick = async () => {
     try { c = await api('/api/criacoes/' + c.id, { method: 'PUT', body: { saida: $('#crTexto').value, status: c.status === 'aprovado' ? 'rascunho' : 'aprovado' } }); mostrarCriacao(c, el); toast(c.status === 'aprovado' ? 'Aprovado' : 'Voltou para rascunho'); }

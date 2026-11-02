@@ -234,6 +234,12 @@ CREATE TABLE IF NOT EXISTS vagas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Canva: kit de marca por projeto e link da arte nas tarefas e criações
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS canva_kit_id TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS canva_kit_nome TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS arte_url TEXT;
+ALTER TABLE criacoes ADD COLUMN IF NOT EXISTS arte_url TEXT;
+
 -- Janela de solicitações de cada projeto
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS token_solicitacao TEXT;
 CREATE TABLE IF NOT EXISTS solicitacoes (
@@ -594,6 +600,13 @@ async function init() {
     await seedsIncrementais(c);
     const { rowCount } = await c.query(`INSERT INTO seeds (chave) VALUES ('projetos_v1') ON CONFLICT DO NOTHING`);
     if (rowCount) await seedProjetos(c);
+    // Kits de marca que já existem no Canva (só preenche onde ainda está vazio)
+    const { rowCount: kits } = await c.query(`INSERT INTO seeds (chave) VALUES ('canva_kits_v1') ON CONFLICT DO NOTHING`);
+    if (kits) {
+      for (const [nome, kitId, kitNome] of [['Disco', 'kAHVxV_gqbI', 'Disco Mídia'], ['Otter', 'kAGnnk9vrtI', 'Kit Otter']]) {
+        await c.query('UPDATE projects SET canva_kit_id=$1, canva_kit_nome=$2 WHERE nome=$3 AND canva_kit_id IS NULL', [kitId, kitNome, nome]);
+      }
+    }
     await bootstrapAdmin(c);
     await c.query('COMMIT');
   } catch (e) {

@@ -174,8 +174,10 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const nome = String(b.nome ?? atual.nome).trim() || atual.nome;
     const cor = /^#[0-9a-f]{6}$/i.test(b.cor || '') ? b.cor : atual.cor;
     const { rows: [p] } = await pool.query(
-      'UPDATE projects SET nome=$1, cor=$2, descricao=$3, contexto=$4 WHERE id=$5 RETURNING *',
-      [nome, cor, 'descricao' in b ? texto(b.descricao, 600) : atual.descricao, 'contexto' in b ? texto(b.contexto, 6000) : atual.contexto, atual.id]);
+      'UPDATE projects SET nome=$1, cor=$2, descricao=$3, contexto=$4, canva_kit_id=$5, canva_kit_nome=$6 WHERE id=$7 RETURNING *',
+      [nome, cor, 'descricao' in b ? texto(b.descricao, 600) : atual.descricao, 'contexto' in b ? texto(b.contexto, 6000) : atual.contexto,
+        'canva_kit_id' in b ? (texto(b.canva_kit_id, 40) || null) : atual.canva_kit_id,
+        'canva_kit_nome' in b ? (texto(b.canva_kit_nome, 80) || null) : atual.canva_kit_nome, atual.id]);
     res.json(p);
   }));
 
@@ -213,8 +215,10 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
   app.put('/api/criacoes/:id', wrap(async (req, res) => {
     const b = req.body || {};
     const { rows: [c] } = await pool.query(
-      `UPDATE criacoes SET saida=COALESCE($1, saida), status=CASE WHEN $2 IN ('rascunho','aprovado') THEN $2 ELSE status END WHERE id=$3 RETURNING *`,
-      ['saida' in b ? texto(b.saida, 40000) : null, b.status || null, req.params.id]);
+      `UPDATE criacoes SET saida=COALESCE($1, saida), status=CASE WHEN $2 IN ('rascunho','aprovado') THEN $2 ELSE status END,
+         arte_url=CASE WHEN $3::boolean THEN $4 ELSE arte_url END WHERE id=$5 RETURNING *`,
+      ['saida' in b ? texto(b.saida, 40000) : null, b.status || null, 'arte_url' in b,
+        /^https:\/\/\S+$/i.test(String(b.arte_url || '').trim()) ? String(b.arte_url).trim() : null, req.params.id]);
     if (!c) return res.status(404).json({ erro: 'Criação não encontrada' });
     res.json(c);
   }));
@@ -236,8 +240,8 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const campo = c.agente === 'hugo' ? 'legenda' : 'briefing';
     const data = /^\d{4}-\d{2}-\d{2}$/.test(req.body.data || '') ? req.body.data : null;
     const { rows: [t] } = await pool.query(
-      `INSERT INTO tasks (client_id, tipo, formato, data, tema, ${campo}, status) VALUES ($1,$2,$3,$4,$5,$6,'conteudo') RETURNING *`,
-      [clientId, tipo, formato, data, tema, c.saida]);
+      `INSERT INTO tasks (client_id, tipo, formato, data, tema, ${campo}, status, arte_url) VALUES ($1,$2,$3,$4,$5,$6,'conteudo',$7) RETURNING *`,
+      [clientId, tipo, formato, data, tema, c.saida, c.arte_url || null]);
     res.json(t);
   }));
 
