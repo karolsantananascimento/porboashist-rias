@@ -659,7 +659,7 @@ function abrirMaterial(m, todos) {
 function viewClientes(v) {
   v.innerHTML = `
     <div class="view-head"><div><h2>Clientes e contratos</h2><p>Metas mensais, marcas e dados de contato usados nas peças.</p></div>
-      <button class="btn primary" id="novoCliente">+ Novo cliente</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${S.projeto && typeof abrirContextoProjeto === 'function' ? '<button class="btn" id="ctxProj">Contexto do projeto</button>' : ''}<button class="btn primary" id="novoCliente">+ Novo cliente</button></div></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">
     ${S.clients.map((c) => `<div class="card" data-c="${c.id}">
       <h3 style="margin-bottom:12px">${esc(c.nome)}</h3>
@@ -717,6 +717,7 @@ function viewClientes(v) {
       toast(total ? `Criados: ${c.post} posts, ${c.story} stories, ${c.blog} artigos` : 'Este mês já tinha estrutura criada');
     });
   });
+  const cp = $('#ctxProj'); if (cp) cp.addEventListener('click', () => abrirContextoProjeto(projetoPorId(S.projeto)));
   $('#novoCliente').addEventListener('click', async () => {
     const nome = prompt('Nome do cliente');
     if (!nome) return;

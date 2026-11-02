@@ -152,32 +152,10 @@ async function viewInicio(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
   const clientesTodos = await api('/api/clients');
   const perfilCard = S.projetos.some((x) => x.tipo === 'empregos') ? await api('/api/perfil').catch(() => ({})) : {};
-  const cards = S.projetos.map((p) => p.tipo === 'empregos' ? `
-    <article class="proj-card" style="--cor:${esc(p.cor)}">
-      <button class="proj-open" data-emp="1" aria-label="Abrir ${esc(p.nome)}">
-        <h3 class="h-avatar">${perfilCard.foto ? `<img class="avatar" src="${perfilCard.foto}" alt="">` : '💼'} ${esc(p.nome)}</h3><p>${esc(p.descricao || '')}</p>
-        <div class="proj-stats"><span><b>${p.vagas_abertas}</b> vagas abertas</span><span><b>${p.vagas_candidatadas}</b> candidaturas</span></div>
-        <div class="proj-tags"><i>Perfil</i><i>Currículo</i><i>Portfólio</i><i>Vagas</i><i>Bianca</i></div>
-      </button>
-      <div class="proj-acts"><button class="btn small primary" data-emp="1">Abrir</button></div>
-    </article>` : `
-    <article class="proj-card" style="--cor:${esc(p.cor)}">
-      <button class="proj-open" data-abrir="${p.id}" aria-label="Abrir ${esc(p.nome)}">
-        <h3>${esc(p.nome)}</h3>
-        <p>${esc(p.descricao || '')}</p>
-        <div class="proj-stats">
-          <span><b>${p.clientes}</b> ${p.clientes === 1 ? 'cliente' : 'clientes'}</span>
-          <span><b>${p.abertas}</b> em aberto</span>
-          <span class="${p.atrasadas ? 'late' : ''}"><b>${p.atrasadas}</b> atrasadas</span>
-          <span><b>${p.solicitacoes_abertas}</b> solicitações</span>
-        </div>
-        ${p.nomes_clientes.length ? `<div class="proj-tags">${p.nomes_clientes.slice(0, 6).map((n) => `<i>${esc(n)}</i>`).join('')}</div>` : ''}
-      </button>
-      <div class="proj-acts">
-        <button class="btn small primary" data-abrir="${p.id}">Abrir projeto</button>
-        <button class="btn ghost small" data-editar="${p.id}">Contexto</button>
-      </div>
-    </article>`).join('');
+  // Projetos: só botões; ao clicar abre a área do projeto
+  const cards = S.projetos.map((p) => p.tipo === 'empregos'
+    ? `<button class="proj-btn" style="--cor:${esc(p.cor)}" data-emp="1">${perfilCard.foto ? `<img class="avatar" src="${perfilCard.foto}" alt="">` : '<span class="pb-ico">💼</span>'}<span>${esc(p.nome)}</span></button>`
+    : `<button class="proj-btn" style="--cor:${esc(p.cor)}" data-abrir="${p.id}"><span class="pb-ico">${esc((p.nome || '?').trim().charAt(0).toUpperCase())}</span><span>${esc(p.nome)}</span>${p.atrasadas ? `<em class="pb-late" title="Tarefas atrasadas">${p.atrasadas}</em>` : ''}</button>`).join('');
 
   const acoes = [
     ['hugo', 'Conteúdo', 'Legendas, carrosséis, roteiros e artigos'],
@@ -198,7 +176,7 @@ async function viewInicio(v) {
       ${S.me.papel === 'admin' ? '<button class="btn" id="novoProj">+ Novo projeto</button>' : ''}</div>
     ${caixaDemandas(clientesTodos, S.projetos)}
     <h3 class="secao-h">Projetos</h3>
-    <div class="proj-grid">${cards}</div>
+    <div class="proj-btns">${cards}</div>
     <h3 class="secao-h">Criar</h3>
     ${AGENTES.length && !AGENTES[0].ativo ? '<div class="alerta">Os agentes ainda não estão ativos: falta configurar <b>ANTHROPIC_API_KEY</b> no Render.</div>' : ''}
     <div class="ag-grid">${acoes}</div>`;
