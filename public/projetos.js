@@ -35,7 +35,7 @@ function seletorKit(id, atual, nomeAtual) {
 const lerKit = (id) => { const sel = $('#' + id); const o = sel.options[sel.selectedIndex]; return { id: sel.value || '', nome: sel.value ? o.textContent : '' }; };
 
 // ---------------- Navegação: projeto > cliente > abas ----------------
-const ABAS = [['solicitar', 'Solicitar'], ['quadro', 'Pautas'], ['mensagens', 'Mensagens'], ['recursos', 'Recursos'], ['acessos', 'Acessos e APIs'], ['relatorios', 'Relatórios']];
+const ABAS = [['solicitar', 'Conteúdo'], ['quadro', 'Pautas'], ['mensagens', 'Mensagens'], ['recursos', 'Recursos'], ['acessos', 'Acessos e APIs'], ['relatorios', 'Relatórios']];
 const GRUPO_ABA = {
   solicitar: 'solicitar', visao: 'solicitar', solicitacoes: 'solicitar', criar: 'solicitar',
   quadro: 'quadro', calendario: 'quadro', lista: 'quadro', captacao: 'quadro', painel: 'quadro',
@@ -468,8 +468,8 @@ function abrirAjustes(t, depois) {
 }
 
 async function aprovarTarefa(t, depois) {
-  // Posts e stories passam pela Social media (Lara): agendar ou publicar agora. Os demais tipos só são aprovados.
-  if (['post', 'story'].includes(t.tipo)) return abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois, aprovar: true });
+  // Posts e stories passam pela Social media (Mariana): agendar ou publicar agora. Os demais tipos só são aprovados.
+  if (['post', 'story'].includes(t.tipo)) return abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois, aprovar: true, imagem: t.publicar_imagem });
   try { await api(`/api/tasks/${t.id}/aprovar`, { method: 'POST' }); } catch (e) { return toast(e.message); }
   toast('Aprovada.');
   depois && depois();
@@ -490,7 +490,7 @@ function filaAprovacao(el, filtro) {
     if (!el.isConnected) return clearTimeout(timer);
     let lista = [];
     try { lista = await api('/api/esteira?' + q); } catch { return; }
-    const rotulo = { executando: 'Time trabalhando', aguardando_aprovacao: 'Aguardando aprovação', aprovada: 'Aprovada: falta publicar', agendada: 'Agendada (Lara)', publicando: 'Lara publicando', erro: 'Erro' };
+    const rotulo = { executando: 'Time trabalhando', aguardando_aprovacao: 'Aguardando aprovação', aprovada: 'Aprovada: falta publicar', agendada: 'Agendada (Mariana)', publicando: 'Mariana publicando', erro: 'Erro' };
     el.innerHTML = `<h3 class="secao-h">Esteira do time <span class="pill">${lista.length}</span></h3>
       ${lista.length ? lista.map((t) => `<article class="card esteira ${t.esteira}">
         <div class="msg-top"><span class="pill ${t.esteira === 'aprovada' ? 'ok' : ''}">${rotulo[t.esteira]}</span><span class="pill">${esc(TIPO_LABEL[t.tipo] || t.tipo)}</span>
@@ -514,7 +514,7 @@ function filaAprovacao(el, filtro) {
     $$('[data-ap]', el).forEach((b) => b.addEventListener('click', () => aprovarTarefa(achar(b.dataset.ap), desenhar)));
     $$('[data-rev]', el).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev))));
     $$('[data-aj]', el).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));
-    $$('[data-pub]', el).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois: desenhar }); }));
+    $$('[data-pub]', el).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois: desenhar, imagem: t.publicar_imagem }); }));
     $$('[data-desag]', el).forEach((b) => b.addEventListener('click', async () => { if (!confirm('Cancelar o agendamento?')) return; try { await api(`/api/tasks/${b.dataset.desag}/desagendar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     $$('[data-conc]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.conc}/concluir`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     $$('[data-ex]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.ex}/executar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
@@ -522,6 +522,83 @@ function filaAprovacao(el, filtro) {
     if (lista.some((t) => t.esteira === 'executando')) timer = setTimeout(desenhar, 5000);
   };
   el.refresh = desenhar;
+  desenhar();
+}
+
+
+// ---------------- Painel Conteúdo: metas da semana e colunas por etapa (modelo do Agente de Tráfego) ----------------
+const COLUNAS_CT = [
+  ['✍ Em arte', ['executando', 'erro'], '#7c5cff', 'Nada aqui. Peça uma pauta ao time ou clique em Rodar agora.'],
+  ['⏳ Aguardando aprovação', ['aguardando_aprovacao'], '#f0a13a', 'Quando o time entregar, a peça aparece aqui para você aprovar.'],
+  ['📅 Aprovado / agendado', ['aprovada', 'agendada', 'publicando'], '#4f8cff', 'Os posts aprovados ficam aqui até a hora de publicar.'],
+  ['✅ Publicado / outros', ['publicada', 'legado'], '#2fbf71', 'Os últimos publicados aparecem aqui.'],
+];
+const fmtCt = (t) => { const f = `${t.formato || ''} ${t.tipo || ''}`.toLowerCase(); return /carrossel/.test(f) ? '🖼 Carrossel' : /reels|v[ií]deo/.test(f) ? '🎬 Reels' : t.tipo === 'story' ? '⭕ Story' : t.tipo === 'blog' ? '📝 Blog' : t.tipo === 'trafego' ? '📈 Campanha' : t.tipo === 'criacao' ? '🎨 Criação' : '📷 Feed'; };
+const diaCt = (d) => d ? new Date(String(d).slice(0, 10) + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '') : 'sem data';
+const dm = (ymd) => ymd.slice(8) + '/' + ymd.slice(5, 7);
+
+function painelConteudo(v, filtro, ctx) {
+  const q = filtro.client_id ? 'client_id=' + filtro.client_id : 'project_id=' + filtro.project_id;
+  const raiz = $('#ctCols', v); let timer; let lista = [];
+  const achar = (id) => lista.find((x) => String(x.id) === String(id));
+  const cardCt = (t) => {
+    const col = t.esteira || 'legado';
+    const img = t.publicar_imagem && /^(https:\/\/|\/media\/)/.test(t.publicar_imagem) ? `<img class="ct-img" loading="lazy" alt="Arte" src="${esc(t.publicar_imagem)}">` : '';
+    const chips = String(t.plataformas || '').split(',').filter(Boolean).map((x) => `<span class="chip ${t.esteira === 'publicada' ? 'ok' : ''}">${esc(x)}</span>`).join('');
+    return `<article class="ct-card ${col}">
+      <div class="ct-chips"><span class="chip">${fmtCt(t)}</span><span class="chip">📅 ${esc(diaCt(t.data))}</span>${t.esteira === 'erro' ? '<span class="chip bad">⚠ erro</span>' : ''}${t.esteira === 'agendada' ? `<span class="chip ok">🗓 ${esc((t.esteira_msg || '').replace(/^.*para /, ''))}</span>` : ''}</div>
+      <b class="ct-tit">${esc(t.cliente_nome)} · ${esc(t.tema || 'Sem título')}</b>
+      ${img}
+      ${t.esteira === 'executando' ? `<p class="muted" style="margin:4px 0">⏳ ${esc(t.esteira_msg || '')}</p>` : ''}
+      ${t.esteira === 'erro' ? `<p class="erro" style="margin:4px 0">${esc(t.esteira_msg || '')}</p>` : ''}
+      ${t.esteira === 'aprovada' && /falhou|interrompida|cancelado/i.test(t.esteira_msg || '') ? `<p class="erro" style="margin:4px 0">${esc(t.esteira_msg)}</p>` : ''}
+      ${['aguardando_aprovacao', 'aprovada', 'agendada', 'publicada', 'legado'].includes(col) ? `<div class="ct-texto">${esc(conteudoDaTarefa(t))}</div>` : ''}
+      ${t.arte_url ? `<a class="est-arte" href="${esc(t.arte_url)}" target="_blank" rel="noopener">🎨 Abrir criativo no Canva ↗</a>` : (['aguardando_aprovacao', 'aprovada'].includes(col) ? '<small class="muted">Sem link do criativo</small>' : '')}
+      ${chips ? `<div class="ct-chips">${chips}</div>` : ''}
+      <div class="acoes-res">
+        ${col === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">Aprovar…</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
+        ${col === 'aprovada' ? `${['post', 'story'].includes(t.tipo) ? `<button class="btn small primary" data-pub="${t.id}">Publicar…</button>` : ''}<button class="btn small" data-conc="${t.id}">Marcar como concluída</button>` : ''}
+        ${col === 'agendada' ? `<button class="btn small primary" data-pub="${t.id}">Publicar agora…</button><button class="btn small" data-desag="${t.id}">Cancelar agendamento</button>` : ''}
+        ${col === 'erro' ? `<button class="btn small primary" data-ex="${t.id}">Tentar de novo</button>` : ''}
+        ${['publicada', 'legado'].includes(col) ? `<button class="btn small" data-rev="${t.id}">Ver</button>` : ''}
+      </div></article>`;
+  };
+  const desenhar = async () => {
+    if (!raiz.isConnected) return clearTimeout(timer);
+    let r; try { r = await api('/api/conteudo?' + q); } catch { return; }
+    lista = r.tarefas;
+    $('#ctMetas', v).innerHTML = r.semanas.map((w) => {
+      const pct = Math.min(100, Math.round((w.feitos / Math.max(1, w.meta)) * 100)); const falta = Math.max(0, w.meta - w.feitos);
+      return `<div class="wk"><b>Semana ${dm(w.ini)}–${dm(w.fim)}</b><small>${w.feitos}/${w.meta} posts</small><div class="bar ${falta ? '' : 'full'}"><i style="width:${pct}%"></i></div>${falta ? `<div class="muted" style="margin-top:6px;font-size:12px">Faltam ${falta} para a meta</div>` : ''}</div>`;
+    }).join('') + '<button class="btn" id="ctMeta" style="align-self:center">Alterar meta semanal</button>';
+    $('#ctMeta', v).onclick = async () => {
+      if (!ctx.cliente) return toast('Escolha um cliente (faixa acima) para alterar a meta dele');
+      const x = prompt('Quantos posts por semana para ' + ctx.cliente.nome + '?', String(r.semanas[0]?.meta ?? 2)); if (x === null) return;
+      try { await api(`/api/clients/${ctx.cliente.id}/meta-semanal`, { method: 'PUT', body: { meta: Number(x) } }); desenhar(); } catch (e) { toast(e.message); }
+    };
+    raiz.innerHTML = COLUNAS_CT.map(([titulo, estados, cor, vazio]) => {
+      const itens = lista.filter((t) => estados.includes(t.esteira || 'legado'));
+      return `<section class="ct-col" style="--cor:${cor}"><h4><span>${titulo}</span><b>${itens.length}</b></h4>${itens.length ? itens.map(cardCt).join('') : `<div class="ct-vazio">${vazio}</div>`}</section>`;
+    }).join('');
+    $$('[data-ap]', raiz).forEach((b) => b.addEventListener('click', () => aprovarTarefa(achar(b.dataset.ap), desenhar)));
+    $$('[data-rev]', raiz).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev), { _onSalvo: desenhar })));
+    $$('[data-aj]', raiz).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));
+    $$('[data-pub]', raiz).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois: desenhar, imagem: t.publicar_imagem }); }));
+    $$('[data-desag]', raiz).forEach((b) => b.addEventListener('click', async () => { if (!confirm('Cancelar o agendamento?')) return; try { await api(`/api/tasks/${b.dataset.desag}/desagendar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
+    $$('[data-conc]', raiz).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.conc}/concluir`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
+    $$('[data-ex]', raiz).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.ex}/executar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
+    clearTimeout(timer);
+    if (lista.some((t) => t.esteira === 'executando')) timer = setTimeout(desenhar, 5000);
+  };
+  $('#ctRef', v).onclick = desenhar;
+  $('#ctNova', v).onclick = () => abrirTarefa(null, { client_id: ctx.cliente ? ctx.cliente.id : undefined, _onSalvo: desenhar });
+  $('#ctRodar', v).onclick = async () => {
+    const b = $('#ctRodar', v); b.disabled = true;
+    try { const r = await api('/api/esteira/rodar', { method: 'POST', body: filtro }); toast(r.iniciadas ? `O time começou ${r.iniciadas} pauta(s). Elas chegam em "Aguardando aprovação".` : 'Nenhuma pauta pendente. Use "+ Nova pauta" ou "Pedir ao time".'); desenhar(); }
+    catch (e) { toast(e.message); }
+    b.disabled = false;
+  };
+  raiz.refresh = desenhar; v.refreshConteudo = desenhar;
   desenhar();
 }
 
@@ -535,10 +612,17 @@ async function viewSolicitar(v) {
   const abertas = sols.filter((x) => ['nova', 'andamento'].includes(x.status) && !x.task_id && (!c || !x.client_id || x.client_id === c.id));
   const alvo = c ? c.nome : p.nome;
   v.innerHTML = `
-    <div class="view-head"><div><h2>Solicitar · ${esc(alvo)}</h2><p>Escreva o pedido: o time executa, você aprova e segue para publicação.</p></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="svLink">🔗 Link para clientes</button><button class="btn" id="svNova">+ Registrar solicitação</button></div></div>
-    ${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + alvo, clienteFixo: !!c })}
-    <div id="filaAprov"></div>
+    <div class="view-head"><div><h2>Conteúdo · ${esc(alvo)}</h2>
+        <div class="pipe"><span>✍ Hugo escreve a pauta</span><i>→</i><span>🎨 Luiz faz a arte</span><i>→</i><span class="on">✅ Você aprova</span><i>→</i><span>📅 Mariana agenda</span><i>↻</i></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start"><button class="btn" id="ctRef" title="Atualizar">↻</button><button class="btn" id="ctNova">+ Nova pauta</button><button class="btn primary" id="ctRodar">▶ Rodar agora</button></div></div>
+    <div class="metas" id="ctMetas"></div>
+    <div class="paineis2">
+      <details class="painel"><summary>💬 Pedir ao time <span class="note">descreva o post que você quer</span></summary><div class="in">${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + alvo, clienteFixo: !!c })}</div></details>
+      <details class="painel"><summary>🔗 Fontes de pauta <span class="note">planilha, Google Docs ou Sheets</span></summary><div class="in">
+        <p class="muted" style="margin:0 0 8px">O Claude lê o documento e gera as pautas; você cola aqui (ou envia pelo link de importação do projeto).</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="ctImp">⇪ Importar pautas</button><button class="btn" id="svLink">🔗 Link para clientes</button><button class="btn" id="svNova">+ Registrar solicitação</button></div></div></details>
+    </div>
+    <div id="ctCols" class="cols4"></div>
     <h3 class="secao-h">Solicitações recebidas <span class="pill">${abertas.length}</span></h3>
     ${abertas.length ? abertas.map((x) => `<article class="card sol">
       <div class="msg-top"><span class="pill">${esc(SOL_TIPOS[x.tipo])}</span>${x.origem === 'formulario' ? '<span class="pill">Formulário</span>' : ''}
@@ -551,7 +635,8 @@ async function viewSolicitar(v) {
         <button class="btn small ghost danger" data-rm="${x.id}">Descartar</button></div></article>`).join('')
       : '<div class="card"><div class="empty" style="padding:16px">Nenhuma solicitação pendente. Quem tem o link do projeto pode pedir direto pelo formulário.</div></div>'}`;
   ligarCaixaDemandas(v, S.clients, { clienteId: c ? c.id : null });
-  filaAprovacao($('#filaAprov', v), c ? { client_id: c.id } : { project_id: p.id });
+  painelConteudo(v, c ? { client_id: c.id } : { project_id: p.id }, { cliente: c });
+  $('#ctImp', v).onclick = () => abrirImportar();
   const porId = (id) => sols.find((x) => String(x.id) === String(id));
   $('#svLink', v).onclick = () => abrirLinkSolicitacao(p);
   $('#svNova', v).onclick = () => abrirSolicitacao(null, () => render());
@@ -1257,19 +1342,26 @@ async function abrirPublicar(texto, opts = {}) {
     ['linkedin', 'LinkedIn' + (c.linkedin.nome ? ' · ' + c.linkedin.nome : ''), c.linkedin.conectado && !c.linkedin.expirado, 'Conecte em Integrações'],
   ];
   const d = document.createElement('dialog');
-  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>${opts.aprovar ? 'Aprovar e passar para a Social media (Lara)' : 'Publicar'}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>${opts.aprovar ? 'Aprovar e passar para a Social media (Mariana)' : 'Publicar'}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
     <div class="modal-body">
-      ${opts.aprovar ? `<div><label>Como a Lara segue</label><label class="chk"><input type="radio" name="pbModo" value="agendar" checked> Agendar (publica sozinha no horário)</label><label class="chk"><input type="radio" name="pbModo" value="agora"> Publicar agora (você confirma em seguida)</label></div>
-      <div id="pbQuando"><label>Data e hora</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="datetime-local" id="pbData"><button type="button" class="btn small" id="pbSug">💡 Sugestão da Lara</button></div><p class="muted" id="pbSugTxt" style="margin:4px 0 0"></p></div>` : ''}
+      ${opts.aprovar ? `<div><label>Como a Mariana segue</label><label class="chk"><input type="radio" name="pbModo" value="agendar" checked> Agendar (publica sozinha no horário)</label><label class="chk"><input type="radio" name="pbModo" value="agora"> Publicar agora (você confirma em seguida)</label></div>
+      <div id="pbQuando"><label>Data e hora</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="datetime-local" id="pbData"><button type="button" class="btn small" id="pbSug">💡 Sugestão da Mariana</button></div><p class="muted" id="pbSugTxt" style="margin:4px 0 0"></p></div>` : ''}
       <div><label>Onde publicar</label>${opcoes.map(([k, l, ok, aviso]) => `<label class="chk ${ok ? '' : 'off'}"><input type="checkbox" data-pl="${k}" ${ok ? '' : 'disabled'}> ${esc(l)}${ok ? '' : ` <small>(${esc(aviso)})</small>`}</label>`).join('')}</div>
       <div><label>Texto</label><textarea id="pbTexto" rows="9">${esc(texto)}</textarea></div>
-      <div><label>Link da imagem (https://, obrigatório no Instagram)</label><input id="pbImg" placeholder="https://"></div>
-      <p class="muted" style="margin:0">${opts.taskId ? 'Confira se o texto é só a legenda que vai ao ar. ' : ''}LinkedIn: sai só o texto. ${opts.aprovar ? 'Agendada, a Lara publica sozinha no horário escolhido; "Publicar agora" é imediato e público.' : 'A publicação é imediata e pública.'}</p>
+      <div><label>Link da imagem (https://, obrigatório no Instagram)</label><div style="display:flex;gap:8px"><input id="pbImg" placeholder="https://" value="${esc(opts.imagem || '')}"><button type="button" class="btn small" id="pbGuardar" title="Baixa a imagem do link de exportação (Canva, PNG/JPG), converte para JPEG e guarda aqui com um link estável">📥 Guardar</button></div><small class="muted">Cole o link de exportação da arte (PNG/JPG) e clique em Guardar: o link do Canva expira, o do sistema não.</small></div>
+      <p class="muted" style="margin:0">${opts.taskId ? 'Confira se o texto é só a legenda que vai ao ar. ' : ''}LinkedIn: sai só o texto. ${opts.aprovar ? 'Agendada, a Mariana publica sozinha no horário escolhido; "Publicar agora" é imediato e público.' : 'A publicação é imediata e pública.'}</p>
       <p class="erro" id="pbErro" style="margin:0"></p><div id="pbRes"></div>
     </div>
     <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button>${opts.aprovar ? '<button type="button" class="btn" id="pbSo">Só aprovar</button>' : ''}<button type="button" class="btn primary" id="pbOk">${opts.aprovar ? 'Aprovar e agendar' : 'Publicar agora'}</button></div></div></form>`;
   document.body.appendChild(d); d.showModal();
   d.addEventListener('close', () => d.remove());
+  $('#pbGuardar', d).onclick = async () => {
+    const b = $('#pbGuardar', d); const u = $('#pbImg', d).value.trim(); if (!u) return ($('#pbErro', d).textContent = 'Cole o link da imagem');
+    b.disabled = true; b.textContent = 'Guardando…'; $('#pbErro', d).textContent = '';
+    try { const r = await api('/api/midia', { method: 'POST', body: { url: u, task_id: opts.taskId || null } }); $('#pbImg', d).value = r.url; toast('Imagem guardada'); }
+    catch (e) { $('#pbErro', d).textContent = e.message; }
+    b.disabled = false; b.textContent = '📥 Guardar';
+  };
   const modo = () => (opts.aprovar ? ($$('[name=pbModo]', d).find((x) => x.checked) || {}).value : 'agora');
   if (opts.aprovar) {
     const ajustaModo = () => { $('#pbQuando', d).style.display = modo() === 'agendar' ? '' : 'none'; $('#pbOk', d).textContent = modo() === 'agendar' ? 'Aprovar e agendar' : 'Aprovar e publicar agora'; };
@@ -1277,10 +1369,10 @@ async function abrirPublicar(texto, opts = {}) {
     $('#pbSo', d).onclick = async () => { try { await api(`/api/tasks/${opts.taskId}/aprovar`, { method: 'POST' }); d.close(); toast('Aprovada. Publique depois pela fila.'); opts.depois && opts.depois(); } catch (e) { $('#pbErro', d).textContent = e.message; } };
     $('#pbSug', d).onclick = async () => {
       const pls = $$('[data-pl]', d).filter((x) => x.checked).map((x) => x.dataset.pl).join(',');
-      const b = $('#pbSug', d); b.disabled = true; b.textContent = 'Lara pensando…'; $('#pbErro', d).textContent = '';
+      const b = $('#pbSug', d); b.disabled = true; b.textContent = 'Mariana pensando…'; $('#pbErro', d).textContent = '';
       try { const r = await api(`/api/tasks/${opts.taskId}/social-sugestao`, { method: 'POST', body: { plataformas: pls } }); if (r.texto) $('#pbTexto', d).value = r.texto; $('#pbSugTxt', d).textContent = r.horario ? '🕒 ' + r.horario : ''; }
       catch (e) { $('#pbErro', d).textContent = e.message; }
-      b.disabled = false; b.textContent = '💡 Sugestão da Lara';
+      b.disabled = false; b.textContent = '💡 Sugestão da Mariana';
     };
   }
   $('#pbOk', d).onclick = async () => {
@@ -1292,7 +1384,7 @@ async function abrirPublicar(texto, opts = {}) {
       const b0 = $('#pbOk', d); b0.disabled = true; $('#pbErro', d).textContent = '';
       try {
         await api(`/api/tasks/${opts.taskId}/aprovar`, { method: 'POST', body: { modo: 'agendar', agendar_para: new Date(quando).toISOString(), plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value } });
-        d.close(); toast('Aprovada e agendada pela Lara'); opts.depois && opts.depois();
+        d.close(); toast('Aprovada e agendada pela Mariana'); opts.depois && opts.depois();
       } catch (e) { $('#pbErro', d).textContent = e.message; }
       b0.disabled = false; return;
     }

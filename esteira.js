@@ -2,10 +2,11 @@
 //   1. Conteudista (Hugo) pesquisa, planeja e escreve a legenda + o briefing do criativo
 //   2. Head de Criação (Luiz para arte/carrossel, Davi para vídeo/motion) cria a peça — opcional em texto de LinkedIn/Reddit/blog
 //   3. Aprovação humana (botão)
-//   4. Social media (Lara): agenda (o agendador publica no horário) ou publica na hora quando a pessoa clica em "Publicar agora"
+//   4. Social media (Mariana): agenda (o agendador publica no horário) ou publica na hora quando a pessoa clica em "Publicar agora"
 // Nada vai ao ar sem a aprovação humana: agendar ou publicar exige o clique de uma pessoa.
 
 const { cfg } = require('./config');
+const { detectarFormato, especificacao } = require('./formatos');
 const MARCA_ARTE = '— ARTE (Luiz) —';
 const MARCA_TIME = '— PLANO (Camila) —';
 const texto = (v, max = 12000) => String(v ?? '').slice(0, max);
@@ -30,6 +31,13 @@ function precisaCriacao(t) {
 }
 const VIDEO_MOTION = /reels|v[ií]deo|motion|anima[cç][aã]o/i;
 
+// Medidas e regras do formato (catálogo do Agente de Tráfego) para o Hugo e o Luiz trabalharem no tamanho certo
+function espec(t, formato) {
+  const id = detectarFormato(`${t.formato || ''} ${t.tipo === 'story' ? 'story' : ''} ${formato || ''}`);
+  const s = id && especificacao(id);
+  return s ? `\nESPECIFICAÇÃO DO FORMATO (${s.formato}): ${s.tamanhos.join('; ')}. ${s.regras}` : '';
+}
+
 async function marcar(pool, id, esteira, msg) {
   await pool.query('UPDATE tasks SET esteira=$1, esteira_msg=$2, esteira_em=now(), updated_at=now() WHERE id=$3', [esteira, msg, id]);
 }
@@ -46,7 +54,7 @@ async function executar(pool, taskId, { ajuste, usuario } = {}) {
       const ctx = await blocoContexto(pool, t.project_id, t.client_id, agId);
       const saida = await chamarTexto({
         system: `${ag.instrucoes}\n\n${REGRAS}`,
-        user: `${ctx}\n\nFORMATO: ${formato}\nDATA/PRAZO: ${t.data ? String(t.data).slice(0, 10) : 'não definido'}\n\nPEDIDO:\n${pedido}${ajuste ? `\n\nAJUSTES PEDIDOS PELA EQUIPE (aplique na nova versão):\n${ajuste}` : ''}${anterior ? `\n\nVERSÃO ANTERIOR:\n${texto(anterior, 6000)}` : ''}\n\nTermine com a seção "Conferir antes de usar".`,
+        user: `${ctx}\n\nFORMATO: ${formato}${espec(t, formato)}\nDATA/PRAZO: ${t.data ? String(t.data).slice(0, 10) : 'não definido'}\n\nPEDIDO:\n${pedido}${ajuste ? `\n\nAJUSTES PEDIDOS PELA EQUIPE (aplique na nova versão):\n${ajuste}` : ''}${anterior ? `\n\nVERSÃO ANTERIOR:\n${texto(anterior, 6000)}` : ''}\n\nTermine com a seção "Conferir antes de usar".`,
         maxTokens: 4000,
       });
       await pool.query(`INSERT INTO criacoes (project_id, client_id, agente, formato, pedido, saida, usuario_id) VALUES ($1,$2,$3,$4,$5,$6,NULL)`,
@@ -100,6 +108,56 @@ function registrar(app, { pool, wrap }) {
     res.json(rows);
   }));
 
+
+  // Painel "Conteúdo": tarefas por etapa + metas semanais de posts
+  const escopo = (q, v, w, alias = 't') => {
+    if (q.client_id) { v.push(q.client_id); w.push(`${alias}.client_id=$${v.length}`); }
+    else if (q.project_id) { v.push(q.project_id); w.push(`${alias}.client_id IN (SELECT id FROM clients WHERE project_id=$${v.length})`); }
+  };
+  app.get('/api/conteudo', wrap(async (req, res) => {
+    await pool.query(`UPDATE tasks SET esteira='erro', esteira_msg='A execução demorou demais. Tente de novo.' WHERE esteira='executando' AND esteira_em < now() - interval '10 minutes'`);
+    const v = []; const w = []; escopo(req.query, v, w);
+    const E = w.length ? ' AND ' + w.join(' AND ') : '';
+    const cols = `t.*, c.nome AS cliente_nome`;
+    const { rows: ativas } = await pool.query(
+      `SELECT ${cols} FROM tasks t JOIN clients c ON c.id=t.client_id WHERE t.esteira IN ('executando','erro','aguardando_aprovacao','aprovada','agendada','publicando') ${E}
+       ORDER BY t.data NULLS LAST, t.id LIMIT 60`, v);
+    const { rows: feitas } = await pool.query(
+      `SELECT ${cols} FROM tasks t JOIN clients c ON c.id=t.client_id WHERE (t.esteira='publicada' OR (t.esteira IS NULL AND t.status='publicado' AND t.tipo='post')) ${E}
+       ORDER BY COALESCE(t.esteira_em, t.updated_at) DESC LIMIT 8`, v);
+    const v2 = []; const w2 = []; escopo(req.query, v2, w2, 'c2');
+    const { rows: [m] } = await pool.query(`SELECT COALESCE(sum(meta_semanal),0)::int AS meta FROM clients c2 ${w2.length ? 'WHERE ' + w2.join(' AND ').replace(/c2\.client_id/g, 'c2.id') : ''}`, v2);
+    const semanas = [];
+    const { rows: [h] } = await pool.query(`SELECT ((now() AT TIME ZONE 'America/Recife')::date - ((extract(isodow FROM (now() AT TIME ZONE 'America/Recife'))::int - 1))) AS seg`);
+    const seg = new Date(h.seg);
+    for (let i = 0; i < 3; i++) {
+      const ini = new Date(seg); ini.setUTCDate(ini.getUTCDate() + 7 * i); const fim = new Date(ini); fim.setUTCDate(fim.getUTCDate() + 6);
+      const iso = (x) => x.toISOString().slice(0, 10);
+      const v3 = [iso(ini), iso(fim)]; const w3 = []; escopo(req.query, v3, w3);
+      const { rows: [n] } = await pool.query(`SELECT count(*)::int AS n FROM tasks t WHERE t.tipo='post' AND t.data BETWEEN $1 AND $2 AND t.status IN ('agendado','publicado') ${w3.length ? 'AND ' + w3.join(' AND ') : ''}`, v3);
+      semanas.push({ ini: iso(ini), fim: iso(fim), feitos: n.n, meta: m.meta });
+    }
+    res.json({ tarefas: [...ativas, ...feitas], semanas });
+  }));
+
+  app.put('/api/clients/:id/meta-semanal', wrap(async (req, res) => {
+    const meta = Math.max(0, Math.min(50, Number(req.body.meta)));
+    if (!Number.isFinite(meta)) return res.status(400).json({ erro: 'Meta inválida' });
+    const { rows: [c] } = await pool.query('UPDATE clients SET meta_semanal=$1 WHERE id=$2 RETURNING id, meta_semanal', [Math.round(meta), req.params.id]);
+    if (!c) return res.status(404).json({ erro: 'Cliente não encontrado' });
+    res.json(c);
+  }));
+
+  // "Rodar agora": o time pega as próximas pautas ainda sem execução (até 5 por vez). Tudo termina aguardando aprovação.
+  app.post('/api/esteira/rodar', wrap(async (req, res) => {
+    const v = []; const w = []; escopo(req.body || {}, v, w);
+    const { rows } = await pool.query(
+      `SELECT t.id FROM tasks t WHERE t.status='pauta' AND t.esteira IS NULL AND t.tipo IN ('post','story','blog') ${w.length ? 'AND ' + w.join(' AND ') : ''}
+       ORDER BY t.data NULLS LAST, t.id LIMIT 5`, v);
+    for (const t of rows) { await marcar(pool, t.id, 'executando', 'Time começando…'); executar(pool, t.id, { usuario: req.user.email }); }
+    res.json({ iniciadas: rows.length });
+  }));
+
   // Pede ajustes e roda o time de novo
   app.post('/api/tasks/:id/ajustar', wrap(async (req, res) => {
     const ajuste = texto(req.body.ajuste, 2000).trim();
@@ -144,7 +202,7 @@ function registrar(app, { pool, wrap }) {
         `UPDATE tasks SET status='agendado', esteira='agendada', esteira_msg=$1, esteira_em=now(), agendada_para=$2, plataformas=$3,
            publicar_texto=$4, publicar_imagem=$5, aprovado_por=$6, aprovado_em=now(), updated_at=now()
          WHERE id=$7 AND esteira='aguardando_aprovacao' RETURNING *`,
-        [`Lara agendou para ${quando.toLocaleString('pt-BR', { timeZone: 'America/Recife', dateStyle: 'short', timeStyle: 'short' })}`, quando.toISOString(), alvos.join(','), txt, imagem || null, por, req.params.id]);
+        [`Mariana agendou para ${quando.toLocaleString('pt-BR', { timeZone: 'America/Recife', dateStyle: 'short', timeStyle: 'short' })}`, quando.toISOString(), alvos.join(','), txt, imagem || null, por, req.params.id]);
       if (!t) return res.status(400).json({ erro: 'Esta tarefa não está aguardando aprovação' });
       return res.json(t);
     }
@@ -165,15 +223,15 @@ function registrar(app, { pool, wrap }) {
     res.json(t);
   }));
 
-  // Lara (social media) sugere texto final por rede e o melhor horário. Só sugere: quem decide é a pessoa.
+  // Mariana (social media) sugere texto final por rede e o melhor horário. Só sugere: quem decide é a pessoa.
   app.post('/api/tasks/:id/social-sugestao', wrap(async (req, res) => {
     const { chamarTexto, blocoContexto, AGENTES, REGRAS } = require('./projetos');
     const { rows: [t] } = await pool.query('SELECT t.*, c.project_id FROM tasks t JOIN clients c ON c.id=t.client_id WHERE t.id=$1', [req.params.id]);
     if (!t) return res.status(404).json({ erro: 'Tarefa não encontrada' });
-    const ctx = await blocoContexto(pool, t.project_id, t.client_id, 'lara');
+    const ctx = await blocoContexto(pool, t.project_id, t.client_id, 'mariana');
     const redes = String(req.body?.plataformas || 'instagram').slice(0, 80);
     const saida = await chamarTexto({
-      system: `${AGENTES.lara.instrucoes}\n\n${REGRAS}`,
+      system: `${AGENTES.mariana.instrucoes}\n\n${REGRAS}`,
       user: `${ctx}\n\nREDES ESCOLHIDAS: ${redes}\nHOJE: ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Recife' })}\nPRAZO DA TAREFA: ${t.data ? String(t.data).slice(0, 10) : 'não definido'}\n\nPEÇA APROVADA:\n${texto(t.legenda || t.briefing || '', 6000)}\n\nResponda neste formato exato:\nTEXTO:\n<texto final que vai ao ar>\nMELHOR HORÁRIO:\n<dia e hora no fuso de Recife + 1 frase de justificativa>`,
       maxTokens: 1800,
     });
@@ -194,7 +252,7 @@ function registrar(app, { pool, wrap }) {
 // Agendador: a cada minuto publica o que uma pessoa aprovou e agendou. Reserva a tarefa antes (esteira='publicando') para não publicar duas vezes.
 async function publicarAgendadas(pool) {
   const { rows } = await pool.query(
-    `UPDATE tasks SET esteira='publicando', esteira_msg='Lara publicando…', esteira_em=now()
+    `UPDATE tasks SET esteira='publicando', esteira_msg='Mariana publicando…', esteira_em=now()
      WHERE id IN (SELECT id FROM tasks WHERE esteira='agendada' AND agendada_para <= now() ORDER BY agendada_para LIMIT 5 FOR UPDATE SKIP LOCKED)
      RETURNING id, client_id, plataformas, publicar_texto, publicar_imagem`);
   const { publicar } = require('./integracoes');
@@ -204,7 +262,7 @@ async function publicarAgendadas(pool) {
       const ok = res.filter((r) => r.status === 'publicado').map((r) => r.plataforma);
       const falhas = res.filter((r) => r.status !== 'publicado').map((r) => `${r.plataforma}: ${r.erro}`);
       if (ok.length) await pool.query(`UPDATE tasks SET status='publicado', esteira='publicada', esteira_msg=$1, esteira_em=now(), updated_at=now() WHERE id=$2`,
-        [`Lara publicou em ${ok.join(', ')}${falhas.length ? ` (falhou: ${falhas.join('; ')})` : ''}`, t.id]);
+        [`Mariana publicou em ${ok.join(', ')}${falhas.length ? ` (falhou: ${falhas.join('; ')})` : ''}`, t.id]);
       else await pool.query(`UPDATE tasks SET esteira='aprovada', esteira_msg=$1, esteira_em=now(), agendada_para=NULL, updated_at=now() WHERE id=$2`, [`A publicação agendada falhou: ${falhas.join('; ')}`.slice(0, 500), t.id]);
     } catch (e) {
       console.error('Agendador falhou:', e.message);

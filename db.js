@@ -247,6 +247,8 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_msg TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_em TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_por TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS meta_semanal INT NOT NULL DEFAULT 2;   -- posts por semana
+CREATE TABLE IF NOT EXISTS midia (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, dados BYTEA NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 -- Social media: agendamento depois da aprovação humana (esteira = agendada -> publicando -> publicada)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agendada_para TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS plataformas TEXT;       -- facebook,instagram,linkedin
@@ -683,6 +685,20 @@ async function seedGuiasMarca(c) {
   await c.query(`UPDATE clients SET canva_kit_id='kAGnnk9vrtI', canva_kit_nome='Kit Otter' WHERE nome='Agência Otter' AND canva_kit_id IS NULL`);
 }
 
+// Kits de marca vindos do Agente de Tráfego (gestoragente): direção visual vigente da Disco e o kit da Operizy
+async function seedKitsGestor(c) {
+  const fs = require('fs'); const path = require('path');
+  const ler = (n) => JSON.parse(fs.readFileSync(path.join(__dirname, 'kits', n + '.json'), 'utf8'));
+  const disco = ler('disco');
+  const bloco = [disco.direcao_visual_vigente, disco.regra_redes && `REGRA PARA REDES SOCIAIS: ${disco.regra_redes}`, disco.referencia_site && `REFERÊNCIA DO SITE: ${disco.referencia_site}`].filter(Boolean).join('\n\n');
+  // a direção vigente vem primeiro e prevalece sobre o guia anterior
+  await c.query(`UPDATE projects SET guia_design = $1 || E'\n\n--- GUIA ANTERIOR (a direção vigente acima prevalece em caso de conflito) ---\n' || COALESCE(guia_design,'') WHERE nome='Disco' AND COALESCE(guia_design,'') NOT LIKE 'DIREÇÃO VISUAL VIGENTE%'`, [bloco]);
+  const op = ler('operizy');
+  const guiaOp = ['nome', 'identidade', 'posicionamento', 'objetivo_conteudo', 'publico', 'tom_de_voz', 'estilo_comunicacao', 'estilo_visual', 'cores', 'fontes', 'regras_visuais', 'proibido']
+    .filter((k) => op[k]).map((k) => `${k.replace(/_/g, ' ').toUpperCase()}: ${op[k]}`).join('\n');
+  await c.query(`UPDATE clients SET guia_design=$1 WHERE nome ILIKE 'Operizy%' AND guia_design IS NULL`, [guiaOp]);
+}
+
 async function init() {
   const c = await pool.connect();
   try {
@@ -690,6 +706,8 @@ async function init() {
     await c.query(SCHEMA);
     await seedIfEmpty(c);
     await seedsIncrementais(c);
+    const { rowCount: kg } = await c.query(`INSERT INTO seeds (chave) VALUES ('kits_gestor_v1') ON CONFLICT DO NOTHING`);
+    if (kg) await seedKitsGestor(c);
     const { rowCount } = await c.query(`INSERT INTO seeds (chave) VALUES ('projetos_v1') ON CONFLICT DO NOTHING`);
     if (rowCount) await seedProjetos(c);
     // O projeto de carreira passa a ter o nome da própria Karolina
