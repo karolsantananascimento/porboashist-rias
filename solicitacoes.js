@@ -77,6 +77,42 @@ async function importarPautas(pool, body) {
   return r;
 }
 
+// ---------- Pauta a partir da demanda (IA quando disponível; senão regra simples) ----------
+async function montarPauta(pool, { tipo, texto: demanda, cliente }) {
+  const primeira = demanda.split(/\n|(?<=[.!?])\s/)[0].replace(/\s+/g, ' ').trim();
+  const base = {
+    tema: texto(primeira, 120),
+    tipo: tipo === 'conteudo' ? (/blog|artigo/i.test(demanda) ? 'blog' : /stor(y|ies)/i.test(demanda) ? 'story' : 'post') : tipo,
+    formato: tipo === 'trafego' ? 'campanha' : tipo === 'criacao' ? (/v[ií]deo|reels/i.test(demanda) ? 'vídeo' : 'arte') : null,
+    editorial: { conteudo: 'Demanda · Conteúdo', criacao: 'Demanda · Criação', trafego: 'Demanda · Tráfego' }[tipo],
+    briefing: `DEMANDA ORIGINAL\n${demanda}`,
+    ia: false,
+  };
+  const { cfg } = require('./config');
+  if (!cfg('ANTHROPIC_API_KEY')) return base;
+  try {
+    const { chamarTexto, blocoContexto } = require('./projetos');
+    const ctx = await blocoContexto(pool, cliente.project_id, cliente.id);
+    const out = await chamarTexto({
+      system: `Você organiza demandas de uma agência em pautas de trabalho. Escreva em português do Brasil. Nunca invente fatos, preços, datas ou promessas: o que faltar vai em "briefing" como [CONFIRMAR: ...]. Responda APENAS um objeto JSON com as chaves: "tema" (curto e específico, até 90 caracteres), "tipo" (${tipo === 'conteudo' ? 'post, story ou blog' : tipo}), "formato" (${tipo === 'conteudo' ? 'estático, carrossel, reels, story ou artigo' : tipo === 'criacao' ? 'arte estática, carrossel, vídeo, capa ou outro' : 'campanha'}), "editorial" (pilar ou objetivo, até 60 caracteres) e "briefing" (instruções claras para quem vai executar: objetivo, público, mensagem, o que entregar, pendências a confirmar).`,
+      user: `${ctx}\n\nTIPO DA DEMANDA: ${tipo}\nDEMANDA:\n${demanda}`,
+      maxTokens: 1200, timeoutMs: 45000,
+    });
+    const i = out.indexOf('{'); const j = out.lastIndexOf('}');
+    const o = JSON.parse(out.slice(i, j + 1));
+    if (!o.tema || !o.briefing) return base;
+    const tiposOk = tipo === 'conteudo' ? ['post', 'story', 'blog'] : [tipo];
+    return {
+      tema: texto(o.tema, 160), tipo: tiposOk.includes(o.tipo) ? o.tipo : base.tipo, formato: texto(o.formato, 40) || base.formato,
+      editorial: texto(o.editorial, 120) || base.editorial,
+      briefing: `${texto(o.briefing, 6000)}\n\n— Demanda original —\n${demanda}`, ia: true,
+    };
+  } catch (e) {
+    console.warn('Pauta sem IA (usando texto da demanda):', e.message);
+    return base;
+  }
+}
+
 // ---------- Rotas ----------
 function registrar(app, { pool, wrap, soAdmin }) {
   // Lista e métricas por projeto
@@ -120,6 +156,34 @@ function registrar(app, { pool, wrap, soAdmin }) {
   app.delete('/api/solicitacoes/:id', wrap(async (req, res) => {
     await pool.query('DELETE FROM solicitacoes WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
+  }));
+
+  // Caixa de demandas da tela inicial: registra a solicitação e já cria a pauta na área do cliente
+  app.post('/api/demandas', wrap(async (req, res) => {
+    const b = req.body || {};
+    const tipo = ['conteudo', 'criacao', 'trafego'].includes(b.tipo) ? b.tipo : null;
+    const demanda = texto(b.texto, 4000);
+    if (!tipo) return res.status(400).json({ erro: 'Escolha o tipo da demanda' });
+    if (!demanda) return res.status(400).json({ erro: 'Escreva a demanda' });
+    const { rows: [cl] } = await pool.query(
+      `SELECT c.id, c.nome, c.project_id, p.nome AS projeto, p.tipo AS projeto_tipo FROM clients c LEFT JOIN projects p ON p.id=c.project_id WHERE c.id=$1`, [b.client_id]);
+    if (!cl) return res.status(400).json({ erro: 'Escolha o cliente' });
+    if (cl.projeto_tipo === 'empregos') return res.status(400).json({ erro: 'O projeto Empregos não recebe demandas por aqui' });
+    const prazo = dataOk(b.prazo) ? b.prazo : null;
+
+    const pauta = await montarPauta(pool, { tipo, texto: demanda, cliente: cl });
+    const responsavel = { conteudo: 'Hugo', trafego: 'Camila', criacao: /v[ií]deo|reels|edi[cç][aã]o|corte/i.test(demanda + ' ' + (pauta.formato || '')) ? 'Davi' : 'Luiz' }[tipo];
+    const { rows: [t] } = await pool.query(
+      `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, briefing, status, responsavel, prioridade)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pauta',$8,$9) RETURNING *`,
+      [cl.id, pauta.tipo, pauta.formato || null, prazo, pauta.editorial || null, pauta.tema, pauta.briefing, responsavel,
+        /urgente|hoje|amanh[ãa]|prioridade/i.test(demanda) ? 'alta' : 'normal']);
+    const tipoSol = tipo === 'conteudo' ? 'conteudo' : tipo === 'trafego' ? 'campanha' : (responsavel === 'Davi' ? 'video' : 'arte');
+    const { rows: [sol] } = await pool.query(
+      `INSERT INTO solicitacoes (project_id, client_id, titulo, tipo, descricao, solicitante, prazo, origem, status, task_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'caixa','andamento',$8) RETURNING *`,
+      [cl.project_id, cl.id, texto(pauta.tema, 200), tipoSol, demanda, req.user.nome || req.user.email, prazo, t.id]);
+    res.json({ tarefa: t, solicitacao: sol, projeto: { id: cl.project_id, nome: cl.projeto }, cliente: { id: cl.id, nome: cl.nome }, ia: pauta.ia });
   }));
 
   // Link do formulário público do projeto
@@ -226,4 +290,4 @@ button{margin-top:18px;background:#b3202a;color:#fff;border:0;border-radius:8px;
   }));
 }
 
-module.exports = { registrar, registrarPublico, importarPautas };
+module.exports = { registrar, registrarPublico, importarPautas, montarPauta };

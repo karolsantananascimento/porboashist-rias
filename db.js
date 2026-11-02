@@ -234,6 +234,9 @@ CREATE TABLE IF NOT EXISTS vagas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Tipo de projeto: 'padrao' (clientes e tarefas) ou 'empregos' (vagas e candidaturas, sem tarefas)
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'padrao';
+
 -- Canva: kit de marca por projeto e link da arte nas tarefas e criações
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS canva_kit_id TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS canva_kit_nome TEXT;
@@ -259,6 +262,7 @@ CREATE TABLE IF NOT EXISTS solicitacoes (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS solicitacoes_projeto ON solicitacoes (project_id, status, created_at DESC);
+ALTER TABLE solicitacoes ADD COLUMN IF NOT EXISTS task_id INT;
 
 -- Contas conectadas (tokens criptografados) e histórico de publicações
 CREATE TABLE IF NOT EXISTS conexoes (
@@ -600,6 +604,14 @@ async function init() {
     await seedsIncrementais(c);
     const { rowCount } = await c.query(`INSERT INTO seeds (chave) VALUES ('projetos_v1') ON CONFLICT DO NOTHING`);
     if (rowCount) await seedProjetos(c);
+    // Projeto Empregos: área própria (vagas e candidaturas), sem clientes nem tarefas
+    const { rowCount: emp } = await c.query(`INSERT INTO seeds (chave) VALUES ('empregos_v1') ON CONFLICT DO NOTHING`);
+    if (emp) {
+      await c.query(
+        `INSERT INTO projects (nome, cor, descricao, contexto, ordem, tipo) VALUES ('Empregos','#2f6f8f',
+         'Vagas e projetos freelance: busca, propostas, candidaturas e o seu perfil profissional. Funciona diferente das tarefas dos outros projetos.','',99,'empregos')
+         ON CONFLICT (nome) DO UPDATE SET tipo='empregos'`);
+    }
     // Kits de marca que já existem no Canva (só preenche onde ainda está vazio)
     const { rowCount: kits } = await c.query(`INSERT INTO seeds (chave) VALUES ('canva_kits_v1') ON CONFLICT DO NOTHING`);
     if (kits) {

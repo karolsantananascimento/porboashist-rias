@@ -42,6 +42,7 @@ function mostrarProjetoAtual() {
   if (p && ['visao', 'painel', 'calendario', 'quadro', 'lista', 'captacao', 'programacao', 'materiais', 'area', 'clientes'].includes(S.view)) {
     $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === 'inicio'));
   }
+  if (S.view === 'empregos') $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === 'inicio'));
   desenharContexto(p);
 }
 
@@ -70,12 +71,73 @@ function desenharContexto(p) {
   $$('[data-aba]', el).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.aba === 'tarefas' ? S.viewTarefas : b.dataset.aba; render(); }));
 }
 
-const opcoesProjetos = (sel) => S.projetos.map((p) => `<option value="${p.id}" ${String(p.id) === String(sel) ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');
+const opcoesProjetos = (sel) => S.projetos.filter((p) => p.tipo !== 'empregos').map((p) => `<option value="${p.id}" ${String(p.id) === String(sel) ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');
+
+// ---------------- Caixa de demandas (tela inicial) ----------------
+const TIPOS_DEMANDA = [
+  ['conteudo', '✍️', 'Conteúdo', 'Hugo · posts, roteiros, artigos'],
+  ['criacao', '🎨', 'Criação', 'Luiz e Davi · artes e vídeos'],
+  ['trafego', '📈', 'Tráfego', 'Camila · campanhas e anúncios'],
+];
+
+function caixaDemandas(clientes, projetos) {
+  const grupos = projetos.filter((p) => p.tipo !== 'empregos').map((p) => {
+    const cl = clientes.filter((c) => c.project_id === p.id);
+    return cl.length ? `<optgroup label="${esc(p.nome)}">${cl.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  return `<section class="card demanda" aria-labelledby="dmTit">
+    <h3 id="dmTit">📥 Nova demanda</h3>
+    <p class="muted" style="margin:2px 0 12px">Escolha o cliente e o tipo, escreva o pedido e envie: a pauta é criada na área do projeto, com o responsável já definido.</p>
+    <div class="dm-linha">
+      <div class="dm-cli"><label for="dmCli">Cliente</label><select id="dmCli"><option value="">Escolha o cliente…</option>${grupos}</select></div>
+      <div><label>Tipo de demanda</label><div class="dm-tipos" role="radiogroup" aria-label="Tipo de demanda">
+        ${TIPOS_DEMANDA.map(([k, ic, l, sub], i) => `<label class="dm-tipo"><input type="radio" name="dmTipo" value="${k}" ${i === 0 ? 'checked' : ''}><span><b>${ic} ${l}</b><small>${esc(sub)}</small></span></label>`).join('')}</div></div>
+      <div class="dm-prazo"><label for="dmPrazo">Prazo (opcional)</label><input type="date" id="dmPrazo"></div>
+    </div>
+    <label for="dmTxt" style="margin-top:12px">Demanda</label>
+    <textarea id="dmTxt" rows="4" placeholder="Ex.: Post de Natal com a promoção de 20% nas diárias, tom acolhedor, para a próxima semana"></textarea>
+    <div class="acoes-res"><button class="btn primary" id="dmEnviar">Enviar demanda</button><span class="erro" id="dmErro" role="alert"></span></div>
+    <div id="dmRes" aria-live="polite"></div>
+  </section>`;
+}
+
+function ligarCaixaDemandas(v, clientes) {
+  const btn = $('#dmEnviar', v);
+  btn.onclick = async () => {
+    const client_id = Number($('#dmCli', v).value);
+    const tipo = ($$('input[name=dmTipo]', v).find((r) => r.checked) || {}).value;
+    const texto = $('#dmTxt', v).value.trim();
+    const erro = $('#dmErro', v); erro.textContent = '';
+    if (!client_id) return (erro.textContent = 'Escolha o cliente');
+    if (!texto) return (erro.textContent = 'Escreva a demanda');
+    btn.disabled = true; btn.textContent = 'Criando a pauta…';
+    try {
+      const r = await api('/api/demandas', { method: 'POST', body: { client_id, tipo, texto, prazo: $('#dmPrazo', v).value } });
+      $('#dmTxt', v).value = ''; $('#dmPrazo', v).value = '';
+      $('#dmRes', v).innerHTML = `<div class="alerta ok" style="margin-top:12px">
+        <b>Pauta criada</b> em ${esc(r.projeto.nome)} › ${esc(r.cliente.nome)}: “${esc(r.tarefa.tema)}”
+        <small class="muted"> · responsável ${esc(r.tarefa.responsavel)}${r.ia ? '' : ' · organizada sem IA (texto original no briefing)'}</small>
+        <div class="acoes-res"><button class="btn small" id="dmAbrir">Abrir no projeto</button><button class="btn small" id="dmTarefa">Ver a tarefa</button></div></div>`;
+      $('#dmAbrir', v).onclick = async () => { await abrirProjeto(r.projeto.id, 'quadro'); S.cliente = String(r.cliente.id); S.quadroTipo = ''; localStorageSet('pbh_cliente', S.cliente); render(); };
+      $('#dmTarefa', v).onclick = () => abrirTarefa(r.tarefa);
+    } catch (e) { erro.textContent = e.message; }
+    btn.disabled = false; btn.textContent = 'Enviar demanda';
+  };
+}
 
 // ---------------- Início: cards de projetos + Criar ----------------
 async function viewInicio(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
-  const cards = S.projetos.map((p) => `
+  const clientesTodos = await api('/api/clients');
+  const cards = S.projetos.map((p) => p.tipo === 'empregos' ? `
+    <article class="proj-card" style="--cor:${esc(p.cor)}">
+      <button class="proj-open" data-emp="1" aria-label="Abrir ${esc(p.nome)}">
+        <h3>💼 ${esc(p.nome)}</h3><p>${esc(p.descricao || '')}</p>
+        <div class="proj-stats"><span><b>${p.vagas_abertas}</b> vagas abertas</span><span><b>${p.vagas_candidatadas}</b> candidaturas</span></div>
+        <div class="proj-tags"><i>Vagas</i><i>Funil</i><i>Meu perfil</i><i>Bianca</i></div>
+      </button>
+      <div class="proj-acts"><button class="btn small" data-emp="1">Abrir Empregos</button></div>
+    </article>` : `
     <article class="proj-card" style="--cor:${esc(p.cor)}">
       <button class="proj-open" data-abrir="${p.id}" aria-label="Abrir ${esc(p.nome)}">
         <h3>${esc(p.nome)}</h3>
@@ -112,13 +174,17 @@ async function viewInicio(v) {
   }).join('');
 
   v.innerHTML = `
-    <div class="view-head"><div><h2>Projetos</h2><p>Escolha um projeto para ver tarefas, calendário e clientes, ou crie algo agora.</p></div>
+    <div class="view-head"><div><h2>Projetos</h2><p>Receba uma demanda, escolha um projeto ou crie algo agora.</p></div>
       ${S.me.papel === 'admin' ? '<button class="btn" id="novoProj">+ Novo projeto</button>' : ''}</div>
+    ${caixaDemandas(clientesTodos, S.projetos)}
+    <h3 class="secao-h">Projetos</h3>
     <div class="proj-grid">${cards}</div>
     <h3 class="secao-h">Criar</h3>
     ${AGENTES.length && !AGENTES[0].ativo ? '<div class="alerta">Os agentes ainda não estão ativos: falta configurar <b>ANTHROPIC_API_KEY</b> no Render.</div>' : ''}
     <div class="ag-grid">${acoes}</div>`;
 
+  ligarCaixaDemandas(v, clientesTodos);
+  $$('[data-emp]', v).forEach((b) => b.addEventListener('click', () => { S.projeto = ''; S.view = 'empregos'; render(); }));
   $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.abrir, 'visao')));
   $$('[data-criar-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.criarEm, 'criar')));
   $$('[data-solic-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.solicEm, 'solicitacoes')));
@@ -462,7 +528,7 @@ async function viewSolicitacoes(v) {
         const a = SOL_AGENTE[x.tipo] && agente(SOL_AGENTE[x.tipo]);
         return `<article class="card sol ${x.prioridade === 'alta' ? 'alta' : ''}">
           <div class="msg-top"><span class="pill">${esc(SOL_TIPOS[x.tipo])}</span>${x.prioridade === 'alta' ? '<span class="pill" style="background:var(--danger-soft);color:var(--danger)">Alta</span>' : ''}
-            ${x.origem === 'formulario' ? '<span class="pill">Formulário</span>' : ''}${p ? '' : `<small>${esc(nomeProj(x.project_id))}</small>`}</div>
+            ${x.origem === 'formulario' ? '<span class="pill">Formulário</span>' : ''}${x.origem === 'caixa' ? '<span class="pill">Caixa</span>' : ''}${p ? '' : `<small>${esc(nomeProj(x.project_id))}</small>`}</div>
           <b>${esc(x.titulo)}</b>
           ${x.descricao ? `<p class="sol-desc">${esc(x.descricao)}</p>` : ''}
           <small class="muted">${esc([x.solicitante, x.contato, x.prazo ? 'prazo ' + fmtPrazo(x.prazo) : ''].filter(Boolean).join(' · '))}</small>
@@ -673,12 +739,15 @@ async function viewEmpregos(v) {
   await carregarAgentes();
   const b = agente('bianca');
   v.innerHTML = `
-    <div class="view-head"><div><h2>Empregos · ${esc(b.nome)}</h2><p>${esc(b.descricao)}</p></div>
-      <div class="seg" role="tablist">${[['vagas', 'Vagas'], ['perfil', 'Meu perfil']].map(([k, l]) =>
+    <nav class="crumbs" aria-label="Você está em" style="margin-bottom:10px"><a href="#" id="empVolta">Projetos</a><span>›</span><a href="#" aria-current="page">Empregos</a></nav>
+    <div class="view-head"><div><h2>💼 Empregos · ${esc(b.nome)}</h2><p>${esc(b.descricao)}</p></div>
+      <div class="seg" role="tablist">${[['vagas', 'Vagas'], ['funil', 'Funil'], ['perfil', 'Meu perfil']].map(([k, l]) =>
         `<button role="tab" data-ea="${k}" class="${S.empAba === k ? 'on' : ''}" aria-selected="${S.empAba === k}">${l}</button>`).join('')}</div></div>
     <div id="empCorpo"></div>`;
   $$('[data-ea]', v).forEach((x) => x.addEventListener('click', () => { S.empAba = x.dataset.ea; viewEmpregos(v); }));
+  $('#empVolta', v).onclick = (e) => { e.preventDefault(); S.view = 'inicio'; render(); };
   if (S.empAba === 'perfil') return empPerfil($('#empCorpo'));
+  if (S.empAba === 'funil') return empFunil($('#empCorpo'));
   return empVagas($('#empCorpo'));
 }
 
@@ -709,6 +778,17 @@ async function empVagas(el) {
   };
   $('#bvNova').onclick = () => abrirVaga(null, () => empVagas(el));
   $$('[data-v]', el).forEach((b) => b.addEventListener('click', () => abrirVaga(vagas.find((x) => String(x.id) === b.dataset.v), () => empVagas(el))));
+}
+
+async function empFunil(el) {
+  const vagas = await api('/api/vagas');
+  const cols = [['nova', 'Novas'], ['salva', 'Salvas / com proposta'], ['candidatado', 'Candidatado'], ['descartada', 'Descartadas']];
+  el.innerHTML = `<div class="funil">${cols.map(([k, l]) => {
+    const itens = vagas.filter((x) => x.status === k);
+    return `<section class="sol-col"><h4>${l} <span class="pill">${itens.length}</span></h4>
+      ${itens.length ? itens.map((x) => `<button class="card vaga ${x.status}" data-v="${x.id}"><div><b>${esc(x.titulo)}</b><small>${esc([x.empresa, x.plataforma, x.orcamento].filter(Boolean).join(' · '))}</small>${x.proposta ? '<small>✓ proposta pronta</small>' : ''}</div></button>`).join('') : '<div class="empty" style="padding:14px">Vazio.</div>'}</section>`;
+  }).join('')}</div>`;
+  $$('[data-v]', el).forEach((b) => b.addEventListener('click', () => abrirVaga(vagas.find((x) => String(x.id) === b.dataset.v), () => empFunil(el))));
 }
 
 function abrirVaga(x, depois) {

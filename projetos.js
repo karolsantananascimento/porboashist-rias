@@ -148,7 +148,9 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
         (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo<>'story' AND t.status<>'publicado') AS abertas,
         (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo<>'story' AND t.status<>'publicado' AND t.data < current_date) AS atrasadas,
         (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo='post' AND to_char(t.data,'YYYY-MM')=to_char(current_date,'YYYY-MM')) AS posts_mes,
-        (SELECT count(*)::int FROM solicitacoes s WHERE s.project_id=p.id AND s.status IN ('nova','andamento')) AS solicitacoes_abertas
+        (SELECT count(*)::int FROM solicitacoes s WHERE s.project_id=p.id AND s.status IN ('nova','andamento')) AS solicitacoes_abertas,
+        (SELECT count(*)::int FROM vagas v WHERE p.tipo='empregos' AND v.status IN ('nova','salva')) AS vagas_abertas,
+        (SELECT count(*)::int FROM vagas v WHERE p.tipo='empregos' AND v.status='candidatado') AS vagas_candidatadas
       FROM projects p ORDER BY p.ordem, p.id`);
     res.json(rows);
   }));
@@ -432,6 +434,8 @@ Responda exatamente neste formato:
 };
 
 // ---------- Webhook da Meta (fora de /api: a Meta não tem a sessão) ----------
+module.exports.chamarTexto = chamarTexto;
+module.exports.blocoContexto = blocoContexto;
 module.exports.webhook = function registrarWebhook(app, { pool, wrap }) {
   app.get('/webhook/meta', (req, res) => {
     const esperado = verifyToken();

@@ -8,7 +8,7 @@ const STATUS_COLOR = {
   pauta: '#c9bfb4', conteudo: '#e0a37f', design: '#c97b54', revisao: '#a98bd6',
   aprovacao: '#e0a84a', agendado: '#63a8cc', publicado: '#3f7d5a',
 };
-const TIPO_LABEL = { post: 'Feed', story: 'Stories', blog: 'Blog SEO', captacao: 'Captação', outro: 'Outro' };
+const TIPO_LABEL = { post: 'Feed', story: 'Stories', blog: 'Blog SEO', captacao: 'Captação', criacao: 'Criação', trafego: 'Tráfego', outro: 'Outro' };
 const FORMATOS = ['estático', 'carrossel', 'reels', 'story', 'artigo', 'captação', 'outro'];
 const DOW = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -464,7 +464,7 @@ function viewCalendario(v) {
 
 // ---------------- Quadro ----------------
 function viewQuadro(v) {
-  const filtros = { post: 'Feed', story: 'Stories', blog: 'Blog SEO', captacao: 'Captação', '': 'Todos' };
+  const filtros = { post: 'Feed', story: 'Stories', blog: 'Blog SEO', captacao: 'Captação', criacao: 'Criação', trafego: 'Tráfego', '': 'Todos' };
   const lista = S.tasks.filter((t) => !S.quadroTipo || t.tipo === S.quadroTipo);
   v.innerHTML = `
     <div class="view-head"><div><h2>Tarefas</h2><p>Arraste os cartões para mudar a etapa.</p></div>${seletorTarefas()}</div>

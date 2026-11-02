@@ -426,3 +426,19 @@ ol.passos { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 6px; font-s
 .info-l p { margin: 0; white-space: pre-wrap; color: var(--ink-2); }
 details.info-l summary { cursor: pointer; }
 .view-head .marcas { margin-top: 6px; }
+
+/* Caixa de demandas */
+.demanda { margin-bottom: 8px; border-top: 4px solid var(--accent); }
+.dm-linha { display: grid; gap: 14px; grid-template-columns: minmax(200px, 1.1fr) minmax(300px, 2fr) minmax(150px, .7fr); align-items: start; }
+.dm-tipos { display: flex; gap: 8px; flex-wrap: wrap; }
+label.dm-tipo { text-transform: none; letter-spacing: 0; margin: 0; cursor: pointer; flex: 1; min-width: 150px; }
+.dm-tipo input { position: absolute; opacity: 0; width: 0; height: 0; }
+.dm-tipo span { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--surface); }
+.dm-tipo b { display: block; font-size: 14px; color: var(--ink); }
+.dm-tipo small { display: block; font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.dm-tipo input:checked + span { border-color: var(--accent); background: var(--accent-soft); }
+.dm-tipo input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.funil { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; }
+.tag.criacao { background: color-mix(in srgb, var(--story) 15%, transparent); color: var(--story); }
+.tag.trafego { background: color-mix(in srgb, var(--blog) 15%, transparent); color: var(--blog); }
+@media (max-width: 900px) { .dm-linha { grid-template-columns: 1fr; } .funil { grid-template-columns: 1fr; } }
