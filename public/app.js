@@ -16,7 +16,7 @@ const hoje = new Date();
 const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
 const VIEWS_TAREFAS = ['calendario', 'quadro', 'lista'];
-const VIEWS_EXTRA_NOMES = ['inicio', 'criar', 'solicitacoes', 'mensagens', 'empregos', 'integracoes'];
+const VIEWS_EXTRA_NOMES = ['inicio', 'solicitar', 'recursos', 'acessos', 'relatorios', 'criar', 'solicitacoes', 'mensagens', 'empregos', 'integracoes'];
 const VIEWS_VALIDAS = ['visao', 'painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios', ...VIEWS_EXTRA_NOMES];
 const viewSalva = localStorageGet('pbh_view');
 const tarefasSalva = localStorageGet('pbh_view_tarefas');
@@ -30,7 +30,7 @@ const S = {
   cliente: localStorageGet('pbh_cliente') || '',
   mes: hojeISO.slice(0, 7),
   tasks: [],
-  quadroTipo: 'post',
+  quadroTipo: '',
   listaFiltro: { tipo: '', status: '', busca: '' },
   matBusca: '',
   me: null,
@@ -161,7 +161,7 @@ async function carregarProjetos() {
   if (S.projeto && !S.projetos.some((p) => String(p.id) === String(S.projeto))) S.projeto = '';
 }
 
-async function abrirProjeto(id, view = 'visao') {
+async function abrirProjeto(id, view = 'solicitar') {
   S.projeto = id ? String(id) : '';
   S.cliente = '';
   localStorageSet('pbh_cliente', '');
@@ -223,10 +223,10 @@ async function render() {
     if (ativo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   $('#mesLabel').textContent = mesLabel(S.mes);
-  const semMes = ['materiais', 'clientes', 'usuarios', 'programacao', 'area', ...VIEWS_EXTRA_NOMES].includes(S.view);
-  $('.mes').style.display = semMes ? 'none' : '';
+  const comMes = ['quadro', 'calendario', 'lista', 'painel', 'captacao'].includes(S.view);
+  $('.mes').style.display = comMes ? '' : 'none';
   // "Nova tarefa" só aparece onde faz sentido criar tarefa
-  $('#novaTarefa').style.display = ['materiais', 'clientes', 'usuarios', 'programacao', ...VIEWS_EXTRA_NOMES].includes(S.view) ? 'none' : '';
+  $('#novaTarefa').style.display = comMes ? '' : 'none';
   // filtro de cliente não se aplica à gestão de usuários nem às telas globais
   $('#fCliente').style.display = (S.projeto || ['usuarios', 'inicio', 'solicitacoes', 'mensagens', 'empregos', 'integracoes'].includes(S.view)) ? 'none' : '';
   mostrarProjetoAtual();
@@ -465,9 +465,12 @@ function viewCalendario(v) {
 // ---------------- Quadro ----------------
 function viewQuadro(v) {
   const filtros = { post: 'Feed', story: 'Stories', blog: 'Blog SEO', captacao: 'Captação', criacao: 'Criação', trafego: 'Tráfego', '': 'Todos' };
-  const lista = S.tasks.filter((t) => !S.quadroTipo || t.tipo === S.quadroTipo);
+  // Em "Todos", esconde os stories diários ainda vazios (estrutura criada em "Gerar mês")
+  const vazio = (t) => t.tipo === 'story' && !t.legenda && !t.briefing && /^Stories do dia/.test(t.tema || '');
+  const lista = S.tasks.filter((t) => (S.quadroTipo ? t.tipo === S.quadroTipo : !vazio(t)));
   v.innerHTML = `
-    <div class="view-head"><div><h2>Tarefas</h2><p>Arraste os cartões para mudar a etapa.</p></div>${seletorTarefas()}</div>
+    <div class="view-head"><div><h2>Pautas</h2><p>O time de agentes executa as pautas; você acompanha e aprova. Arraste os cartões para mudar a etapa.</p></div>
+      <button class="btn" id="kbImportar">⇪ Importar pautas</button></div>
     <div class="subbar"><span class="muted">Mostrar:</span>
       <div class="seg">${Object.entries(filtros).map(([k, l]) => `<button data-tipo="${k}" class="${S.quadroTipo === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="board">${STATUS.map((s) => {
@@ -475,12 +478,13 @@ function viewQuadro(v) {
     return `<div class="col" data-status="${s}"><h4>${STATUS_LABEL[s]}<span>${cards.length}</span></h4>
         ${cards.map((t) => `<div class="kcard" draggable="true" data-id="${t.id}">
           <div class="meta"><span class="tag ${t.tipo}">${TIPO_LABEL[t.tipo]}</span>${t.prioridade === 'alta' ? '<span class="tag alta">Prioridade</span>' : ''}
-            <span>${t.data ? fmtData(t.data) + ' ' + dowDe(t.data) : ''}</span></div>
+            <span>${t.data ? fmtData(t.data) + ' ' + dowDe(t.data) : ''}</span>${t.arte_url ? '<span title="Tem arte no Canva">🎨</span>' : ''}</div>
+          ${t.esteira ? `<div class="meta"><span class="tag esteira-${t.esteira}">${({ executando: '⏳ Time trabalhando', aguardando_aprovacao: '✋ Aguardando aprovação', aprovada: '✓ Aprovada', publicada: '✓ Publicada', erro: '⚠ Erro na execução' })[t.esteira] || ''}</span></div>` : ''}
           <div class="t">${esc(tituloTarefa(t))}</div>
           <div class="meta">${t.formato ? esc(t.formato) : ''}${t.responsavel ? ' · ' + esc(t.responsavel) : ''}${S.cliente ? '' : ' · ' + esc(clienteNome(t.client_id))}</div>
         </div>`).join('')}</div>`;
   }).join('')}</div>`;
-  ligarSeletorTarefas(v);
+  $('#kbImportar', v).addEventListener('click', () => abrirImportar());
   $$('[data-tipo]', v).forEach((b) => b.addEventListener('click', () => { S.quadroTipo = b.dataset.tipo; viewQuadro(v); }));
   $$('.kcard', v).forEach((c) => {
     c.addEventListener('click', () => abrirTarefa(S.tasks.find((t) => t.id === Number(c.dataset.id))));
@@ -1190,14 +1194,14 @@ function iconeLink(url) {
 }
 const dominio = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
 
-async function viewArea(v) {
+async function viewArea(v, parte) {
   const admin = S.me.papel === 'admin';
   if (!S.cliente) {
-    v.innerHTML = `<div class="view-head"><div><h2>Área do cliente</h2><p>Escolha um cliente para ver links, planilhas e acessos.</p></div></div>
+    v.innerHTML = `<div class="view-head"><div><h2>${parte === 'acessos' ? 'Acessos' : 'Recursos'}</h2><p>Escolha um cliente para ver ${parte === 'acessos' ? 'os acessos das redes' : 'links, materiais e guias'}.</p></div></div>
       <div class="cliente-pick">${S.clients.map((c) => `<button class="card" data-pick="${c.id}"><h3>${esc(c.nome)}</h3>
         <div class="muted" style="margin-top:4px">${esc((c.marcas || []).join(' · ') || 'Abrir área')}</div></button>`).join('')}</div>`;
     $$('[data-pick]', v).forEach((b) => b.addEventListener('click', () => {
-      S.cliente = b.dataset.pick; localStorageSet('pbh_cliente', S.cliente); $('#fCliente').value = S.cliente; viewArea(v);
+      S.cliente = b.dataset.pick; localStorageSet('pbh_cliente', S.cliente); $('#fCliente').value = S.cliente; render();
     }));
     return;
   }
@@ -1211,11 +1215,11 @@ async function viewArea(v) {
   v.innerHTML = `
     <div class="area-head"><div><h2>${esc(cl.nome)}</h2>
       ${(cl.marcas || []).length ? `<div class="marcas">${cl.marcas.map((m) => `<span class="tag">${esc(m)}</span>`).join('')}</div>` : ''}</div>
-      <div class="toolbar">${cl.planilha_url ? '<button class="btn" data-ir="programacao">Programação</button>' : ''}
-        <button class="btn" data-ir="calendario">Calendário</button><button class="btn" data-ir="quadro">Quadro</button><button class="btn" data-ir="materiais">Materiais</button></div></div>
+      </div>
     ${cl.observacoes ? `<div class="nota">${esc(cl.observacoes)}</div>` : ''}
 
-    <div class="secao-titulo"><h3>Links rápidos</h3><button class="btn small" id="novoLink">+ Adicionar link</button></div>
+    ${parte === 'acessos' ? '' : `
+    <div class="secao-titulo"><h3>Links úteis</h3><button class="btn small" id="novoLink">+ Adicionar link</button></div>
     ${Object.keys(grupos).length ? Object.entries(grupos).map(([cat, arr]) => `
       <div class="mat-group"><div class="muted" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${esc(cat)}</div>
       <div class="atalhos">${arr.map((l) => { const [ic, cor] = iconeLink(l.url); return `
@@ -1229,7 +1233,15 @@ async function viewArea(v) {
       <div class="toolbar"><input id="aMatBusca" placeholder="Buscar material…" style="width:200px"><button class="btn small" id="aNovoMat">+ Adicionar material</button></div></div>
     <div id="aMats">${materiaisHTML(mats)}</div>
 
-    <div class="secao-titulo"><h3>Acessos</h3>${admin ? '<button class="btn small" id="novoAcesso">+ Adicionar acesso</button>' : ''}</div>
+    <div class="secao-titulo"><h3>Mais recursos</h3></div>
+    <div class="card"><div class="acoes-res" style="margin-top:0">
+      ${cl.planilha_url ? '<button class="btn small" data-ir="programacao">Programação dos resorts</button>' : ''}
+      <button class="btn small" id="rcGuia">Guia de marca (designer)</button>
+      <button class="btn small" id="rcCtx">Contexto do agente</button>
+      <button class="btn small" data-ir="clientes">Contrato e metas</button></div></div>`}
+
+    ${parte === 'recursos' ? '' : `
+    <div class="secao-titulo"><h3>Acessos das redes</h3>${admin ? '<button class="btn small" id="novoAcesso">+ Adicionar acesso</button>' : ''}</div>
     ${ocultos ? `<p class="muted" style="margin-top:-4px">${ocultos} acesso(s) visíveis só para administradores.</p>` : ''}
     <div class="cofre">${acessos.map((a) => `<div class="card acesso" data-a="${a.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
@@ -1239,14 +1251,18 @@ async function viewArea(v) {
       ${a.tem_senha ? `<div class="linha"><span class="k">Senha</span><span class="v" data-senha>••••••••</span><button data-mostrar>Mostrar</button><button data-copiar-senha>Copiar</button></div>` : ''}
       ${a.observacao ? `<div class="muted" style="font-size:12px;margin-top:6px;white-space:pre-line">${esc(a.observacao)}</div>` : ''}
       ${admin ? '<div style="margin-top:8px"><button class="btn small" data-editar-acesso>Editar</button></div>' : ''}
-    </div>`).join('') || '<div class="empty" style="padding:20px">Nenhum acesso cadastrado.</div>'}</div>`;
+    </div>`).join('') || '<div class="empty" style="padding:20px">Nenhum acesso cadastrado.</div>'}</div>`}`;
 
   $$('[data-ir]', v).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.ir; render(); }));
   const aMats = $('#aMats');
-  ligarMateriais(aMats, mats);
-  $('#aMatBusca').addEventListener('input', (e) => { aMats.innerHTML = materiaisHTML(mats, e.target.value); ligarMateriais(aMats, mats); });
-  $('#aNovoMat').addEventListener('click', () => abrirMaterial(null, mats));
-  $('#novoLink').addEventListener('click', () => abrirLink(cl, null));
+  if (aMats) {
+    ligarMateriais(aMats, mats);
+    $('#aMatBusca').addEventListener('input', (e) => { aMats.innerHTML = materiaisHTML(mats, e.target.value); ligarMateriais(aMats, mats); });
+    $('#aNovoMat').addEventListener('click', () => abrirMaterial(null, mats));
+    $('#novoLink').addEventListener('click', () => abrirLink(cl, null));
+    $('#rcGuia')?.addEventListener('click', () => abrirGuiaCliente(cl, () => render()));
+    $('#rcCtx')?.addEventListener('click', () => abrirContextoAgente(cl.id));
+  }
   $$('[data-link]', v).forEach((b) => b.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation(); abrirLink(cl, links.find((l) => l.id === Number(b.dataset.link)));
   }));

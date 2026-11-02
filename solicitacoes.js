@@ -179,10 +179,18 @@ function registrar(app, { pool, wrap, soAdmin }) {
       [cl.id, pauta.tipo, pauta.formato || null, prazo, pauta.editorial || null, pauta.tema, pauta.briefing, responsavel,
         /urgente|hoje|amanh[ãa]|prioridade/i.test(demanda) ? 'alta' : 'normal']);
     const tipoSol = tipo === 'conteudo' ? 'conteudo' : tipo === 'trafego' ? 'campanha' : (responsavel === 'Davi' ? 'video' : 'arte');
-    const { rows: [sol] } = await pool.query(
-      `INSERT INTO solicitacoes (project_id, client_id, titulo, tipo, descricao, solicitante, prazo, origem, status, task_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'caixa','andamento',$8) RETURNING *`,
-      [cl.project_id, cl.id, texto(pauta.tema, 200), tipoSol, demanda, req.user.nome || req.user.email, prazo, t.id]);
+    let sol;
+    if (b.solicitacao_id) {
+      // Solicitação que já existia (formulário, registro manual): passa a andamento e fica ligada à pauta
+      ({ rows: [sol] } = await pool.query(
+        `UPDATE solicitacoes SET status='andamento', task_id=$1, client_id=$2, updated_at=now() WHERE id=$3 RETURNING *`, [t.id, cl.id, b.solicitacao_id]));
+    }
+    if (!sol) {
+      ({ rows: [sol] } = await pool.query(
+        `INSERT INTO solicitacoes (project_id, client_id, titulo, tipo, descricao, solicitante, prazo, origem, status, task_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'caixa','andamento',$8) RETURNING *`,
+        [cl.project_id, cl.id, texto(pauta.tema, 200), tipoSol, demanda, req.user.nome || req.user.email, prazo, t.id]));
+    }
     // O time começa a trabalhar sozinho; o resultado cai na fila de aprovação
     let executando = false;
     const { cfg } = require('./config');

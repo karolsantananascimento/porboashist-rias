@@ -35,11 +35,14 @@ function seletorKit(id, atual, nomeAtual) {
 const lerKit = (id) => { const sel = $('#' + id); const o = sel.options[sel.selectedIndex]; return { id: sel.value || '', nome: sel.value ? o.textContent : '' }; };
 
 // ---------------- Navegação: projeto > cliente > abas ----------------
-const ABAS = [
-  ['visao', 'Visão geral'], ['painel', 'Painel do mês'], ['tarefas', 'Tarefas'], ['captacao', 'Captação'], ['programacao', 'Programação'],
-  ['materiais', 'Materiais'], ['area', 'Links e acessos'], ['solicitacoes', 'Solicitações'], ['criar', 'Criar'], ['clientes', 'Contrato e agente'],
-];
-const VIEWS_DO_PROJETO = ['visao', 'painel', 'calendario', 'quadro', 'lista', 'captacao', 'programacao', 'materiais', 'area', 'solicitacoes', 'criar', 'clientes'];
+const ABAS = [['solicitar', 'Solicitar'], ['quadro', 'Pautas'], ['recursos', 'Recursos'], ['acessos', 'Acessos'], ['relatorios', 'Relatórios']];
+const GRUPO_ABA = {
+  solicitar: 'solicitar', visao: 'solicitar', solicitacoes: 'solicitar', criar: 'solicitar',
+  quadro: 'quadro', calendario: 'quadro', lista: 'quadro', captacao: 'quadro', painel: 'quadro',
+  recursos: 'recursos', programacao: 'recursos', materiais: 'recursos', area: 'recursos',
+  acessos: 'acessos', relatorios: 'relatorios',
+};
+const VIEWS_DO_PROJETO = [...Object.keys(GRUPO_ABA), 'clientes'];
 const clienteAtual = () => (S.cliente ? S.clients.find((c) => String(c.id) === String(S.cliente)) : null);
 
 function mostrarProjetoAtual() {
@@ -51,7 +54,7 @@ function mostrarProjetoAtual() {
     box.innerHTML = `<span class="proj-dot" style="background:${esc(p.cor)}"></span><div><small>Projeto aberto</small><strong>${esc(p.nome)}</strong>${c ? `<small>${esc(c.nome)}</small>` : ''}</div>`;
   }
   // "Projetos" fica marcado em qualquer tela de dentro do projeto
-  if (p && ['visao', 'painel', 'calendario', 'quadro', 'lista', 'captacao', 'programacao', 'materiais', 'area', 'clientes'].includes(S.view)) {
+  if (p && VIEWS_DO_PROJETO.includes(S.view)) {
     $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === 'inicio'));
   }
   if (S.view === 'empregos') $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.view === 'inicio'));
@@ -62,7 +65,7 @@ function desenharContexto(p) {
   const el = $('#ctx');
   if (!p || !VIEWS_DO_PROJETO.includes(S.view)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   const c = clienteAtual();
-  const abaAtiva = ['calendario', 'quadro', 'lista'].includes(S.view) ? 'tarefas' : S.view;
+  const abaAtiva = GRUPO_ABA[S.view] || '';
   el.classList.remove('hidden');
   el.innerHTML = `
     <nav class="crumbs" aria-label="Você está em">
@@ -73,14 +76,15 @@ function desenharContexto(p) {
     ${S.clients.length > 1 || c ? `<div class="chips" role="group" aria-label="Cliente">
       <button class="chip ${c ? '' : 'on'}" data-cli="">Todos</button>
       ${S.clients.map((x) => `<button class="chip ${c && c.id === x.id ? 'on' : ''}" data-cli="${x.id}">${esc(x.nome)}</button>`).join('')}</div>` : ''}
-    <div class="ctx-tabs" role="tablist">${ABAS.map(([k, l]) => `<button role="tab" data-aba="${k}" aria-selected="${abaAtiva === k}" class="${abaAtiva === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    <div class="ctx-tabs" role="tablist">${ABAS.map(([k, l]) => `<button role="tab" data-aba="${k}" aria-selected="${abaAtiva === k}" class="${abaAtiva === k ? 'on' : ''}">${l}</button>`).join('')}
+      <button class="ctx-cfg ${S.view === 'clientes' ? 'on' : ''}" data-aba="clientes" title="Clientes, contrato e metas" aria-label="Configurações do projeto">⚙</button></div>`;
   $$('[data-crumb]', el).forEach((a) => a.addEventListener('click', async (e) => {
     e.preventDefault();
     if (a.dataset.crumb === 'inicio') return abrirProjeto('', 'inicio');
-    S.cliente = ''; localStorageSet('pbh_cliente', ''); S.view = 'visao'; render();
+    S.cliente = ''; localStorageSet('pbh_cliente', ''); S.view = 'solicitar'; render();
   }));
   $$('[data-cli]', el).forEach((b) => b.addEventListener('click', () => { S.cliente = b.dataset.cli; localStorageSet('pbh_cliente', S.cliente); render(); }));
-  $$('[data-aba]', el).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.aba === 'tarefas' ? S.viewTarefas : b.dataset.aba; render(); }));
+  $$('[data-aba]', el).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.aba; render(); }));
 }
 
 const opcoesProjetos = (sel) => S.projetos.filter((p) => p.tipo !== 'empregos').map((p) => `<option value="${p.id}" ${String(p.id) === String(sel) ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');
@@ -169,9 +173,7 @@ async function viewInicio(v) {
         ${p.nomes_clientes.length ? `<div class="proj-tags">${p.nomes_clientes.slice(0, 6).map((n) => `<i>${esc(n)}</i>`).join('')}</div>` : ''}
       </button>
       <div class="proj-acts">
-        <button class="btn small" data-abrir="${p.id}">Abrir projeto</button>
-        <button class="btn small" data-criar-em="${p.id}">✦ Criar</button>
-        <button class="btn small" data-solic-em="${p.id}">✉ Solicitações</button>
+        <button class="btn small primary" data-abrir="${p.id}">Abrir projeto</button>
         <button class="btn ghost small" data-editar="${p.id}">Contexto</button>
       </div>
     </article>`).join('');
@@ -203,7 +205,7 @@ async function viewInicio(v) {
 
   ligarCaixaDemandas(v, clientesTodos);
   $$('[data-emp]', v).forEach((b) => b.addEventListener('click', () => { S.projeto = ''; S.view = 'empregos'; render(); }));
-  $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.abrir, 'visao')));
+  $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.abrir, 'solicitar')));
   $$('[data-criar-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.criarEm, 'criar')));
   $$('[data-solic-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.solicEm, 'solicitacoes')));
   $$('[data-editar]', v).forEach((b) => b.addEventListener('click', () => abrirContextoProjeto(projetoPorId(b.dataset.editar))));
@@ -508,144 +510,139 @@ function filaAprovacao(el, filtro) {
   desenhar();
 }
 
-// ---------------- Visão geral: tudo do projeto ou do cliente num lugar só ----------------
-async function viewVisao(v) {
+// ---------------- Solicitar: caixa de comandos, esteira do time e solicitações recebidas ----------------
+async function viewSolicitar(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
   const p = S.projeto ? projetoPorId(S.projeto) : null;
   if (!p) { S.view = 'inicio'; return render(); }
   const c = clienteAtual();
-  return c ? visaoCliente(v, p, c) : visaoProjeto(v, p);
+  const sols = await api('/api/solicitacoes?project_id=' + p.id);
+  const abertas = sols.filter((x) => ['nova', 'andamento'].includes(x.status) && !x.task_id && (!c || !x.client_id || x.client_id === c.id));
+  const alvo = c ? c.nome : p.nome;
+  v.innerHTML = `
+    <div class="view-head"><div><h2>Solicitar · ${esc(alvo)}</h2><p>Escreva o pedido: o time executa, você aprova e segue para publicação.</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="svLink">🔗 Link para clientes</button><button class="btn" id="svNova">+ Registrar solicitação</button></div></div>
+    ${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + alvo, clienteFixo: !!c })}
+    <div id="filaAprov"></div>
+    <h3 class="secao-h">Solicitações recebidas <span class="pill">${abertas.length}</span></h3>
+    ${abertas.length ? abertas.map((x) => `<article class="card sol">
+      <div class="msg-top"><span class="pill">${esc(SOL_TIPOS[x.tipo])}</span>${x.origem === 'formulario' ? '<span class="pill">Formulário</span>' : ''}
+        <small>${esc([x.solicitante, x.contato, x.prazo ? 'prazo ' + fmtPrazo(x.prazo) : ''].filter(Boolean).join(' · '))}</small></div>
+      <b>${esc(x.titulo)}</b>${x.descricao ? `<p class="sol-desc">${esc(x.descricao)}</p>` : ''}
+      <div class="acoes-res">
+        <select data-sc="${x.id}" aria-label="Cliente">${S.clients.map((k) => `<option value="${k.id}" ${(x.client_id || (c && c.id)) === k.id ? 'selected' : ''}>${esc(k.nome)}</option>`).join('')}</select>
+        <button class="btn small primary" data-env="${x.id}">Enviar ao time</button>
+        <button class="btn small ghost" data-ed="${x.id}">Editar</button>
+        <button class="btn small ghost danger" data-rm="${x.id}">Descartar</button></div></article>`).join('')
+      : '<div class="card"><div class="empty" style="padding:16px">Nenhuma solicitação pendente. Quem tem o link do projeto pode pedir direto pelo formulário.</div></div>'}`;
+  ligarCaixaDemandas(v, S.clients, { clienteId: c ? c.id : null });
+  filaAprovacao($('#filaAprov', v), c ? { client_id: c.id } : { project_id: p.id });
+  const porId = (id) => sols.find((x) => String(x.id) === String(id));
+  $('#svLink', v).onclick = () => abrirLinkSolicitacao(p);
+  $('#svNova', v).onclick = () => abrirSolicitacao(null, () => render());
+  $$('[data-ed]', v).forEach((b) => b.addEventListener('click', () => abrirSolicitacao(porId(b.dataset.ed), () => render())));
+  $$('[data-rm]', v).forEach((b) => b.addEventListener('click', async () => { if (!confirm('Descartar esta solicitação?')) return; await api('/api/solicitacoes/' + b.dataset.rm, { method: 'DELETE' }); render(); }));
+  $$('[data-env]', v).forEach((b) => b.addEventListener('click', async () => {
+    const x = porId(b.dataset.env);
+    const tipo = { conteudo: 'conteudo', arte: 'criacao', video: 'criacao', campanha: 'trafego' }[x.tipo] || 'conteudo';
+    b.disabled = true; b.textContent = 'Enviando…';
+    try {
+      await api('/api/demandas', { method: 'POST', body: { client_id: Number($(`[data-sc="${x.id}"]`, v).value), tipo, solicitacao_id: x.id, prazo: x.prazo ? String(x.prazo).slice(0, 10) : '', texto: `${x.titulo}\n\n${x.descricao || ''}`.trim() } });
+      toast('Enviado ao time'); render();
+    } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Enviar ao time'; }
+  }));
 }
 
-const statsCliente = (tasks, cl) => {
-  const doMes = tasks.filter((t) => t.client_id === cl.id && t.data && t.data.startsWith(S.mes));
-  const posts = doMes.filter((t) => t.tipo === 'post');
-  return {
-    posts: posts.length, publicados: posts.filter((t) => t.status === 'publicado').length, meta: cl.meta_posts,
-    atrasadas: doMes.filter((t) => t.tipo !== 'story' && t.data < hojeISO && t.status !== 'publicado').length,
-    capt: tasks.filter((t) => t.client_id === cl.id && t.tipo === 'captacao' && t.status !== 'publicado').length,
+// ---------------- Relatórios por período ----------------
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function periodoPreset(k) {
+  const h = new Date(); const d0 = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+  const seg = new Date(d0); seg.setDate(d0.getDate() - ((d0.getDay() + 6) % 7));
+  const soma = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  if (k === 'semana') return [iso(seg), iso(soma(seg, 6))];
+  if (k === 'semana_passada') return [iso(soma(seg, -7)), iso(soma(seg, -1))];
+  if (k === 'mes') return [iso(new Date(h.getFullYear(), h.getMonth(), 1)), iso(new Date(h.getFullYear(), h.getMonth() + 1, 0))];
+  if (k === 'mes_passado') return [iso(new Date(h.getFullYear(), h.getMonth() - 1, 1)), iso(new Date(h.getFullYear(), h.getMonth(), 0))];
+  if (k === '30') return [iso(soma(d0, -29)), iso(d0)];
+  return null;
+}
+const ROT_STATUS = { ...STATUS_LABEL };
+const ROT_AGENTE = { hugo: 'Hugo (conteúdo)', luiz: 'Luiz (artes)', davi: 'Davi (vídeos)', camila: 'Camila (campanhas)' };
+
+function relatorioMarkdown(r) {
+  const d = r.dados; const f = (x) => String(x).slice(0, 10).split('-').reverse().join('/');
+  const kv = (o, rot = (k) => k) => Object.entries(o || {}).map(([k, n]) => `- ${rot(k)}: ${n}`).join('\n') || '- nenhum';
+  return [`# Relatório · ${d.escopo}`, `Período: ${f(d.periodo.de)} a ${f(d.periodo.ate)}`, '', '## Resumo', r.resumo || '', '',
+    '## Números', `- Entregas planejadas: ${d.planejado.total}`, `- Publicadas: ${d.planejado.publicadas}`, `- Atrasadas: ${d.planejado.atrasadas}`,
+    `- Aprovadas no período: ${d.esteira.aprovadas_no_periodo}`, `- Solicitações recebidas: ${d.solicitacoes.recebidas}`, '',
+    '## Por tipo', kv(d.planejado.por_tipo, (k) => TIPO_LABEL[k] || k), '', '## Por etapa', kv(d.planejado.por_status, (k) => ROT_STATUS[k] || k), '',
+    '## Time (criações no período)', kv(d.time, (k) => ROT_AGENTE[k] || k), '',
+    '## Clientes', ...d.clientes.map((c) => `- ${c.nome}: ${c.posts_publicados} posts publicados (meta mensal ${c.meta_posts_mes})`), '',
+    '## Entregas', ...d.entregas.map((e) => `- ${f(e.data)} · ${e.cliente} · ${TIPO_LABEL[e.tipo] || e.tipo} · ${e.tema || 'sem título'} · ${ROT_STATUS[e.status] || e.status}`)].join('\n');
+}
+
+function desenharRelatorio(el, r, aoExcluir) {
+  const d = r.dados; const f = (x) => String(x).slice(0, 10).split('-').reverse().join('/');
+  const kpi = (n, l, cls = '') => `<div class="card meta-card ${cls}"><div class="big">${n}</div><div class="muted">${l}</div></div>`;
+  const lista = (o, rot) => Object.entries(o || {}).length ? `<ul class="rel-lista">${Object.entries(o).map(([k, n]) => `<li><span>${esc(rot(k))}</span><b>${n}</b></li>`).join('')}</ul>` : '<p class="muted">Nenhum.</p>';
+  el.innerHTML = `<article class="relatorio">
+    <div class="view-head no-print-gap"><div><h3>Relatório · ${esc(d.escopo)}</h3><p>${f(d.periodo.de)} a ${f(d.periodo.ate)} · gerado em ${esc(new Date(r.created_at).toLocaleString('pt-BR'))}</p></div>
+      <div class="acoes-res no-print"><button class="btn small" id="rpCopiar">Copiar texto</button><button class="btn small" id="rpPrint">Imprimir / salvar PDF</button>${aoExcluir ? '<button class="btn small ghost danger" id="rpDel">Excluir</button>' : ''}</div></div>
+    <div class="card"><h4 class="rel-h">Resumo</h4><p style="white-space:pre-wrap;margin:0">${esc(r.resumo || '')}</p></div>
+    <div class="grid cols-3" style="margin-top:12px">
+      ${kpi(d.planejado.total, 'entregas planejadas')}${kpi(d.planejado.publicadas, 'publicadas')}${kpi(d.planejado.atrasadas, 'atrasadas', d.planejado.atrasadas ? 'alerta-kpi' : '')}
+      ${kpi(d.esteira.aprovadas_no_periodo, 'aprovadas no período')}${kpi(d.esteira.agora.aguardando_aprovacao || 0, 'aguardando aprovação agora')}${kpi(d.solicitacoes.recebidas, 'solicitações recebidas')}
+    </div>
+    <div class="grid cols-3" style="margin-top:12px">
+      <div class="card"><h4 class="rel-h">Por tipo</h4>${lista(d.planejado.por_tipo, (k) => TIPO_LABEL[k] || k)}</div>
+      <div class="card"><h4 class="rel-h">Por etapa</h4>${lista(d.planejado.por_status, (k) => ROT_STATUS[k] || k)}</div>
+      <div class="card"><h4 class="rel-h">Time (criações)</h4>${lista(d.time, (k) => ROT_AGENTE[k] || k)}</div>
+    </div>
+    <div class="grid cols-2" style="margin-top:12px">
+      <div class="card"><h4 class="rel-h">Clientes</h4><ul class="rel-lista">${d.clientes.map((c) => `<li><span>${esc(c.nome)}</span><b>${c.posts_publicados} posts publicados · meta mensal ${c.meta_posts_mes}</b></li>`).join('')}</ul></div>
+      <div class="card"><h4 class="rel-h">Publicações nas redes (todo o sistema)</h4>${d.redes.length ? `<ul class="rel-lista">${d.redes.map((x) => `<li><span>${esc(x.plataforma)} · ${x.status === 'publicado' ? 'publicado' : 'erro'}</span><b>${x.n}</b></li>`).join('')}</ul>` : '<p class="muted">Nenhuma publicação feita por aqui no período.</p>'}</div>
+    </div>
+    <div class="card" style="margin-top:12px"><h4 class="rel-h">Entregas do período ${d.entregas.length >= 40 ? '(primeiras 40)' : ''}</h4>
+      ${d.entregas.length ? `<table class="rel-tab"><thead><tr><th>Data</th><th>Cliente</th><th>Tipo</th><th>Pauta</th><th>Etapa</th></tr></thead><tbody>${d.entregas.map((e) => `<tr><td>${f(e.data)}</td><td>${esc(e.cliente)}</td><td>${esc(TIPO_LABEL[e.tipo] || e.tipo)}</td><td>${esc(e.tema || 'sem título')}</td><td>${esc(ROT_STATUS[e.status] || e.status)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nenhuma entrega com data neste período.</p>'}</div>
+    <p class="muted rel-nota">Este relatório mostra a produção e o andamento dentro do sistema. Alcance, cliques e vendas das redes e dos anúncios não são medidos aqui.</p>
+  </article>`;
+  $('#rpCopiar', el).onclick = () => copiar(relatorioMarkdown(r));
+  $('#rpPrint', el).onclick = () => window.print();
+  const del = $('#rpDel', el);
+  if (del) del.onclick = async () => { if (!confirm('Excluir este relatório?')) return; await api('/api/relatorios/' + r.id, { method: 'DELETE' }); aoExcluir(); };
+}
+
+async function viewRelatorios(v) {
+  await carregarProjetos();
+  const p = S.projeto ? projetoPorId(S.projeto) : null;
+  if (!p) { S.view = 'inicio'; return render(); }
+  const c = clienteAtual();
+  const hist = await api('/api/relatorios?' + (c ? 'client_id=' + c.id : 'project_id=' + p.id));
+  const [de0, ate0] = periodoPreset('mes');
+  v.innerHTML = `
+    <div class="view-head no-print"><div><h2>Relatórios · ${esc(c ? c.nome : p.nome)}</h2><p>Escolha o período e gere o relatório automaticamente.</p></div></div>
+    <div class="card no-print"><div class="dm-linha" style="grid-template-columns:minmax(180px,1fr) minmax(150px,.7fr) minmax(150px,.7fr) auto;align-items:end">
+      <div><label for="rpPer">Período</label><select id="rpPer"><option value="mes">Este mês</option><option value="mes_passado">Mês passado</option><option value="semana">Esta semana</option><option value="semana_passada">Semana passada</option><option value="30">Últimos 30 dias</option><option value="custom">Personalizado</option></select></div>
+      <div><label for="rpDe">De</label><input type="date" id="rpDe" value="${de0}"></div>
+      <div><label for="rpAte">Até</label><input type="date" id="rpAte" value="${ate0}"></div>
+      <button class="btn primary" id="rpGerar">Gerar relatório</button></div>
+      <p class="erro" id="rpErro" style="margin:8px 0 0"></p></div>
+    <div id="rpResultado" style="margin-top:14px"></div>
+    <h3 class="secao-h no-print">Relatórios anteriores</h3>
+    <div class="card no-print">${hist.length ? hist.map((r) => `<button class="linha-cr" data-rel="${r.id}"><span class="lc-t"><b>${esc(r.dados.escopo)} · ${String(r.de).slice(0, 10).split('-').reverse().join('/')} a ${String(r.ate).slice(0, 10).split('-').reverse().join('/')}</b><small>gerado em ${esc(new Date(r.created_at).toLocaleString('pt-BR'))}${r.usuario ? ' por ' + esc(r.usuario) : ''}</small></span></button>`).join('') : '<div class="empty" style="padding:16px">Nenhum relatório ainda.</div>'}</div>`;
+  const per = $('#rpPer', v);
+  per.onchange = () => { const x = periodoPreset(per.value); if (x) { $('#rpDe', v).value = x[0]; $('#rpAte', v).value = x[1]; } };
+  const mostrar = (r) => { desenharRelatorio($('#rpResultado', v), r, () => render()); $('#rpResultado', v).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  $('#rpGerar', v).onclick = async () => {
+    const b = $('#rpGerar', v); $('#rpErro', v).textContent = '';
+    b.disabled = true; b.textContent = 'Gerando…';
+    try {
+      const r = await api('/api/relatorios', { method: 'POST', body: { project_id: p.id, client_id: c ? c.id : null, de: $('#rpDe', v).value, ate: $('#rpAte', v).value } });
+      mostrar(r);
+    } catch (e) { $('#rpErro', v).textContent = e.message; }
+    b.disabled = false; b.textContent = 'Gerar relatório';
   };
-};
-
-async function visaoProjeto(v, p) {
-  const [sols] = await Promise.all([api('/api/solicitacoes?project_id=' + p.id)]);
-  const abertas = sols.filter((x) => ['nova', 'andamento'].includes(x.status));
-  const proximas = S.tasks.filter((t) => t.tipo !== 'story' && t.status !== 'publicado' && t.data && t.data >= hojeISO).slice(0, 8);
-  const cartoes = S.clients.map((cl) => {
-    const st = statsCliente(S.tasks, cl);
-    return `<button class="card cli-card" data-cli="${cl.id}">
-      <h3>${esc(cl.nome)}</h3>
-      <div class="muted" style="margin:2px 0 10px">${esc((cl.marcas || []).join(' · ') || cl.site || '')}</div>
-      <div class="proj-stats"><span><b>${st.publicados}</b>/${st.meta} posts</span><span class="${st.atrasadas ? 'late' : ''}"><b>${st.atrasadas}</b> atrasadas</span><span><b>${st.capt}</b> captações</span></div></button>`;
-  }).join('');
-  v.innerHTML = `
-    <div class="view-head"><div><h2>${esc(p.nome)}</h2><p>${esc(p.descricao || '')}</p></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vpCtx">Contexto e guia de marca</button><button class="btn" id="vpLink">🔗 Link de solicitações</button></div></div>
-    ${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + p.nome })}
-    <div id="filaAprov"></div>
-    <h3 class="secao-h">Clientes</h3>
-    ${cartoes ? `<div class="proj-grid">${cartoes}</div>` : '<div class="empty">Este projeto ainda não tem clientes. Adicione em Contrato e agente.</div>'}
-    <div class="grid cols-2" style="margin-top:18px">
-      <div class="card"><h3 style="margin-bottom:8px">Próximas entregas</h3>
-        ${proximas.length ? proximas.map(linhaTarefa).join('') : '<div class="empty">Nenhuma entrega pendente a partir de hoje.</div>'}</div>
-      <div class="card"><h3 style="margin-bottom:8px">Solicitações em aberto <span class="pill">${abertas.length}</span></h3>
-        ${abertas.length ? abertas.slice(0, 6).map((x) => `<div class="alerta">${esc(x.titulo)} <small class="muted">· ${esc(SOL_TIPOS[x.tipo])}${x.prazo ? ' · prazo ' + fmtPrazo(x.prazo) : ''}</small></div>`).join('') : '<div class="empty">Nada pendente.</div>'}
-        <div class="acoes-res"><button class="btn small" id="vpSol">Abrir solicitações</button></div></div>
-    </div>
-    <h3 class="secao-h">Criar neste projeto</h3>
-    <div class="ag-grid">${['hugo', 'luiz', 'davi', 'camila'].map((id) => { const a = agente(id); return `<button class="ag-card" data-ag="${id}"><span class="ag-ico">${a.icone}</span><span><b>${esc(a.nome)}</b><small>${esc(a.cargo)}</small></span></button>`; }).join('')}</div>`;
-  ligarLinhas(v);
-  ligarCaixaDemandas(v, S.clients, {});
-  filaAprovacao($('#filaAprov', v), { project_id: p.id });
-  $$('[data-cli]', v).forEach((b) => b.addEventListener('click', () => { S.cliente = b.dataset.cli; localStorageSet('pbh_cliente', S.cliente); render(); }));
-  $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag)));
-  $('#vpCtx', v).onclick = () => abrirContextoProjeto(p);
-  $('#vpLink', v).onclick = () => abrirLinkSolicitacao(p);
-  $('#vpSol', v).onclick = () => { S.view = 'solicitacoes'; render(); };
-}
-
-async function visaoCliente(v, p, cl) {
-  const [ctx, links, mats, exps, ac, sols] = await Promise.all([
-    api(`/api/clients/${cl.id}/contexto`), api(`/api/clients/${cl.id}/links`), api(`/api/materials?client_id=${cl.id}`),
-    api(`/api/experiencias?client_id=${cl.id}`), api(`/api/clients/${cl.id}/acessos`), api('/api/solicitacoes?project_id=' + p.id)]);
-  const st = statsCliente(S.tasks, cl);
-  const tarefasCl = S.tasks.filter((t) => t.client_id === cl.id);
-  const proximas = tarefasCl.filter((t) => t.tipo !== 'story' && t.status !== 'publicado' && t.data && t.data >= hojeISO).slice(0, 6);
-  const abertas = sols.filter((x) => ['nova', 'andamento'].includes(x.status) && (!x.client_id || x.client_id === cl.id));
-  const porCat = {}; mats.forEach((m) => { if (!m.evitar) porCat[m.categoria || 'Sem categoria'] = (porCat[m.categoria || 'Sem categoria'] || 0) + 1; });
-  const contato = [
-    cl.site && `<a href="https://${esc(String(cl.site).replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${esc(cl.site)}</a>`,
-    cl.whatsapp && `<a href="https://wa.me/${esc(String(cl.whatsapp).replace(/\D/g, ''))}" target="_blank" rel="noopener">WhatsApp ${esc(cl.whatsapp)}</a>`,
-    cl.instagram && `<a href="https://instagram.com/${esc(String(cl.instagram).replace(/^@/, ''))}" target="_blank" rel="noopener">@${esc(String(cl.instagram).replace(/^@/, ''))}</a>`,
-  ].filter(Boolean).join(' · ');
-  const campo = (rot, txt) => (txt && txt.trim() ? `<div class="info-l"><label>${rot}</label><p>${esc(txt)}</p></div>` : '');
-  const aprovados = exps.filter((e) => /confirm/i.test(e.status || '')).length;
-
-  v.innerHTML = `
-    <div class="view-head"><div><h2>${esc(cl.nome)}</h2>
-      ${(cl.marcas || []).length ? `<div class="marcas">${cl.marcas.map((m) => `<span class="tag">${esc(m)}</span>`).join('')}</div>` : ''}
-      ${contato ? `<p>${contato}</p>` : ''}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vcCtx">Editar contexto do agente</button></div></div>
-
-    ${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + cl.nome, clienteFixo: true })}
-    <div id="filaAprov"></div>
-
-    <div class="grid cols-3">
-      <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--post)"></span>Posts no feed · ${esc(mesLabel(S.mes))}</div>
-        <div class="big">${st.publicados}<small> / ${cl.meta_posts} publicados</small></div><div class="muted">${st.posts} no calendário</div></div>
-      <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--story)"></span>Contrato</div>
-        <div class="big">${cl.meta_posts}<small> posts/mês</small></div><div class="muted">${cl.meta_stories_dia ? cl.meta_stories_dia + ' stories por dia · ' : 'sem stories · '}${cl.meta_blog} blog/mês</div></div>
-      <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--captacao)"></span>Atenção</div>
-        <div class="big">${st.atrasadas}<small> atrasadas</small></div><div class="muted">${st.capt} captações em aberto · ${abertas.length} solicitações</div></div>
-    </div>
-
-    <div class="grid cols-2" style="margin-top:16px">
-      <div class="card"><h3 style="margin-bottom:8px">Próximas entregas</h3>
-        ${proximas.length ? proximas.map(linhaTarefa).join('') : '<div class="empty">Nenhuma entrega pendente a partir de hoje.</div>'}
-        <div class="acoes-res"><button class="btn small" data-aba-ir="calendario">Calendário</button><button class="btn small" data-aba-ir="quadro">Quadro</button><button class="btn small" data-aba-ir="captacao">Captação</button></div></div>
-      <div class="card"><h3 style="margin-bottom:8px">Solicitações em aberto <span class="pill">${abertas.length}</span></h3>
-        ${abertas.length ? abertas.slice(0, 5).map((x) => `<div class="alerta">${esc(x.titulo)} <small class="muted">· ${esc(SOL_TIPOS[x.tipo])}</small></div>`).join('') : '<div class="empty">Nada pendente.</div>'}
-        <div class="acoes-res"><button class="btn small" data-aba-ir="solicitacoes">Abrir solicitações</button></div></div>
-    </div>
-
-    <h3 class="secao-h">Sobre o cliente e como escrever por ele</h3>
-    <div class="card info-grid">
-      ${cl.observacoes ? `<div class="info-l" style="grid-column:1/-1"><label>Observações</label><p>${esc(cl.observacoes)}</p></div>` : ''}
-      ${campo('Tom de voz', ctx.tom_de_voz)}${campo('Público', ctx.publico)}${campo('Pilares de conteúdo', ctx.pilares)}
-      ${campo('Regras', ctx.regras)}${campo('Rodapé padrão', ctx.rodape)}
-      ${ctx.conhecimento ? `<details class="info-l" style="grid-column:1/-1"><summary><b>Base de conhecimento</b> (${ctx.conhecimento.split('\n').filter(Boolean).length} fatos)</summary><p>${esc(ctx.conhecimento)}</p></details>` : ''}
-    </div>
-
-    <div class="secao-titulo"><h3>Links rápidos <span class="tag">${links.length}</span></h3><button class="btn small" data-aba-ir="area">Ver tudo e acessos</button></div>
-    ${links.length ? `<div class="atalhos">${links.slice(0, 9).map((l) => { const [ic, cor] = iconeLink(l.url); return `
-      <a class="atalho" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="ic" style="background:${cor}">${ic}</span>
-        <span class="tx"><strong>${esc(l.titulo)}</strong><span>${esc(l.observacao || dominio(l.url))}</span></span></a>`; }).join('')}</div>` : '<div class="empty" style="padding:16px">Nenhum link ainda.</div>'}
-
-    <div class="grid cols-2" style="margin-top:16px">
-      <div class="card"><h3 style="margin-bottom:8px">Materiais <span class="tag">${mats.length}</span></h3>
-        <div class="proj-tags">${Object.entries(porCat).map(([k, n]) => `<i>${esc(k)} · ${n}</i>`).join('') || '<span class="muted">Sem materiais.</span>'}</div>
-        <div class="acoes-res"><button class="btn small" data-aba-ir="materiais">Abrir materiais</button></div></div>
-      <div class="card"><h3 style="margin-bottom:8px">Programação e acessos</h3>
-        <p class="muted" style="margin:0 0 8px">${exps.length ? `${exps.length} experiências e datas na planilha${aprovados ? ` (${aprovados} confirmadas)` : ''}.` : 'Sem planilha de programação.'} ${ac.acessos.length + ac.ocultos} acessos cadastrados.</p>
-        <div class="acoes-res">${exps.length ? '<button class="btn small" data-aba-ir="programacao">Programação</button>' : ''}<button class="btn small" data-aba-ir="area">Acessos</button></div></div>
-    </div>
-
-    <h3 class="secao-h">Guia de marca (designer)</h3>
-    <div class="card"><div class="info-grid">
-      <div class="info-l"><label>Kit no Canva</label><p>${esc(cl.canva_kit_nome || 'nenhum vinculado')}</p></div>
-      <div class="info-l"><label>Padrão que o Luiz e o Davi seguem</label><p>${cl.guia_design || cl.canva_kit_id ? 'Guia próprio deste cliente' : cl.marca_propria ? 'Guia do projeto (este cliente é a própria marca)' : 'Nenhum: o designer não usa a identidade do projeto e marca [CONFIRMAR] nas peças'}</p></div>
-      ${cl.guia_design ? `<details class="info-l" style="grid-column:1/-1"><summary><b>Ver guia</b></summary><p>${esc(cl.guia_design)}</p></details>` : ''}</div>
-      <div class="acoes-res"><button class="btn small" id="vcGuia">Editar guia de marca</button></div></div>
-
-    <h3 class="secao-h">Criar para ${esc(cl.nome)}</h3>
-    <div class="ag-grid">${['hugo', 'luiz', 'davi', 'camila'].map((id) => { const a = agente(id); return `<button class="ag-card" data-ag="${id}"><span class="ag-ico">${a.icone}</span><span><b>${esc(a.nome)}</b><small>${esc(a.cargo)}</small></span></button>`; }).join('')}</div>`;
-  ligarLinhas(v);
-  ligarCaixaDemandas(v, S.clients, { clienteId: cl.id });
-  filaAprovacao($('#filaAprov', v), { client_id: cl.id });
-  $$('[data-aba-ir]', v).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.abaIr; render(); }));
-  $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag, { projeto: p.id, cliente: cl.id })));
-  $('#vcCtx', v).onclick = () => abrirContextoAgente(cl.id);
-  $('#vcGuia', v).onclick = () => abrirGuiaCliente(cl, () => render());
+  $$('[data-rel]', v).forEach((b) => b.addEventListener('click', () => mostrar(hist.find((x) => String(x.id) === b.dataset.rel))));
 }
 
 // ---------------- Solicitações (janela de cada projeto) ----------------
@@ -1156,4 +1153,4 @@ async function abrirPublicar(texto, opts = {}) {
   setTimeout(() => toast(msg), 1500);
 })();
 
-window.VIEWS_EXTRA = { visao: viewVisao, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };
+window.VIEWS_EXTRA = { solicitar: viewSolicitar, visao: viewSolicitar, recursos: (v) => viewArea(v, 'recursos'), acessos: (v) => viewArea(v, 'acessos'), relatorios: viewRelatorios, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };

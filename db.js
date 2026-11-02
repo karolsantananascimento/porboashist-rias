@@ -248,6 +248,19 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_em TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_por TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMPTZ;
 
+-- Relatórios gerados por período
+CREATE TABLE IF NOT EXISTS relatorios (
+  id SERIAL PRIMARY KEY,
+  project_id INT,
+  client_id INT,
+  de DATE NOT NULL,
+  ate DATE NOT NULL,
+  dados JSONB NOT NULL DEFAULT '{}',
+  resumo TEXT,
+  usuario TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Tipo de projeto: 'padrao' (clientes e tarefas) ou 'empregos' (vagas e candidaturas, sem tarefas)
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'padrao';
 

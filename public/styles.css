@@ -448,3 +448,22 @@ label.dm-tipo { text-transform: none; letter-spacing: 0; margin: 0; cursor: poin
 .esteira.aprovada { border-left: 4px solid var(--ok); }
 .esteira.erro { border-left: 4px solid var(--danger); }
 .esteira.executando { border-left: 4px solid var(--blog); }
+
+.ctx-cfg { margin-left: auto; font-size: 16px !important; padding: 8px 12px !important; }
+.tag.esteira-executando { background: color-mix(in srgb, var(--blog) 15%, transparent); color: var(--blog); }
+.tag.esteira-aguardando_aprovacao { background: var(--warn-soft); color: var(--warn); }
+.tag.esteira-aprovada, .tag.esteira-publicada { background: var(--ok-soft); color: var(--ok); }
+.tag.esteira-erro { background: var(--danger-soft); color: var(--danger); }
+.rel-h { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.rel-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rel-lista li { display: flex; justify-content: space-between; gap: 10px; }
+.rel-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rel-tab th, .rel-tab td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.rel-tab th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); }
+.rel-nota { margin-top: 12px; font-size: 12px; }
+.alerta-kpi .big { color: var(--danger); }
+@media print {
+  .sidebar, .topbar, .ctx, .no-print, .toast { display: none !important; }
+  .app { display: block; } main { padding: 0; } body { background: #fff; }
+  .card { box-shadow: none; break-inside: avoid; }
+}
