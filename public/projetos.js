@@ -151,14 +151,15 @@ function ligarCaixaDemandas(v, clientes, opts = {}) {
 async function viewInicio(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
   const clientesTodos = await api('/api/clients');
+  const perfilCard = S.projetos.some((x) => x.tipo === 'empregos') ? await api('/api/perfil').catch(() => ({})) : {};
   const cards = S.projetos.map((p) => p.tipo === 'empregos' ? `
     <article class="proj-card" style="--cor:${esc(p.cor)}">
       <button class="proj-open" data-emp="1" aria-label="Abrir ${esc(p.nome)}">
-        <h3>💼 ${esc(p.nome)}</h3><p>${esc(p.descricao || '')}</p>
+        <h3 class="h-avatar">${perfilCard.foto ? `<img class="avatar" src="${perfilCard.foto}" alt="">` : '💼'} ${esc(p.nome)}</h3><p>${esc(p.descricao || '')}</p>
         <div class="proj-stats"><span><b>${p.vagas_abertas}</b> vagas abertas</span><span><b>${p.vagas_candidatadas}</b> candidaturas</span></div>
-        <div class="proj-tags"><i>Vagas</i><i>Funil</i><i>Meu perfil</i><i>Bianca</i></div>
+        <div class="proj-tags"><i>Perfil</i><i>Currículo</i><i>Portfólio</i><i>Vagas</i><i>Bianca</i></div>
       </button>
-      <div class="proj-acts"><button class="btn small" data-emp="1">Abrir Empregos</button></div>
+      <div class="proj-acts"><button class="btn small primary" data-emp="1">Abrir</button></div>
     </article>` : `
     <article class="proj-card" style="--cor:${esc(p.cor)}">
       <button class="proj-open" data-abrir="${p.id}" aria-label="Abrir ${esc(p.nome)}">
@@ -183,7 +184,7 @@ async function viewInicio(v) {
     ['luiz', 'Artes', 'Direção de arte e prompts de imagem'],
     ['davi', 'Edição de vídeo', 'Roteiro, decupagem e passo a passo'],
     ['camila', 'Campanhas de anúncios', 'Meta, Google e LinkedIn Ads'],
-    ['bianca', 'Empregos', 'Workana, LinkedIn: vagas, propostas, cadastros'],
+    ['bianca', 'Candidaturas', 'Perfil, currículo e vagas (Workana, LinkedIn)'],
   ].map(([id, titulo, sub]) => {
     const a = agente(id);
     return `<button class="ag-card" data-ag="${id}">
@@ -886,16 +887,20 @@ const STATUS_VAGA = { nova: 'Nova', salva: 'Salva', candidatado: 'Candidatado', 
 
 async function viewEmpregos(v) {
   await carregarAgentes();
+  await carregarProjetos();
   const b = agente('bianca');
+  const pc = S.projetos.find((x) => x.tipo === 'empregos');
+  const nomeP = pc ? pc.nome : 'Carreira';
   v.innerHTML = `
-    <nav class="crumbs" aria-label="Você está em" style="margin-bottom:10px"><a href="#" id="empVolta">Projetos</a><span>›</span><a href="#" aria-current="page">Empregos</a></nav>
-    <div class="view-head"><div><h2>💼 Empregos · ${esc(b.nome)}</h2><p>${esc(b.descricao)}</p></div>
-      <div class="seg" role="tablist">${[['vagas', 'Vagas'], ['funil', 'Funil'], ['perfil', 'Meu perfil']].map(([k, l]) =>
+    <nav class="crumbs" aria-label="Você está em" style="margin-bottom:10px"><a href="#" id="empVolta">Projetos</a><span>›</span><a href="#" aria-current="page">${esc(nomeP)}</a></nav>
+    <div class="view-head"><div><h2>${esc(nomeP)} · candidaturas</h2><p>Perfil, currículo e portfólio num lugar só. ${esc(b.nome)} busca vagas, avalia a aderência e monta a proposta e as respostas de cadastro com os seus dados.</p></div>
+      <div class="seg" role="tablist">${[['vagas', 'Vagas'], ['funil', 'Funil'], ['perfil', 'Meu perfil'], ['docs', 'Currículo e portfólio']].map(([k, l]) =>
         `<button role="tab" data-ea="${k}" class="${S.empAba === k ? 'on' : ''}" aria-selected="${S.empAba === k}">${l}</button>`).join('')}</div></div>
     <div id="empCorpo"></div>`;
   $$('[data-ea]', v).forEach((x) => x.addEventListener('click', () => { S.empAba = x.dataset.ea; viewEmpregos(v); }));
   $('#empVolta', v).onclick = (e) => { e.preventDefault(); S.view = 'inicio'; render(); };
   if (S.empAba === 'perfil') return empPerfil($('#empCorpo'));
+  if (S.empAba === 'docs') return empDocs($('#empCorpo'));
   if (S.empAba === 'funil') return empFunil($('#empCorpo'));
   return empVagas($('#empCorpo'));
 }
@@ -998,21 +1003,113 @@ function resultadoVaga(x) {
     <div class="acoes-res"><button type="button" class="btn small" id="vgCpProp">Copiar proposta</button></div>`;
 }
 
+const GRUPOS_PERFIL = [
+  ['Dados e contato', true, [
+    ['nome', 'Nome completo'], ['headline', 'Título profissional (português)'], ['headline_en', 'Professional headline (English)'],
+    ['email', 'E-mail'], ['telefone', 'Telefone / WhatsApp'], ['cidade', 'Cidade e modelo de trabalho'], ['linkedin', 'LinkedIn'], ['portfolio', 'Link do portfólio']]],
+  ['Resumo profissional', false, [['resumo', 'Resumo (português)', 6], ['resumo_en', 'Summary (English)', 6]]],
+  ['Resultados em números', false, [['resultados', 'Um resultado por linha: valor · métrica · contexto', 8]]],
+  ['Experiência profissional', false, [['experiencias', 'Empresa, cargo e período, com os destaques abaixo', 22], ['outras_experiencias', 'Outras experiências', 6]]],
+  ['Cases do portfólio', false, [['cases', 'Cases com contexto, o que fez e resultados', 14]]],
+  ['Competências, ferramentas e formação', false, [
+    ['competencias', 'Competências principais', 7], ['ferramentas', 'Ferramentas e stack', 5], ['soft_skills', 'Competências comportamentais', 5],
+    ['formacao', 'Formação', 3], ['idiomas', 'Idiomas'], ['diferenciais', 'Diferenciais', 4]]],
+  ['Para candidaturas', false, [['disponibilidade', 'Disponibilidade (regime, viagens, CNH etc.)'], ['pretensao', 'Pretensão (salário ou valor/hora)'], ['respostas_prontas', 'Respostas prontas para formulários (pergunta e resposta)', 10]]],
+  ['Observações e itens a confirmar', true, [['observacoes', 'Dúvidas e divergências entre documentos. A Bianca NÃO usa o que estiver aqui como fato.', 7]]],
+];
+
+function reduzirFoto(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const lado = 480; const c = document.createElement('canvas'); c.width = lado; c.height = lado;
+      const m = Math.min(img.width, img.height); const ctx = c.getContext('2d');
+      ctx.drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, lado, lado);
+      resolve(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => reject(new Error('Não consegui ler a imagem'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 async function empPerfil(el) {
   const p = await api('/api/perfil');
-  const campos = [
-    ['nome', 'Nome completo'], ['email', 'E-mail'], ['telefone', 'Telefone / WhatsApp'], ['cidade', 'Cidade'],
-    ['linkedin', 'Link do LinkedIn'], ['portfolio', 'Portfólio / site'], ['headline', 'Título profissional'],
-    ['idiomas', 'Idiomas'], ['pretensao', 'Pretensão (salário ou valor/hora)'], ['disponibilidade', 'Disponibilidade'],
-  ];
-  const longos = [['resumo', 'Resumo profissional', 4], ['experiencias', 'Experiências (uma por linha)', 7], ['formacao', 'Formação', 3], ['observacoes', 'Observações para a Bianca', 3]];
-  el.innerHTML = `<div class="card"><p class="muted" style="margin-top:0">É daqui que a Bianca tira os dados para propostas e cadastros. O que estiver vazio ela deixa marcado como [PREENCHER] em vez de inventar.</p>
-    <div class="perfil-grid">${campos.map(([k, l]) => `<div><label>${l}</label><input data-pf="${k}" value="${esc(p[k] || '')}"></div>`).join('')}</div>
-    ${longos.map(([k, l, r]) => `<div style="margin-top:10px"><label>${l}</label><textarea rows="${r}" data-pf="${k}">${esc(p[k] || '')}</textarea></div>`).join('')}
-    <div style="margin-top:14px"><button class="btn primary" id="pfSalvar">Salvar perfil</button></div></div>`;
-  $('#pfSalvar').onclick = async () => {
-    const body = {}; $$('[data-pf]', el).forEach((i) => { body[i.dataset.pf] = i.value; });
+  let foto = p.foto || '';
+  const campo = ([k, l, r]) => r
+    ? `<div style="margin-top:10px"><label>${esc(l)}</label><textarea rows="${r}" data-pf="${k}">${esc(p[k] || '')}</textarea></div>`
+    : `<div><label>${esc(l)}</label><input data-pf="${k}" value="${esc(p[k] || '')}"></div>`;
+  el.innerHTML = `<p class="muted" style="margin-top:0">É daqui que a Bianca tira os dados para propostas e cadastros, e o que estiver vazio ela marca como [PREENCHER] em vez de inventar. Fica só no seu banco, não no repositório do código.</p>
+    <div class="card" style="margin-bottom:12px"><div class="foto-linha"><div id="pfFoto" class="foto-box">${foto ? `<img src="${foto}" alt="Foto de perfil">` : '<span>sem foto</span>'}</div>
+      <div><label>Foto de perfil</label><div class="acoes-res" style="margin-top:0"><label class="btn small" style="margin:0;text-transform:none;letter-spacing:0">Escolher foto<input type="file" id="pfFile" accept="image/*" hidden></label><button class="btn small ghost danger" id="pfFotoDel" ${foto ? '' : 'hidden'}>Remover</button></div>
+      <small class="muted">Recortada em quadrado e reduzida para 480 px. Aparece no card do projeto.</small></div></div></div>
+    ${GRUPOS_PERFIL.map(([t, aberto, campos]) => `<details class="card perfil-grupo" ${aberto ? 'open' : ''}><summary><b>${esc(t)}</b></summary>
+      <div class="perfil-grid" style="margin-top:12px">${campos.filter((c) => !c[2]).map(campo).join('')}</div>${campos.filter((c) => c[2]).map(campo).join('')}</details>`).join('')}
+    <div style="margin:14px 0"><button class="btn primary" id="pfSalvar">Salvar perfil</button></div>`;
+  const pintar = () => { $('#pfFoto', el).innerHTML = foto ? `<img src="${foto}" alt="Foto de perfil">` : '<span>sem foto</span>'; $('#pfFotoDel', el).hidden = !foto; };
+  $('#pfFile', el).onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { foto = await reduzirFoto(f); pintar(); } catch (err) { toast(err.message); } };
+  $('#pfFotoDel', el).onclick = () => { foto = ''; pintar(); };
+  $('#pfSalvar', el).onclick = async () => {
+    const body = { foto }; $$('[data-pf]', el).forEach((i) => { body[i.dataset.pf] = i.value; });
     try { await api('/api/perfil', { method: 'PUT', body }); toast('Perfil salvo'); } catch (e) { toast(e.message); }
+  };
+}
+
+// ---------------- Currículo e portfólio: arquivos, ficha rápida e texto pronto ----------------
+const ROTULOS_DOC = ['Currículo (português)', 'Currículo (inglês)', 'Currículo (tráfego pago / MarTech)', 'Portfólio', 'Portfólio (MarTech)', 'Outro'];
+const fmtKB = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+
+function curriculoTexto(p, en) {
+  const bloco = (t, x) => (x && String(x).trim() ? `${t}\n${String(x).trim()}\n` : '');
+  const contato = [p.email, p.telefone, p.cidade, p.linkedin, p.portfolio].filter(Boolean).join(' · ');
+  return [String(p.nome || '').toUpperCase(), en ? (p.headline_en || p.headline) : p.headline, contato, '',
+    bloco(en ? 'PROFESSIONAL SUMMARY' : 'RESUMO PROFISSIONAL', en ? (p.resumo_en || p.resumo) : p.resumo),
+    bloco(en ? 'RESULTS IN NUMBERS' : 'RESULTADOS EM NÚMEROS', p.resultados),
+    bloco(en ? 'PROFESSIONAL EXPERIENCE' : 'EXPERIÊNCIA PROFISSIONAL', p.experiencias),
+    bloco(en ? 'OTHER EXPERIENCE' : 'OUTRAS EXPERIÊNCIAS', p.outras_experiencias),
+    bloco(en ? 'CORE COMPETENCIES' : 'COMPETÊNCIAS PRINCIPAIS', p.competencias),
+    bloco(en ? 'TOOLS' : 'FERRAMENTAS', p.ferramentas),
+    bloco(en ? 'EDUCATION' : 'FORMAÇÃO', p.formacao), bloco(en ? 'LANGUAGES' : 'IDIOMAS', p.idiomas),
+    bloco(en ? 'AVAILABILITY' : 'DISPONIBILIDADE', p.disponibilidade)].filter((x) => x !== '').join('\n').trim();
+}
+
+async function empDocs(el) {
+  const [docs, p] = await Promise.all([api('/api/documentos'), api('/api/perfil')]);
+  const ficha = [['Nome', p.nome], ['E-mail', p.email], ['Telefone', p.telefone], ['Cidade', p.cidade], ['LinkedIn', p.linkedin], ['Portfólio', p.portfolio],
+    ['Título (PT)', p.headline], ['Headline (EN)', p.headline_en], ['Idiomas', p.idiomas], ['Disponibilidade', p.disponibilidade], ['Pretensão', p.pretensao]].filter(([, x]) => x && String(x).trim());
+  el.innerHTML = `
+    <div class="card"><h3 style="margin-bottom:6px">Arquivos para anexar</h3>
+      <p class="muted" style="margin-top:0">Suba os currículos e portfólios em PDF (até 3,5 MB cada). A Bianca sugere qual anexar em cada vaga.</p>
+      ${docs.length ? `<div>${docs.map((d) => `<div class="linha-cr" style="cursor:default"><span class="ag-ico sm">📄</span>
+        <span class="lc-t"><b>${esc(d.rotulo || d.nome)}</b><small>${esc(d.nome)} · ${fmtKB(d.tamanho)}${d.idioma ? ' · ' + esc(d.idioma) : ''}</small></span>
+        <a class="btn small" href="/api/documentos/${d.id}/arquivo" target="_blank" rel="noopener">Abrir</a><button class="btn small ghost danger" data-dd="${d.id}">Excluir</button></div>`).join('')}</div>`
+        : '<div class="empty" style="padding:14px">Nenhum arquivo ainda.</div>'}
+      <div class="dm-linha" style="grid-template-columns:minmax(200px,1.2fr) minmax(160px,.8fr) minmax(130px,.5fr) auto;align-items:end;margin-top:12px">
+        <div><label for="ddArq">Arquivo</label><input type="file" id="ddArq" accept=".pdf,.docx,.png,.jpg,.jpeg"></div>
+        <div><label for="ddRot">Tipo</label><select id="ddRot">${ROTULOS_DOC.map((r) => `<option>${r}</option>`).join('')}</select></div>
+        <div><label for="ddIdi">Idioma</label><select id="ddIdi"><option value="">—</option><option>Português</option><option>Inglês</option></select></div>
+        <button class="btn primary" id="ddEnviar">Enviar</button></div>
+      <p class="erro" id="ddErro" style="margin:8px 0 0"></p></div>
+    <div class="grid cols-2" style="margin-top:14px">
+      <div class="card"><h3 style="margin-bottom:6px">Ficha rápida para cadastros</h3>
+        ${ficha.length ? ficha.map(([k, x], i) => `<div class="linha-cr" style="cursor:default"><span class="lc-t"><small>${esc(k)}</small><b style="white-space:normal">${esc(String(x))}</b></span><button class="btn small" data-fc="${i}">Copiar</button></div>`).join('') : '<div class="empty" style="padding:14px">Preencha o perfil para ver a ficha.</div>'}</div>
+      <div class="card"><h3 style="margin-bottom:6px">Currículo em texto</h3>
+        <p class="muted" style="margin-top:0">Texto completo montado a partir do seu perfil, para colar em formulários que não aceitam anexo.</p>
+        <div class="acoes-res"><button class="btn small primary" id="ctPt">Copiar em português</button><button class="btn small primary" id="ctEn">Copiar em inglês</button></div>
+        <p class="muted" style="font-size:12px">Em inglês, usa o resumo e o título em inglês; as experiências seguem como estão no perfil.</p></div>
+    </div>`;
+  $$('[data-dd]', el).forEach((b) => b.addEventListener('click', async () => { if (!confirm('Excluir este arquivo?')) return; await api('/api/documentos/' + b.dataset.dd, { method: 'DELETE' }); empDocs(el); }));
+  $$('[data-fc]', el).forEach((b) => b.addEventListener('click', () => copiar(String(ficha[Number(b.dataset.fc)][1]))));
+  $('#ctPt', el).onclick = () => copiar(curriculoTexto(p, false));
+  $('#ctEn', el).onclick = () => copiar(curriculoTexto(p, true));
+  $('#ddEnviar', el).onclick = async () => {
+    const f = $('#ddArq', el).files[0]; const erro = $('#ddErro', el); erro.textContent = '';
+    if (!f) return (erro.textContent = 'Escolha um arquivo');
+    if (f.size > 3.5 * 1024 * 1024) return (erro.textContent = 'O arquivo pode ter no máximo 3,5 MB');
+    const mime = f.type || ({ pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' })[f.name.split('.').pop().toLowerCase()];
+    const base64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(f); });
+    const b = $('#ddEnviar', el); b.disabled = true; b.textContent = 'Enviando…';
+    try { await api('/api/documentos', { method: 'POST', body: { nome: f.name, rotulo: $('#ddRot', el).value, idioma: $('#ddIdi', el).value, mime, base64 } }); toast('Arquivo enviado'); empDocs(el); }
+    catch (e) { erro.textContent = e.message; b.disabled = false; b.textContent = 'Enviar'; }
   };
 }
 

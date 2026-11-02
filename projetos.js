@@ -161,6 +161,17 @@ const ordemJson = (s) => {
   try { const r = JSON.parse(s.slice(i, j + 1)); return Array.isArray(r) ? r : []; } catch { return []; }
 };
 
+// Campos do perfil profissional (rótulo usado no texto que a Bianca lê)
+const PERFIL_CAMPOS = [
+  ['nome', 'Nome'], ['headline', 'Título profissional (PT)'], ['headline_en', 'Professional headline (EN)'], ['email', 'E-mail'], ['telefone', 'Telefone / WhatsApp'],
+  ['cidade', 'Cidade'], ['linkedin', 'LinkedIn'], ['portfolio', 'Portfólio (link)'], ['resumo', 'Resumo profissional (PT)'], ['resumo_en', 'Professional summary (EN)'],
+  ['resultados', 'Resultados em números'], ['experiencias', 'Experiência profissional'], ['outras_experiencias', 'Outras experiências'], ['cases', 'Cases do portfólio'],
+  ['competencias', 'Competências principais'], ['ferramentas', 'Ferramentas e stack'], ['soft_skills', 'Competências comportamentais'], ['formacao', 'Formação'],
+  ['idiomas', 'Idiomas'], ['diferenciais', 'Diferenciais'], ['disponibilidade', 'Disponibilidade'], ['pretensao', 'Pretensão'], ['respostas_prontas', 'Respostas prontas'],
+  ['observacoes', 'Observações e itens a confirmar'],
+];
+const perfilTexto = (dados) => PERFIL_CAMPOS.filter(([k]) => val(dados[k])).map(([k, r]) => `### ${r}\n${dados[k]}`).join('\n\n').slice(0, 24000);
+
 // ---------- Rotas ----------
 module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
   const ativo = () => !!cfg('ANTHROPIC_API_KEY');
@@ -371,13 +382,48 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     res.json(p ? p.dados : {});
   }));
 
+  // Campos do perfil profissional, na ordem em que a Bianca os lê
   app.put('/api/perfil', wrap(async (req, res) => {
-    const campos = ['nome', 'email', 'telefone', 'cidade', 'linkedin', 'portfolio', 'headline', 'resumo', 'experiencias', 'formacao', 'idiomas', 'pretensao', 'disponibilidade', 'observacoes'];
-    const dados = Object.fromEntries(campos.map((k) => [k, texto(req.body[k], 4000)]));
+    const { rows: [p] } = await pool.query('SELECT dados FROM perfil_profissional WHERE id=1');
+    const dados = { ...(p ? p.dados : {}) };
+    for (const [k] of PERFIL_CAMPOS) if (k in req.body) dados[k] = texto(req.body[k], 20000);
+    if ('foto' in req.body) {
+      const f = String(req.body.foto || '');
+      dados.foto = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(f) && f.length < 400000 ? f : '';
+    }
     await pool.query(
       `INSERT INTO perfil_profissional (id, dados, updated_at) VALUES (1,$1,now()) ON CONFLICT (id) DO UPDATE SET dados=EXCLUDED.dados, updated_at=now()`,
       [JSON.stringify(dados)]);
     res.json(dados);
+  }));
+
+  // ---------- Documentos: currículos e portfólios para anexar ----------
+  const MIMES_DOC = { 'application/pdf': 'pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx', 'image/png': 'png', 'image/jpeg': 'jpg' };
+  app.get('/api/documentos', wrap(async (req, res) => {
+    const { rows } = await pool.query('SELECT id, nome, rotulo, idioma, mime, tamanho, created_at FROM documentos ORDER BY created_at DESC');
+    res.json(rows);
+  }));
+  app.post('/api/documentos', wrap(async (req, res) => {
+    const b = req.body || {};
+    if (!MIMES_DOC[b.mime]) return res.status(400).json({ erro: 'Envie um PDF, DOCX, PNG ou JPG' });
+    const dados = Buffer.from(String(b.base64 || ''), 'base64');
+    if (!dados.length) return res.status(400).json({ erro: 'Arquivo vazio' });
+    if (dados.length > 3.5 * 1024 * 1024) return res.status(400).json({ erro: 'O arquivo pode ter no máximo 3,5 MB' });
+    const { rows: [d] } = await pool.query(
+      `INSERT INTO documentos (nome, rotulo, idioma, mime, tamanho, dados) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, nome, rotulo, idioma, mime, tamanho, created_at`,
+      [texto(b.nome, 200).replace(/[\r\n"]/g, ' ') || 'documento', texto(b.rotulo, 80) || null, texto(b.idioma, 20) || null, b.mime, dados.length, dados]);
+    res.json(d);
+  }));
+  app.get('/api/documentos/:id/arquivo', wrap(async (req, res) => {
+    const { rows: [d] } = await pool.query('SELECT nome, mime, dados FROM documentos WHERE id=$1', [req.params.id]);
+    if (!d) return res.status(404).json({ erro: 'Documento não encontrado' });
+    res.setHeader('Content-Type', d.mime);
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(d.nome)}`);
+    res.send(d.dados);
+  }));
+  app.delete('/api/documentos/:id', wrap(async (req, res) => {
+    await pool.query('DELETE FROM documentos WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
   }));
 
   app.get('/api/vagas', wrap(async (req, res) => {
@@ -422,23 +468,28 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     if (!val(v.descricao)) return res.status(400).json({ erro: 'Cole a descrição da vaga para a Bianca poder analisar' });
     if (!dentroDoLimite(req.user.id)) return res.status(429).json({ erro: 'Limite de gerações por hora atingido.' });
     const { rows: [p] } = await pool.query('SELECT dados FROM perfil_profissional WHERE id=1');
-    const perfil = Object.entries(p?.dados || {}).filter(([, x]) => val(x)).map(([k, x]) => `${k}: ${x}`).join('\n');
+    const { rows: docs } = await pool.query('SELECT rotulo, nome, idioma FROM documentos ORDER BY created_at DESC');
+    const perfil = perfilTexto(p?.dados || {});
+    const anexos = docs.length ? docs.map((d) => `- ${d.rotulo || d.nome}${d.idioma ? ' (' + d.idioma + ')' : ''}`).join('\n') : '(nenhum documento enviado ainda)';
     const saida = await chamarTexto({
-      system: `Você é Bianca, caçadora de vagas e propostas. Escreva em português do Brasil, em primeira pessoa quando for a proposta.
-REGRAS: use SOMENTE os dados do PERFIL abaixo. Nunca invente experiência, resultado, número, cliente, certificação, idioma ou pretensão. Campo que não consta no perfil vira [PREENCHER: campo]. Seja específica para a vaga e sem clichês.
-Responda exatamente neste formato:
+      system: `Você é Bianca, caçadora de vagas e propostas da Karolina Nascimento. Escreva na primeira pessoa quando for a proposta.
+IDIOMA: escreva no idioma da descrição da vaga (português ou inglês). Se a vaga for em inglês, use o título e o resumo em inglês do perfil e traduza o resto com fidelidade.
+REGRAS: use SOMENTE os dados do PERFIL abaixo. Nunca invente experiência, cargo, resultado, número, cliente, certificação, idioma ou pretensão. Campo que não consta no perfil vira [PREENCHER: campo]. Itens listados em "Observações e itens a confirmar" NÃO são fatos: não os use e peça confirmação. Os cases e resultados só podem ser citados como estão no perfil. Seja específica para a vaga e sem clichês.
+Responda exatamente neste formato (títulos em português):
 ## Aderência
-(nota de 0 a 10, em uma linha, e 3 a 5 frases explicando; diga o que falta)
+(nota de 0 a 10 em uma linha e 3 a 5 frases explicando; diga o que falta)
 ## Pontos a destacar
-(lista curta ligando a vaga ao perfil)
+(lista curta ligando a vaga a experiências e resultados reais do perfil)
 ## Respostas prontas para o cadastro
-(Nome, E-mail, Telefone, Cidade, Link do LinkedIn, Portfólio, Resumo profissional (até 500 caracteres), Experiência relevante, Formação, Idiomas, Pretensão, Disponibilidade — um por linha, só com o que consta no perfil)
+(Nome, E-mail, Telefone, Cidade, LinkedIn, Portfólio, Resumo profissional (até 500 caracteres), Experiência relevante, Formação, Idiomas, Pretensão, Disponibilidade, e respostas curtas para "Por que você?" e "Maior conquista" — um item por linha, só com o que consta no perfil)
+## Currículo sugerido
+(qual dos DOCUMENTOS DISPONÍVEIS anexar e por quê; depois um resumo adaptado à vaga de 3 a 4 linhas)
 ## Dúvidas para confirmar
 (lista)
 === PROPOSTA ===
-(texto final da proposta/carta de apresentação, pronto para colar, de 120 a 220 palavras)`,
-      user: `PERFIL:\n${perfil}\n\nVAGA\nPlataforma: ${v.plataforma || '-'}\nTítulo: ${v.titulo}\nEmpresa: ${v.empresa || '-'}\nOrçamento: ${v.orcamento || '-'}\nDescrição:\n${v.descricao}`,
-      maxTokens: 3000,
+(texto final da proposta ou carta de apresentação, pronto para colar, de 120 a 220 palavras)`,
+      user: `PERFIL:\n${perfil}\n\nDOCUMENTOS DISPONÍVEIS PARA ANEXAR:\n${anexos}\n\nVAGA\nPlataforma: ${v.plataforma || '-'}\nTítulo: ${v.titulo}\nEmpresa: ${v.empresa || '-'}\nOrçamento: ${v.orcamento || '-'}\nDescrição:\n${v.descricao}`,
+      maxTokens: 3500,
     });
     const [analise, proposta] = saida.split('=== PROPOSTA ===');
     const { rows: [novo] } = await pool.query(

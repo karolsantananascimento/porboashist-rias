@@ -325,6 +325,18 @@ ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS client_id INT;
 ALTER TABLE publicacoes ADD COLUMN IF NOT EXISTS client_id INT;
 CREATE TABLE IF NOT EXISTS meta_paginas (page_id TEXT PRIMARY KEY, client_id INT NOT NULL);
 
+-- Currículos e portfólios (arquivos) para anexar em candidaturas
+CREATE TABLE IF NOT EXISTS documentos (
+  id SERIAL PRIMARY KEY,
+  nome TEXT NOT NULL,
+  rotulo TEXT,
+  idioma TEXT,
+  mime TEXT NOT NULL,
+  tamanho INT NOT NULL,
+  dados BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS perfil_profissional (
   id INT PRIMARY KEY DEFAULT 1,
   dados JSONB NOT NULL DEFAULT '{}',
@@ -596,16 +608,8 @@ const CLIENTES_INICIAIS = [
   ['Marconi Car', 'Marconi Car', 12, ''],
 ];
 
-const PERFIL_INICIAL = {
-  nome: 'Karolina Nascimento', email: 'knasck@gmail.com', telefone: '', cidade: 'Recife, Pernambuco',
-  linkedin: '', portfolio: '',
-  headline: 'Head de Growth e CRM · Gestora de Tráfego · 15 anos em mídia paga, programática, CRM e automação',
-  resumo: 'Profissional de marketing com 15 anos de experiência em mídia paga, publicidade programática, arquitetura de CRM, automação, growth marketing e produção cultural. Head de Growth e CRM na AudiGrowth (consultoria de AdOps programático), fundadora da Agência Otter e gestora de tráfego.',
-  experiencias: 'Head de Growth e CRM — AudiGrowth\nFundadora e gestora de tráfego — Agência Otter (Pernambuco)\nDiretora de Marketing (CMO) — Ativos Precatórios (2026)\nCoordenadora de Growth — GoKursos / Grupo Ser Educacional\nGestora sênior de performance — Grupo Ser Educacional\nZoho Corporation LATAM · Sport Club do Recife · E-brands · Ortoestética (Grupo Salute) · Aposta Ganha · Agência LeanX · Agência Reality',
-  formacao: 'Marketing — UNIBRA\nMBA — IBMEC (em andamento)',
-  idiomas: '', pretensao: '', disponibilidade: '',
-  observacoes: 'Complete os campos em branco: a Bianca só usa o que estiver aqui.',
-};
+// Perfil começa vazio: os dados pessoais ficam só no banco (o repositório é público) e são editados na tela
+const PERFIL_INICIAL = { nome: '', observacoes: 'Preencha o perfil: a Bianca só usa o que estiver aqui.' };
 
 async function seedProjetos(c) {
   const ids = {};
@@ -682,6 +686,12 @@ async function init() {
     await seedsIncrementais(c);
     const { rowCount } = await c.query(`INSERT INTO seeds (chave) VALUES ('projetos_v1') ON CONFLICT DO NOTHING`);
     if (rowCount) await seedProjetos(c);
+    // O projeto de carreira passa a ter o nome da própria Karolina
+    const { rowCount: kn } = await c.query(`INSERT INTO seeds (chave) VALUES ('karolina_v1') ON CONFLICT DO NOTHING`);
+    if (kn) {
+      await c.query(`UPDATE projects SET nome='Karolina Nascimento', cor='#1d4e89',
+        descricao='Perfil, currículo, portfólio e candidaturas: vagas, funil e propostas prontas. Funciona diferente das tarefas dos outros projetos.' WHERE tipo='empregos'`);
+    }
     // Projeto Empregos: área própria (vagas e candidaturas), sem clientes nem tarefas
     const { rowCount: emp } = await c.query(`INSERT INTO seeds (chave) VALUES ('empregos_v1') ON CONFLICT DO NOTHING`);
     if (emp) {

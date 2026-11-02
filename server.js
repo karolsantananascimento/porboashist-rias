@@ -616,6 +616,13 @@ app.post('/api/restaurar', soAdmin, wrap(async (req, res) => {
   }
 }));
 
+// Erros de leitura do corpo (arquivo grande demais, JSON quebrado): resposta limpa, sem detalhes internos
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const grande = err.type === 'entity.too.large';
+  res.status(grande ? 413 : (err.status || 500)).json({ erro: grande ? 'O arquivo é grande demais (máximo de 3,5 MB)' : 'Requisição inválida' });
+});
+
 // ---------- Interface ----------
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
