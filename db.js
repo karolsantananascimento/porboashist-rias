@@ -234,6 +234,20 @@ CREATE TABLE IF NOT EXISTS vagas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Guia de marca (a "skill" do designer) por projeto e por cliente; marca_propria = o cliente é a própria marca do projeto
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS guia_design TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS canva_kit_id TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS canva_kit_nome TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS guia_design TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS marca_propria BOOLEAN NOT NULL DEFAULT false;
+
+-- Esteira: o time executa a demanda, ela fica aguardando aprovação e, aprovada, segue para publicação
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira TEXT;          -- executando | aguardando_aprovacao | aprovada | publicada | erro
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_msg TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_em TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_por TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMPTZ;
+
 -- Tipo de projeto: 'padrao' (clientes e tarefas) ou 'empregos' (vagas e candidaturas, sem tarefas)
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'padrao';
 
@@ -595,6 +609,46 @@ async function seedProjetos(c) {
   await c.query(`INSERT INTO perfil_profissional (id, dados) VALUES (1,$1) ON CONFLICT DO NOTHING`, [JSON.stringify(PERFIL_INICIAL)]);
 }
 
+
+const GUIA_MELHOR_MIDIA = `MARCA: A Melhor Mídia do Brasil (monograma MM). Posicionamento: marketing, estratégia, tecnologia, negócios e IA com direção e intenção. Conceito visual: estratégia como jogo de alto nível (xadrez, roleta, cartas, dados) e palco/teatro (cortinas, spotlight, cabaré), com rigor técnico. Ousadia controlada; autoridade com estilo; nada de "agência fofa". Mensagem central: "Estratégia não é sorte."
+
+PALETA (use exatamente, só estas cores): Vinho profundo #800010 (atmosfera), Vermelho MM #D3121F (assinatura, ponto de foco), Creme #F6E8DB (papel, texto sobre escuro), Preto #0B0B0B (fundo dominante, texto sobre claro), Cinza prata #C0C0C0 (apoio, linhas finas). Proporção: 60-70% preto ou creme; vermelho em 15-25% como ponto de foco (uma palavra, uma barra, um objeto). Nunca azul, verde, roxo, neon ou degradê colorido. Fundos escuros: vinheta vermelha lateral discreta e granulação leve.
+
+LOGO: dois M sobrepostos, M grande vermelho (#D3121F) e M menor preto (#0B0B0B) por baixo; cortes retos, sem curvas. Fundos: creme (principal), preto ou vinho escuro. Respiro mínimo = metade da altura do M grande. Nunca distorcer, girar, aplicar sombra dura, gradiente ou recolorir fora da paleta. Apoio: "A MELHOR MÍDIA / DO BRASIL" em duas linhas, caixa alta, bold condensado.
+
+TIPOGRAFIA: títulos em Boldonse (caixa alta; fallback Bebas Neue, Anton ou Barlow Condensed ExtraBold, entrelinha 0.9-1.0). Apoio em Syncopate (caixa alta, espaçamento 0.2-0.4em, tamanhos pequenos). Hierarquia: headline gigante em creme com UMA palavra em vermelho; filete vermelho curto abaixo; palavras-chave em Syncopate pequeno (ESTRATÉGIA / DADOS / CRIATIVIDADE / EXECUÇÃO / RESULTADOS). Headlines terminam com ponto final.
+
+VOCABULÁRIO GRÁFICO (use pelo menos 2 por peça): estrela de quatro pontas, filete vermelho, barras horizontais, cruzes "+" nos cantos, xadrez, círculos concêntricos em linha fina, quadrado dividido na diagonal (vermelho/preto), diagonais, linhas de blueprint em cinza sobre creme, microtextos tipo HUD ("REC 00:00"), rodapé em Syncopate: MARKETING · ESTRATÉGIA · TECNOLOGIA · NEGÓCIOS · IA.
+
+IMAGEM: símbolos de estratégia e risco calculado em vermelho + preto + creme (roleta, peças de xadrez, telefone vermelho vintage, dados vermelhos translúcidos, cartas, cortinas de veludo, spotlight, tecido drapeado). Luz dramática, contraste alto, rim light vermelho, fundo preto profundo, granulação. Evitar stock sorridente, pessoas em escritório, gráficos clichê. Prompt-base de imagem: "cinematic still life, [objeto-símbolo] in glossy red, deep black background, cream accents, dramatic rim lighting, shallow depth of field, subtle film grain, editorial luxury advertising, no text".
+
+TOM DE VOZ: frases curtas, afirmativas, com ponto final, máximo 6 palavras nos slogans, verbo forte, sem exclamação. Ex.: "Ideias que movem o mercado." "Estratégia não é sorte." "Marketing com intenção."
+
+FORMATOS: feed 1080x1350 ou 1080x1080; stories/reels 1080x1920; thumbnails 1280x720; slides 16:9. Margens >= 6% da largura; headline ocupa 40-60% da área; um único ponto focal vermelho. Motion: cortes secos creme/preto, easing forte, wipes por barras, glitch curto, sem bounce nem dissolve lento.
+
+CHECKLIST: só as 5 cores; headline bold condensada em caixa alta com uma palavra em vermelho e ponto final; apoio em Syncopate; 2+ elementos do vocabulário gráfico; imagem-símbolo com luz dramática; logo respeitado; contraste AA e legível no celular. Na dúvida: mais preto, menos elementos, tipografia maior, um único destaque vermelho.`;
+
+const GUIA_DISCO = `MARCA: O Disco Criativo (hub). Frentes: Disco Criativo (conteúdo e planejamento), Disco Mídia (@bydiscomidia: tráfego, estratégia, dados e aquisição de clientes) e Disco Tech (SaaS). Conceito: "Órbitas que conectam, ideias que giram". Tagline: Estratégia • Design • Conteúdo.
+
+CORES: preto e verde. [CONFIRMAR: hex exatos do verde e do preto no kit "Disco Mídia" do Canva.]
+TIPOGRAFIA: Anton (títulos) e Inter (apoio).
+REDES SOCIAIS: estilo CLARO: fundo off-white, título preto com a palavra-chave em verde. O fundo escuro fica reservado para site e peças institucionais.
+CONTEÚDO: informa com autoridade sobre marketing e atrai clientes com storytelling; roteiros autorais, sem dancinhas e sem formatos virais genéricos.
+SUB-MARCA: a Just Marketing (agência, tom institucional) tem identidade própria; kit do Canva "Just Mkt" (brand_kit_id kAHUqEMtaUA).
+REGRA: os clientes atendidos pela Disco (Operizy, Senhorita Moça, Michie Farfan e outros) têm identidade própria. Nunca aplicar este guia às peças deles.`;
+
+const GUIA_OTTER = `MARCA: Agência Otter / Grupo Otter (produção cultural em Pernambuco). O padrão visual é o do kit "Kit Otter" do Canva (cores, fontes e logo): crie sempre com esse kit. [CONFIRMAR: descrever aqui paleta, tipografia e estilo do Otter.]
+REGRA: a Contrafluxo Pratas e as demais empresas do grupo têm identidade própria. Nunca aplicar este guia às peças delas.`;
+
+async function seedGuiasMarca(c) {
+  const proj = [['A Melhor Mídia do Brasil', GUIA_MELHOR_MIDIA], ['Disco', GUIA_DISCO], ['Otter', GUIA_OTTER]];
+  for (const [nome, guia] of proj) await c.query('UPDATE projects SET guia_design=$1 WHERE nome=$2 AND guia_design IS NULL', [guia, nome]);
+  // O cliente que é a própria marca do projeto herda o guia e o kit do projeto
+  await c.query(`UPDATE clients SET marca_propria=true WHERE nome IN ('A Melhor Mídia do Brasil','Disco','Agência Otter')`);
+  await c.query(`UPDATE clients SET canva_kit_id='kAHVxV_gqbI', canva_kit_nome='Disco Mídia' WHERE nome='Disco' AND canva_kit_id IS NULL`);
+  await c.query(`UPDATE clients SET canva_kit_id='kAGnnk9vrtI', canva_kit_nome='Kit Otter' WHERE nome='Agência Otter' AND canva_kit_id IS NULL`);
+}
+
 async function init() {
   const c = await pool.connect();
   try {
@@ -612,6 +666,8 @@ async function init() {
          'Vagas e projetos freelance: busca, propostas, candidaturas e o seu perfil profissional. Funciona diferente das tarefas dos outros projetos.','',99,'empregos')
          ON CONFLICT (nome) DO UPDATE SET tipo='empregos'`);
     }
+    const { rowCount: gm } = await c.query(`INSERT INTO seeds (chave) VALUES ('guias_marca_v1') ON CONFLICT DO NOTHING`);
+    if (gm) await seedGuiasMarca(c);
     // Kits de marca que já existem no Canva (só preenche onde ainda está vazio)
     const { rowCount: kits } = await c.query(`INSERT INTO seeds (chave) VALUES ('canva_kits_v1') ON CONFLICT DO NOTHING`);
     if (kits) {

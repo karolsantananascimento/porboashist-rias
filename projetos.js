@@ -34,7 +34,7 @@ const AGENTES = {
     nome: 'Luiz', cargo: 'Designer e diretor de arte', icone: '🎨', area: 'Artes',
     descricao: 'Cria a direção de arte e o briefing de cada peça (feed, stories, capas, anúncios) e entrega um prompt pronto para gerar a imagem ou montar no Canva.',
     formatos: ['Arte de feed (1080x1350)', 'Capa de carrossel + lâminas', 'Arte de stories/reels (1080x1920)', 'Criativo de anúncio', 'Capa de vídeo/thumbnail', 'Identidade / moodboard'],
-    instrucoes: `Você é Luiz, designer e diretor de arte. Entregue: conceito da peça; medidas; hierarquia visual; texto EXATO de cada elemento; paleta e tipografia seguindo a marca do projeto; composição por lâmina; imagens necessárias (cite materiais só se constarem no contexto); e um PROMPT PRONTO em um bloco único para gerar a imagem ou montar no Canva. Se a marca do projeto não estiver definida, diga o que falta em vez de inventar.`,
+    instrucoes: `Você é Luiz, designer e diretor de arte. Entregue: conceito da peça; medidas; hierarquia visual; texto EXATO de cada elemento; paleta e tipografia seguindo a marca do projeto; composição por lâmina; imagens necessárias (cite materiais só se constarem no contexto); e um PROMPT PRONTO em um bloco único para gerar a imagem ou montar no Canva. Se houver um GUIA DE MARCA no contexto, ele manda: use só a paleta, as fontes e o vocabulário dele e termine com a seção "Conformidade com o guia" (checklist). Se a marca não estiver definida, diga o que falta em vez de inventar.`,
   },
   davi: {
     nome: 'Davi', cargo: 'Editor de vídeo', icone: '🎬', area: 'Vídeos',
@@ -70,7 +70,7 @@ async function chamarTexto({ system, user, maxTokens = 3500, tools, timeoutMs = 
   if (!chave) { const e = new Error('Os agentes ainda não estão ativos: falta configurar ANTHROPIC_API_KEY no Render.'); e.status = 503; throw e; }
   let r;
   try {
-    r = await fetch('https://api.anthropic.com/v1/messages', {
+    r = await fetch(process.env.ANTHROPIC_API_URL || 'https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': chave, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model: MODELO, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }], ...(tools ? { tools } : {}) }),
@@ -102,8 +102,33 @@ function dentroDoLimite(userId) {
   return true;
 }
 
+// ---------- Guia de marca (a "skill" do designer) ----------
+// Cliente com guia/kit próprio usa o dele. Cliente que é a própria marca do projeto herda o do projeto.
+// Cliente de outra marca SEM guia nunca herda a identidade do projeto.
+async function guiaDe(pool, projectId, clientId) {
+  const { rows: [proj] } = projectId ? await pool.query('SELECT nome, canva_kit_id, canva_kit_nome, guia_design FROM projects WHERE id=$1', [projectId]) : { rows: [] };
+  const { rows: [cl] } = clientId ? await pool.query('SELECT nome, canva_kit_id, canva_kit_nome, guia_design, marca_propria FROM clients WHERE id=$1', [clientId]) : { rows: [] };
+  if (cl && (val(cl.guia_design) || cl.canva_kit_id)) return { origem: 'cliente', nome: cl.nome, kit_id: cl.canva_kit_id, kit_nome: cl.canva_kit_nome, guia: cl.guia_design };
+  if (cl && !cl.marca_propria) return { origem: 'sem_guia', nome: cl.nome };
+  if (proj && (val(proj.guia_design) || proj.canva_kit_id)) return { origem: 'projeto', nome: proj.nome, kit_id: proj.canva_kit_id, kit_nome: proj.canva_kit_nome, guia: proj.guia_design };
+  return null;
+}
+
+async function blocoGuia(pool, projectId, clientId) {
+  const g = await guiaDe(pool, projectId, clientId);
+  if (!g) return 'GUIA DE MARCA: nenhum cadastrado. Não invente cores, fontes ou logo; marque [CONFIRMAR: identidade visual da marca].';
+  if (g.origem === 'sem_guia') return `GUIA DE MARCA: o cliente "${g.nome}" ainda não tem guia de marca cadastrado. NÃO use a identidade visual do projeto nem invente cores, fontes ou logo: entregue apenas a estrutura da peça e marque [CONFIRMAR: paleta, fontes e logo do cliente].`;
+  return [`GUIA DE MARCA "${g.nome}" (padrão obrigatório: siga ao pé da letra, cite as cores em hex e termine com "Conformidade com o guia"):`, g.guia || '(sem texto; siga o kit abaixo)',
+    g.kit_id ? `KIT DE MARCA NO CANVA: ${g.kit_nome || ''} (brand_kit_id ${g.kit_id}). Peças criadas no Canva devem usar este kit.` : 'KIT NO CANVA: nenhum vinculado.'].join('\n');
+}
+
+async function kitDe(pool, projectId, clientId) {
+  const g = await guiaDe(pool, projectId, clientId);
+  return g && g.kit_id ? { id: g.kit_id, nome: g.kit_nome, origem: g.origem } : null;
+}
+
 // ---------- Contexto do projeto/cliente ----------
-async function blocoContexto(pool, projectId, clientId) {
+async function blocoContexto(pool, projectId, clientId, agente) {
   const partes = [];
   if (projectId) {
     const { rows: [p] } = await pool.query('SELECT * FROM projects WHERE id=$1', [projectId]);
@@ -126,6 +151,7 @@ async function blocoContexto(pool, projectId, clientId) {
       ].filter(Boolean).join('\n'));
     }
   }
+  if (['luiz', 'davi'].includes(agente)) partes.push(await blocoGuia(pool, projectId, clientId));
   return partes.length ? partes.join('\n\n') : 'CONTEXTO: nenhum projeto selecionado. Use o que estiver no pedido e marque o que faltar.';
 }
 
@@ -176,11 +202,22 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const nome = String(b.nome ?? atual.nome).trim() || atual.nome;
     const cor = /^#[0-9a-f]{6}$/i.test(b.cor || '') ? b.cor : atual.cor;
     const { rows: [p] } = await pool.query(
-      'UPDATE projects SET nome=$1, cor=$2, descricao=$3, contexto=$4, canva_kit_id=$5, canva_kit_nome=$6 WHERE id=$7 RETURNING *',
+      'UPDATE projects SET nome=$1, cor=$2, descricao=$3, contexto=$4, canva_kit_id=$5, canva_kit_nome=$6, guia_design=$8 WHERE id=$7 RETURNING *',
       [nome, cor, 'descricao' in b ? texto(b.descricao, 600) : atual.descricao, 'contexto' in b ? texto(b.contexto, 6000) : atual.contexto,
         'canva_kit_id' in b ? (texto(b.canva_kit_id, 40) || null) : atual.canva_kit_id,
-        'canva_kit_nome' in b ? (texto(b.canva_kit_nome, 80) || null) : atual.canva_kit_nome, atual.id]);
+        'canva_kit_nome' in b ? (texto(b.canva_kit_nome, 80) || null) : atual.canva_kit_nome, atual.id,
+        'guia_design' in b ? (texto(b.guia_design, 12000) || null) : atual.guia_design]);
     res.json(p);
+  }));
+
+  // Guia de marca do cliente (a "skill" que o designer segue)
+  app.put('/api/clients/:id/guia', wrap(async (req, res) => {
+    const b = req.body || {};
+    const { rows: [c] } = await pool.query(
+      `UPDATE clients SET canva_kit_id=$1, canva_kit_nome=$2, guia_design=$3, marca_propria=$4 WHERE id=$5 RETURNING id, canva_kit_id, canva_kit_nome, guia_design, marca_propria`,
+      [texto(b.canva_kit_id, 40) || null, texto(b.canva_kit_nome, 80) || null, texto(b.guia_design, 12000) || null, !!b.marca_propria, req.params.id]);
+    if (!c) return res.status(404).json({ erro: 'Cliente não encontrado' });
+    res.json(c);
   }));
 
   // Equipe
@@ -194,7 +231,7 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const pedido = texto(b.pedido, 4000).trim();
     if (!pedido) return res.status(400).json({ erro: 'Descreva o que você quer criar' });
     if (!dentroDoLimite(req.user.id)) return res.status(429).json({ erro: 'Limite de gerações por hora atingido. Tente mais tarde.' });
-    const contexto = await blocoContexto(pool, b.project_id, b.client_id);
+    const contexto = await blocoContexto(pool, b.project_id, b.client_id, b.agente);
     const saida = await chamarTexto({
       system: `${ag.instrucoes}\n\n${REGRAS}`,
       user: `${contexto}\n\nFORMATO: ${texto(b.formato, 120) || 'a critério do agente'}\nPLATAFORMA/CANAL: ${texto(b.plataforma, 80) || 'não informado'}\n\nPEDIDO:\n${pedido}\n\nTermine com a seção "Conferir antes de usar".`,
@@ -203,7 +240,7 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const { rows: [c] } = await pool.query(
       `INSERT INTO criacoes (project_id, client_id, agente, formato, pedido, saida, usuario_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [b.project_id || null, b.client_id || null, b.agente, texto(b.formato, 120) || null, pedido, saida, req.user.id]);
-    res.json(c);
+    res.json({ ...c, kit: await kitDe(pool, c.project_id, c.client_id) });
   }));
 
   app.get('/api/criacoes', wrap(async (req, res) => {
@@ -211,6 +248,12 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     if (req.query.project_id) { v.push(req.query.project_id); w.push(`project_id=$${v.length}`); }
     if (req.query.agente) { v.push(req.query.agente); w.push(`agente=$${v.length}`); }
     const { rows } = await pool.query(`SELECT * FROM criacoes ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY created_at DESC LIMIT 60`, v);
+    const cache = new Map();
+    for (const r of rows) {
+      const k = `${r.project_id}:${r.client_id}`;
+      if (!cache.has(k)) cache.set(k, await kitDe(pool, r.project_id, r.client_id));
+      r.kit = cache.get(k);
+    }
     res.json(rows);
   }));
 
@@ -435,6 +478,9 @@ Responda exatamente neste formato:
 
 // ---------- Webhook da Meta (fora de /api: a Meta não tem a sessão) ----------
 module.exports.chamarTexto = chamarTexto;
+module.exports.AGENTES = AGENTES;
+module.exports.REGRAS = REGRAS;
+module.exports.guiaDe = guiaDe;
 module.exports.blocoContexto = blocoContexto;
 module.exports.webhook = function registrarWebhook(app, { pool, wrap }) {
   app.get('/webhook/meta', (req, res) => {

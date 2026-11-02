@@ -183,7 +183,15 @@ function registrar(app, { pool, wrap, soAdmin }) {
       `INSERT INTO solicitacoes (project_id, client_id, titulo, tipo, descricao, solicitante, prazo, origem, status, task_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'caixa','andamento',$8) RETURNING *`,
       [cl.project_id, cl.id, texto(pauta.tema, 200), tipoSol, demanda, req.user.nome || req.user.email, prazo, t.id]);
-    res.json({ tarefa: t, solicitacao: sol, projeto: { id: cl.project_id, nome: cl.projeto }, cliente: { id: cl.id, nome: cl.nome }, ia: pauta.ia });
+    // O time começa a trabalhar sozinho; o resultado cai na fila de aprovação
+    let executando = false;
+    const { cfg } = require('./config');
+    if (b.executar !== false && cfg('ANTHROPIC_API_KEY')) {
+      await pool.query(`UPDATE tasks SET esteira='executando', esteira_msg='Time começando…', esteira_em=now() WHERE id=$1`, [t.id]);
+      require('./esteira').executar(pool, t.id, { usuario: req.user.email });
+      executando = true;
+    }
+    res.json({ tarefa: { ...t, esteira: executando ? 'executando' : null }, solicitacao: sol, projeto: { id: cl.project_id, nome: cl.projeto }, cliente: { id: cl.id, nome: cl.nome }, ia: pauta.ia, executando });
   }));
 
   // Link do formulário público do projeto

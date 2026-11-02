@@ -242,6 +242,10 @@ function registrar(app, { pool, wrap, soAdmin }) {
         [plat, texto, imagem || null, externo ? String(externo) : null, status, erro, req.user.id]);
       resultados.push({ plataforma: plat, status, erro });
     }
+    // Publicou em pelo menos uma rede: a tarefa aprovada passa a publicada
+    if (b.task_id && resultados.some((r) => r.status === 'publicado')) {
+      await pool.query(`UPDATE tasks SET status='publicado', esteira='publicada', esteira_msg='Publicada', esteira_em=now(), updated_at=now() WHERE id=$1 AND esteira='aprovada'`, [b.task_id]);
+    }
     res.json({ resultados });
   }));
 

@@ -22,6 +22,18 @@ function fallbackCopiar(texto, ok) {
   t.remove();
 }
 
+// Kits de marca da sua conta do Canva (atualize quando criar kits novos)
+const KITS_CANVA = [
+  ['kAHVxV_gqbI', 'Disco Mídia'], ['kAHUqEMtaUA', 'Just Mkt'], ['kAGnnk9vrtI', 'Kit Otter'], ['kAHKTQZqKn0', 'Audi Growth'],
+  ['kAG1PDmgf1c', 'Bienal do Livro PE'], ['kAG4xcu8B-M', 'NUMA'], ['kAG6ezOiE_U', 'Mica'], ['kAHBCqK334c', 'Salada Music'], ['kAHBDMn618A', 'Leitura em jogo'],
+];
+function seletorKit(id, atual, nomeAtual) {
+  const lista = KITS_CANVA.slice();
+  if (atual && !lista.some(([k]) => k === atual)) lista.push([atual, nomeAtual || atual]);
+  return `<select id="${id}"><option value="">Nenhum kit</option>${lista.map(([k, n]) => `<option value="${esc(k)}" ${k === atual ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+}
+const lerKit = (id) => { const sel = $('#' + id); const o = sel.options[sel.selectedIndex]; return { id: sel.value || '', nome: sel.value ? o.textContent : '' }; };
+
 // ---------------- Navegação: projeto > cliente > abas ----------------
 const ABAS = [
   ['visao', 'Visão geral'], ['painel', 'Painel do mês'], ['tarefas', 'Tarefas'], ['captacao', 'Captação'], ['programacao', 'Programação'],
@@ -80,16 +92,16 @@ const TIPOS_DEMANDA = [
   ['trafego', '📈', 'Tráfego', 'Camila · campanhas e anúncios'],
 ];
 
-function caixaDemandas(clientes, projetos) {
+function caixaDemandas(clientes, projetos, opts = {}) {
   const grupos = projetos.filter((p) => p.tipo !== 'empregos').map((p) => {
     const cl = clientes.filter((c) => c.project_id === p.id);
     return cl.length ? `<optgroup label="${esc(p.nome)}">${cl.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</optgroup>` : '';
   }).join('');
   return `<section class="card demanda" aria-labelledby="dmTit">
-    <h3 id="dmTit">📥 Nova demanda</h3>
-    <p class="muted" style="margin:2px 0 12px">Escolha o cliente e o tipo, escreva o pedido e envie: a pauta é criada na área do projeto, com o responsável já definido.</p>
+    <h3 id="dmTit">📥 ${esc(opts.titulo || 'Nova demanda')}</h3>
+    <p class="muted" style="margin:2px 0 12px">Escolha o cliente e o tipo e escreva o pedido. O time executa (texto, arte, plano) e a entrega fica <b>aguardando a sua aprovação</b>; só depois de aprovada segue para publicação.</p>
     <div class="dm-linha">
-      <div class="dm-cli"><label for="dmCli">Cliente</label><select id="dmCli"><option value="">Escolha o cliente…</option>${grupos}</select></div>
+      <div class="dm-cli"><label for="dmCli">Cliente</label><select id="dmCli" ${opts.clienteFixo ? 'disabled' : ''}><option value="">Escolha o cliente…</option>${grupos}</select></div>
       <div><label>Tipo de demanda</label><div class="dm-tipos" role="radiogroup" aria-label="Tipo de demanda">
         ${TIPOS_DEMANDA.map(([k, ic, l, sub], i) => `<label class="dm-tipo"><input type="radio" name="dmTipo" value="${k}" ${i === 0 ? 'checked' : ''}><span><b>${ic} ${l}</b><small>${esc(sub)}</small></span></label>`).join('')}</div></div>
       <div class="dm-prazo"><label for="dmPrazo">Prazo (opcional)</label><input type="date" id="dmPrazo"></div>
@@ -101,8 +113,10 @@ function caixaDemandas(clientes, projetos) {
   </section>`;
 }
 
-function ligarCaixaDemandas(v, clientes) {
+function ligarCaixaDemandas(v, clientes, opts = {}) {
   const btn = $('#dmEnviar', v);
+  if (opts.clienteId) $('#dmCli', v).value = String(opts.clienteId);
+  else if (S.cliente && clientes.some((c) => String(c.id) === String(S.cliente))) $('#dmCli', v).value = String(S.cliente);
   btn.onclick = async () => {
     const client_id = Number($('#dmCli', v).value);
     const tipo = ($$('input[name=dmTipo]', v).find((r) => r.checked) || {}).value;
@@ -116,10 +130,14 @@ function ligarCaixaDemandas(v, clientes) {
       $('#dmTxt', v).value = ''; $('#dmPrazo', v).value = '';
       $('#dmRes', v).innerHTML = `<div class="alerta ok" style="margin-top:12px">
         <b>Pauta criada</b> em ${esc(r.projeto.nome)} › ${esc(r.cliente.nome)}: “${esc(r.tarefa.tema)}”
-        <small class="muted"> · responsável ${esc(r.tarefa.responsavel)}${r.ia ? '' : ' · organizada sem IA (texto original no briefing)'}</small>
+        <small class="muted"> · responsável ${esc(r.tarefa.responsavel)}${r.executando ? '' : ' · o time não executou (falta a chave do Claude em Integrações); a pauta ficou em Pauta'}</small>
         <div class="acoes-res"><button class="btn small" id="dmAbrir">Abrir no projeto</button><button class="btn small" id="dmTarefa">Ver a tarefa</button></div></div>`;
       $('#dmAbrir', v).onclick = async () => { await abrirProjeto(r.projeto.id, 'quadro'); S.cliente = String(r.cliente.id); S.quadroTipo = ''; localStorageSet('pbh_cliente', S.cliente); render(); };
       $('#dmTarefa', v).onclick = () => abrirTarefa(r.tarefa);
+      if (r.executando) {
+        $('#dmRes', v).insertAdjacentHTML('beforeend', '<div class="alerta" id="dmProg" style="margin-top:8px">⏳ <b>Time trabalhando…</b> <span id="dmProgMsg">começando</span></div>');
+        acompanharEsteira(r.tarefa.id, r.cliente.id, $('#dmProgMsg', v), () => { const f = $('#filaAprov', v); if (f && f.refresh) f.refresh(); });
+      }
     } catch (e) { erro.textContent = e.message; }
     btn.disabled = false; btn.textContent = 'Enviar demanda';
   };
@@ -210,8 +228,9 @@ function abrirContextoProjeto(p) {
       <div><label>Descrição (aparece no card)</label><input id="pjDesc" value="${esc(p?.descricao || '')}" maxlength="600"></div>
       <div><label>Identidade, tom de voz, público e regras (os agentes seguem isto em tudo o que criam)</label>
         <textarea id="pjCtx" rows="9">${esc(p?.contexto || '')}</textarea></div>
-      <div class="row"><div><label>Kit de marca no Canva (nome)</label><input id="pjKitNome" value="${esc(p?.canva_kit_nome || '')}" placeholder="Ex.: Disco Mídia"></div>
-        <div><label>ID do kit no Canva</label><input id="pjKitId" value="${esc(p?.canva_kit_id || '')}" placeholder="Ex.: kAHVxV_gqbI"></div></div>
+      <div><label>Kit de marca no Canva</label>${seletorKit('pjKit', p?.canva_kit_id, p?.canva_kit_nome)}</div>
+      <div><label>Guia de marca para o designer (a "skill" que Luiz e Davi seguem)</label>
+        <textarea id="pjGuia" rows="10" placeholder="Paleta com hex, tipografia, estilo, regras, o que nunca fazer...">${esc(p?.guia_design || '')}</textarea></div>
       <p class="erro" id="pjErro" style="margin:0"></p>
     </div>
     <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="pjSalvar">Salvar</button></div></div>
@@ -219,7 +238,7 @@ function abrirContextoProjeto(p) {
   d.showModal();
   $('#pjSalvar').addEventListener('click', async () => {
     const body = { nome: $('#pjNome').value, cor: $('#pjCor').value, descricao: $('#pjDesc').value, contexto: $('#pjCtx').value,
-      canva_kit_nome: $('#pjKitNome').value, canva_kit_id: $('#pjKitId').value };
+      canva_kit_nome: lerKit('pjKit').nome, canva_kit_id: lerKit('pjKit').id, guia_design: $('#pjGuia').value };
     try {
       await api(p ? '/api/projects/' + p.id : '/api/projects', { method: p ? 'PUT' : 'POST', body });
       d.close(); await carregarProjetos(); toast('Projeto salvo'); render();
@@ -290,9 +309,8 @@ const canvaUrlPara = (formato) => (CANVA_CRIAR.find(([r]) => r.test(formato || '
 
 function mostrarCriacao(c, el) {
   const luiz = c.agente === 'luiz';
-  const proj = c.project_id ? projetoPorId(c.project_id) : null;
   el.innerHTML = `${luiz ? `<div class="canva-box"><b>🎨 Canva</b>
-      <p class="muted" style="margin:4px 0 8px">${proj && proj.canva_kit_nome ? `Kit de marca do projeto: <b>${esc(proj.canva_kit_nome)}</b>. ` : 'Este projeto ainda não tem kit de marca (defina em Contexto do projeto). '}
+      <p class="muted" style="margin:4px 0 8px">${c.kit ? `Kit de marca: <b>${esc(c.kit.nome || '')}</b>. ` : 'Sem kit de marca vinculado a esta marca (defina no guia de marca). '}
       Para criar a arte pronta, peça no Claude: <i>"crie no Canva a arte da criação #${c.id}"</i>. Ou monte você mesma: copie o prompt e abra o Canva.</p>
       <div class="acoes-res"><button type="button" class="btn small" id="cvAbrir">Copiar e abrir Canva</button></div>
       <label style="margin-top:8px">Link da arte no Canva</label>
@@ -387,6 +405,109 @@ async function viewCriar(v) {
   }));
 }
 
+function abrirGuiaCliente(cl, depois) {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>Guia de marca · ${esc(cl.nome)}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <p class="muted" style="margin:0">É o padrão que o Luiz (artes) e o Davi (vídeos) seguem ao criar para este cliente.</p>
+      <div><label>Kit de marca no Canva</label>${seletorKit('gcKit', cl.canva_kit_id, cl.canva_kit_nome)}</div>
+      <label class="chk"><input type="checkbox" id="gcPropria" ${cl.marca_propria ? 'checked' : ''}> Este cliente é a própria marca do projeto (usa o guia do projeto quando não tiver o seu)</label>
+      <div><label>Guia (paleta com hex, tipografia, estilo, regras)</label>
+        <textarea id="gcGuia" rows="12" placeholder="Se ficar vazio, o designer NÃO usa a identidade do projeto e marca [CONFIRMAR] na peça.">${esc(cl.guia_design || '')}</textarea></div>
+      <p class="erro" id="gcErro" style="margin:0"></p>
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="gcSalvar">Salvar</button></div></div>
+  </form>`;
+  d.showModal();
+  $('#gcSalvar').onclick = async () => {
+    const k = lerKit('gcKit');
+    try {
+      await api(`/api/clients/${cl.id}/guia`, { method: 'PUT', body: { canva_kit_id: k.id, canva_kit_nome: k.nome, marca_propria: $('#gcPropria').checked, guia_design: $('#gcGuia').value } });
+      d.close(); await carregarClientes(); toast('Guia salvo'); depois && depois();
+    } catch (e) { $('#gcErro').textContent = e.message; }
+  };
+}
+
+// ---------------- Esteira: time executa -> aprovação -> publicação ----------------
+function acompanharEsteira(taskId, clientId, msgEl, quandoPronto) {
+  let tentativas = 0;
+  const volta = async () => {
+    if (!msgEl.isConnected || ++tentativas > 150) return;
+    try {
+      const lista = await api('/api/esteira?client_id=' + clientId);
+      const t = lista.find((x) => x.id === taskId);
+      if (t && t.esteira === 'executando') { msgEl.textContent = t.esteira_msg || 'trabalhando'; return setTimeout(volta, 4000); }
+      if (t && t.esteira === 'erro') { msgEl.parentElement.className = 'alerta danger'; msgEl.parentElement.innerHTML = `<b>O time não conseguiu:</b> ${esc(t.esteira_msg || '')}`; return; }
+      if (t) { msgEl.parentElement.className = 'alerta ok'; msgEl.parentElement.innerHTML = '✅ <b>Pronto para a sua aprovação.</b> Veja na fila abaixo.'; quandoPronto && quandoPronto(); }
+    } catch { setTimeout(volta, 6000); }
+  };
+  setTimeout(volta, 3000);
+}
+
+// Texto que vai ao ar: extrai a legenda do que o Hugo escreveu (o resto é briefing e conferências)
+function extrairLegenda(txt) {
+  const t = String(txt || '');
+  const m = t.match(/^[#*\s]*LEGENDA[^\n]*\n([\s\S]*?)(?=\n[#*\s]*(BRIEFING|HASHTAGS|CONFERIR|OP[ÇC][ÕO]ES|CARD\s*1|CAPA)\b|$)/im);
+  return (m ? m[1] : t).replace(/^\s+|\s+$/g, '');
+}
+
+function abrirAjustes(t, depois) {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>Pedir ajustes ao time</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body"><p class="muted" style="margin:0">“${esc(t.tema || '')}”. O time refaz com o que você pedir e a tarefa volta para a fila de aprovação.</p>
+      <div><label>O que ajustar</label><textarea id="ajTxt" rows="5" placeholder="Ex.: mais curto, citar o buggy, tirar o preço, trocar o gancho"></textarea></div><p class="erro" id="ajErro" style="margin:0"></p></div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="ajOk">Refazer</button></div></div></form>`;
+  d.showModal();
+  $('#ajOk').onclick = async () => {
+    try { await api(`/api/tasks/${t.id}/ajustar`, { method: 'POST', body: { ajuste: $('#ajTxt').value } }); d.close(); toast('O time está refazendo'); depois && depois(); }
+    catch (e) { $('#ajErro').textContent = e.message; }
+  };
+}
+
+async function aprovarTarefa(t, depois) {
+  try { await api(`/api/tasks/${t.id}/aprovar`, { method: 'POST' }); } catch (e) { return toast(e.message); }
+  toast('Aprovada. Segue para publicação.');
+  depois && depois();
+  if (['post', 'story'].includes(t.tipo)) abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, depois });
+}
+
+// Fila de aprovação do projeto ou do cliente
+function filaAprovacao(el, filtro) {
+  const q = filtro.client_id ? 'client_id=' + filtro.client_id : 'project_id=' + filtro.project_id;
+  let timer;
+  const desenhar = async () => {
+    if (!el.isConnected) return clearTimeout(timer);
+    let lista = [];
+    try { lista = await api('/api/esteira?' + q); } catch { return; }
+    const rotulo = { executando: 'Time trabalhando', aguardando_aprovacao: 'Aguardando aprovação', aprovada: 'Aprovada: falta publicar', erro: 'Erro' };
+    el.innerHTML = `<h3 class="secao-h">Esteira do time <span class="pill">${lista.length}</span></h3>
+      ${lista.length ? lista.map((t) => `<article class="card esteira ${t.esteira}">
+        <div class="msg-top"><span class="pill ${t.esteira === 'aprovada' ? 'ok' : ''}">${rotulo[t.esteira]}</span><span class="pill">${esc(TIPO_LABEL[t.tipo] || t.tipo)}</span>
+          <small>${esc(t.cliente_nome)} · ${esc(t.responsavel || '')}${t.data ? ' · ' + esc(fmtPrazo(t.data)) : ''}</small></div>
+        <b>${esc(t.tema || 'Sem título')}</b>
+        ${t.esteira === 'executando' ? `<p class="muted" style="margin:4px 0 0">⏳ ${esc(t.esteira_msg || '')}</p>` : ''}
+        ${t.esteira === 'erro' ? `<p class="erro" style="margin:4px 0 0">${esc(t.esteira_msg || '')}</p>` : ''}
+        ${['aguardando_aprovacao', 'aprovada'].includes(t.esteira) ? `<p class="sol-desc">${esc((t.legenda || t.briefing || '').slice(0, 320))}</p>` : ''}
+        <div class="acoes-res">
+          ${t.esteira === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">✓ Aprovar e seguir para publicação</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
+          ${t.esteira === 'aprovada' ? `${['post', 'story'].includes(t.tipo) ? `<button class="btn small primary" data-pub="${t.id}">Publicar…</button>` : ''}<button class="btn small" data-conc="${t.id}">Marcar como concluída</button><button class="btn small" data-rev="${t.id}">Abrir</button>` : ''}
+          ${t.esteira === 'erro' ? `<button class="btn small primary" data-ex="${t.id}">Tentar de novo</button>` : ''}
+        </div></article>`).join('') : '<div class="card"><div class="empty" style="padding:16px">Nada na esteira. Envie um comando na caixa acima.</div></div>'}`;
+    const achar = (id) => lista.find((x) => String(x.id) === String(id));
+    $$('[data-ap]', el).forEach((b) => b.addEventListener('click', () => aprovarTarefa(achar(b.dataset.ap), desenhar)));
+    $$('[data-rev]', el).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev))));
+    $$('[data-aj]', el).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));
+    $$('[data-pub]', el).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, depois: desenhar }); }));
+    $$('[data-conc]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.conc}/concluir`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
+    $$('[data-ex]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.ex}/executar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
+    clearTimeout(timer);
+    if (lista.some((t) => t.esteira === 'executando')) timer = setTimeout(desenhar, 5000);
+  };
+  el.refresh = desenhar;
+  desenhar();
+}
+
 // ---------------- Visão geral: tudo do projeto ou do cliente num lugar só ----------------
 async function viewVisao(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
@@ -419,8 +540,10 @@ async function visaoProjeto(v, p) {
   }).join('');
   v.innerHTML = `
     <div class="view-head"><div><h2>${esc(p.nome)}</h2><p>${esc(p.descricao || '')}</p></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vpCtx">Contexto do projeto</button><button class="btn" id="vpLink">🔗 Link de solicitações</button></div></div>
-    <h3 class="secao-h" style="margin-top:0">Clientes</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vpCtx">Contexto e guia de marca</button><button class="btn" id="vpLink">🔗 Link de solicitações</button></div></div>
+    ${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + p.nome })}
+    <div id="filaAprov"></div>
+    <h3 class="secao-h">Clientes</h3>
     ${cartoes ? `<div class="proj-grid">${cartoes}</div>` : '<div class="empty">Este projeto ainda não tem clientes. Adicione em Contrato e agente.</div>'}
     <div class="grid cols-2" style="margin-top:18px">
       <div class="card"><h3 style="margin-bottom:8px">Próximas entregas</h3>
@@ -432,6 +555,8 @@ async function visaoProjeto(v, p) {
     <h3 class="secao-h">Criar neste projeto</h3>
     <div class="ag-grid">${['hugo', 'luiz', 'davi', 'camila'].map((id) => { const a = agente(id); return `<button class="ag-card" data-ag="${id}"><span class="ag-ico">${a.icone}</span><span><b>${esc(a.nome)}</b><small>${esc(a.cargo)}</small></span></button>`; }).join('')}</div>`;
   ligarLinhas(v);
+  ligarCaixaDemandas(v, S.clients, {});
+  filaAprovacao($('#filaAprov', v), { project_id: p.id });
   $$('[data-cli]', v).forEach((b) => b.addEventListener('click', () => { S.cliente = b.dataset.cli; localStorageSet('pbh_cliente', S.cliente); render(); }));
   $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag)));
   $('#vpCtx', v).onclick = () => abrirContextoProjeto(p);
@@ -461,6 +586,9 @@ async function visaoCliente(v, p, cl) {
       ${(cl.marcas || []).length ? `<div class="marcas">${cl.marcas.map((m) => `<span class="tag">${esc(m)}</span>`).join('')}</div>` : ''}
       ${contato ? `<p>${contato}</p>` : ''}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="vcCtx">Editar contexto do agente</button></div></div>
+
+    ${caixaDemandas(S.clients, [p], { titulo: 'Comandos para o time de ' + cl.nome, clienteFixo: true })}
+    <div id="filaAprov"></div>
 
     <div class="grid cols-3">
       <div class="card meta-card"><div class="label"><span class="dot" style="background:var(--post)"></span>Posts no feed · ${esc(mesLabel(S.mes))}</div>
@@ -502,12 +630,22 @@ async function visaoCliente(v, p, cl) {
         <div class="acoes-res">${exps.length ? '<button class="btn small" data-aba-ir="programacao">Programação</button>' : ''}<button class="btn small" data-aba-ir="area">Acessos</button></div></div>
     </div>
 
+    <h3 class="secao-h">Guia de marca (designer)</h3>
+    <div class="card"><div class="info-grid">
+      <div class="info-l"><label>Kit no Canva</label><p>${esc(cl.canva_kit_nome || 'nenhum vinculado')}</p></div>
+      <div class="info-l"><label>Padrão que o Luiz e o Davi seguem</label><p>${cl.guia_design || cl.canva_kit_id ? 'Guia próprio deste cliente' : cl.marca_propria ? 'Guia do projeto (este cliente é a própria marca)' : 'Nenhum: o designer não usa a identidade do projeto e marca [CONFIRMAR] nas peças'}</p></div>
+      ${cl.guia_design ? `<details class="info-l" style="grid-column:1/-1"><summary><b>Ver guia</b></summary><p>${esc(cl.guia_design)}</p></details>` : ''}</div>
+      <div class="acoes-res"><button class="btn small" id="vcGuia">Editar guia de marca</button></div></div>
+
     <h3 class="secao-h">Criar para ${esc(cl.nome)}</h3>
     <div class="ag-grid">${['hugo', 'luiz', 'davi', 'camila'].map((id) => { const a = agente(id); return `<button class="ag-card" data-ag="${id}"><span class="ag-ico">${a.icone}</span><span><b>${esc(a.nome)}</b><small>${esc(a.cargo)}</small></span></button>`; }).join('')}</div>`;
   ligarLinhas(v);
+  ligarCaixaDemandas(v, S.clients, { clienteId: cl.id });
+  filaAprovacao($('#filaAprov', v), { client_id: cl.id });
   $$('[data-aba-ir]', v).forEach((b) => b.addEventListener('click', () => { S.view = b.dataset.abaIr; render(); }));
   $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag, { projeto: p.id, cliente: cl.id })));
   $('#vcCtx', v).onclick = () => abrirContextoAgente(cl.id);
+  $('#vcGuia', v).onclick = () => abrirGuiaCliente(cl, () => render());
 }
 
 // ---------------- Solicitações (janela de cada projeto) ----------------
@@ -975,7 +1113,7 @@ async function viewIntegracoes(v) {
 }
 
 // ---------------- Publicar (com confirmação) ----------------
-async function abrirPublicar(texto) {
+async function abrirPublicar(texto, opts = {}) {
   const c = await api('/api/conexoes');
   const opcoes = [
     ['facebook', 'Facebook' + (c.meta.facebook ? ' · ' + c.meta.facebook : ''), c.meta.conectado, 'Conecte em Integrações'],
@@ -988,7 +1126,7 @@ async function abrirPublicar(texto) {
       <div><label>Onde publicar</label>${opcoes.map(([k, l, ok, aviso]) => `<label class="chk ${ok ? '' : 'off'}"><input type="checkbox" data-pl="${k}" ${ok ? '' : 'disabled'}> ${esc(l)}${ok ? '' : ` <small>(${esc(aviso)})</small>`}</label>`).join('')}</div>
       <div><label>Texto</label><textarea id="pbTexto" rows="9">${esc(texto)}</textarea></div>
       <div><label>Link da imagem (https://, obrigatório no Instagram)</label><input id="pbImg" placeholder="https://"></div>
-      <p class="muted" style="margin:0">LinkedIn: sai só o texto. A publicação é imediata e pública.</p>
+      <p class="muted" style="margin:0">${opts.taskId ? 'Confira se o texto é só a legenda que vai ao ar. ' : ''}LinkedIn: sai só o texto. A publicação é imediata e pública.</p>
       <p class="erro" id="pbErro" style="margin:0"></p><div id="pbRes"></div>
     </div>
     <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary" id="pbOk">Publicar agora</button></div></div></form>`;
@@ -1000,7 +1138,8 @@ async function abrirPublicar(texto) {
     if (!confirm('Publicar agora em: ' + plataformas.join(', ') + '?')) return;
     const b = $('#pbOk', d); b.disabled = true; b.textContent = 'Publicando…'; $('#pbErro', d).textContent = '';
     try {
-      const r = await api('/api/publicar', { method: 'POST', body: { plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value, confirmado: true } });
+      const r = await api('/api/publicar', { method: 'POST', body: { plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value, confirmado: true, task_id: opts.taskId || null } });
+      if (opts.depois && r.resultados.some((x) => x.status === 'publicado')) opts.depois();
       $('#pbRes', d).innerHTML = r.resultados.map((x) => `<div class="alerta ${x.status === 'publicado' ? 'ok' : 'danger'}"><b>${esc(x.plataforma)}</b>: ${x.status === 'publicado' ? 'publicado' : esc(x.erro)}</div>`).join('');
     } catch (e) { $('#pbErro', d).textContent = e.message; }
     b.disabled = false; b.textContent = 'Publicar agora';
