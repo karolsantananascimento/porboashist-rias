@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: por-boas-historias
+    name: por-boas-historias  # mantido para não recriar o serviço; a marca é A Melhor Mídia do Brasil
     runtime: node
     plan: free
     region: oregon
@@ -25,4 +25,10 @@ services:
       - key: ACESSOS_KEY     # chave do cofre de senhas (32 bytes em base64)
         sync: false
       - key: ANTHROPIC_API_KEY  # chave da API do Claude, usada pelo agente de conteúdo
+        sync: false
+      - key: META_VERIFY_TOKEN  # webhook da Meta: token de verificação (texto à sua escolha)
+        sync: false
+      - key: META_APP_SECRET    # segredo do app da Meta (valida a assinatura das mensagens)
+        sync: false
+      - key: META_PAGE_TOKEN    # token da página, para enviar respostas aprovadas
         sync: false

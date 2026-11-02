@@ -7,7 +7,7 @@ const { cifrar, decifrar } = require('./cofre');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '5mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch((e) => {
   console.error(e);
@@ -212,10 +212,12 @@ app.delete('/api/users/:id', soAdmin, wrap(async (req, res) => {
 }));
 
 // ---------- Clientes ----------
-const CLIENT_FIELDS = ['nome', 'marcas', 'site', 'whatsapp', 'instagram', 'meta_posts', 'meta_stories_dia', 'meta_blog', 'observacoes', 'planilha_url'];
+const CLIENT_FIELDS = ['project_id', 'nome', 'marcas', 'site', 'whatsapp', 'instagram', 'meta_posts', 'meta_stories_dia', 'meta_blog', 'observacoes', 'planilha_url'];
 
 app.get('/api/clients', wrap(async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM clients ORDER BY nome');
+  const { rows } = req.query.project_id
+    ? await pool.query('SELECT * FROM clients WHERE project_id=$1 ORDER BY nome', [req.query.project_id])
+    : await pool.query('SELECT * FROM clients ORDER BY nome');
   res.json(rows);
 }));
 
@@ -223,10 +225,10 @@ app.post('/api/clients', wrap(async (req, res) => {
   const b = req.body;
   if (!b.nome) return res.status(400).json({ erro: 'Informe o nome do cliente' });
   const { rows } = await pool.query(
-    `INSERT INTO clients (nome, marcas, site, whatsapp, instagram, meta_posts, meta_stories_dia, meta_blog, observacoes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    `INSERT INTO clients (nome, marcas, site, whatsapp, instagram, meta_posts, meta_stories_dia, meta_blog, observacoes, project_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [b.nome, JSON.stringify(b.marcas || []), b.site, b.whatsapp, b.instagram,
-      b.meta_posts ?? 12, b.meta_stories_dia ?? 1, b.meta_blog ?? 4, b.observacoes]
+      b.meta_posts ?? 12, b.meta_stories_dia ?? 1, b.meta_blog ?? 4, b.observacoes, b.project_id || null]
   );
   res.json(rows[0]);
 }));
@@ -304,6 +306,7 @@ app.get('/api/tasks', wrap(async (req, res) => {
   const where = []; const vals = [];
   const add = (sql, v) => { vals.push(v); where.push(sql.replace('?', '$' + vals.length)); };
   if (req.query.client_id) add('client_id=?', req.query.client_id);
+  else if (req.query.project_id) add('client_id IN (SELECT id FROM clients WHERE project_id=?)', req.query.project_id);
   if (req.query.mes) add("(to_char(data,'YYYY-MM')=? OR data IS NULL)", req.query.mes);
   if (req.query.tipo) add('tipo=?', req.query.tipo);
   if (req.query.status) add('status=?', req.query.status);
@@ -463,7 +466,9 @@ app.delete('/api/acessos/:id', soAdmin, wrap(async (req, res) => {
 app.get('/api/materials', wrap(async (req, res) => {
   const { rows } = req.query.client_id
     ? await pool.query('SELECT * FROM materials WHERE client_id=$1 ORDER BY categoria, id', [req.query.client_id])
-    : await pool.query('SELECT * FROM materials ORDER BY categoria, id');
+    : req.query.project_id
+      ? await pool.query('SELECT * FROM materials WHERE client_id IN (SELECT id FROM clients WHERE project_id=$1) ORDER BY categoria, id', [req.query.project_id])
+      : await pool.query('SELECT * FROM materials ORDER BY categoria, id');
   res.json(rows);
 }));
 
@@ -496,7 +501,9 @@ const linkOpcional = (u) => { const s = String(u || '').trim(); return !s || /^h
 app.get('/api/pautas', wrap(async (req, res) => {
   const { rows } = req.query.client_id
     ? await pool.query('SELECT * FROM pautas_home WHERE client_id=$1 ORDER BY ordem, id', [req.query.client_id])
-    : await pool.query('SELECT * FROM pautas_home ORDER BY ordem, id');
+    : req.query.project_id
+      ? await pool.query('SELECT * FROM pautas_home WHERE client_id IN (SELECT id FROM clients WHERE project_id=$1) ORDER BY ordem, id', [req.query.project_id])
+      : await pool.query('SELECT * FROM pautas_home ORDER BY ordem, id');
   res.json(rows);
 }));
 
@@ -536,6 +543,11 @@ app.delete('/api/pautas/:id', wrap(async (req, res) => {
 
 // ---------- Agente de conteúdo ----------
 require('./agente')(app, { pool, wrap });
+
+// ---------- Projetos, equipe de agentes, mensagens e empregos ----------
+const projetos = require('./projetos');
+projetos(app, { pool, wrap, soAdmin });
+projetos.webhook(app, { pool, wrap });
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {
@@ -597,5 +609,5 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 
 const PORT = process.env.PORT || 3000;
 init()
-  .then(() => app.listen(PORT, () => console.log(`Por Boas Histórias rodando na porta ${PORT}`)))
+  .then(() => app.listen(PORT, () => console.log(`A Melhor Mídia do Brasil rodando na porta ${PORT}`)))
   .catch((e) => { console.error('Falha ao iniciar o banco:', e); process.exit(1); });

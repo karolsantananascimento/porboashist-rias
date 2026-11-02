@@ -1,4 +1,4 @@
-// Por Boas Histórias — interface de gestão
+// A Melhor Mídia do Brasil — interface de gestão
 const STATUS = ['pauta', 'conteudo', 'design', 'revisao', 'aprovacao', 'agendado', 'publicado'];
 const STATUS_LABEL = {
   pauta: 'Pauta', conteudo: 'Conteúdo / copy', design: 'Design / edição', revisao: 'Revisão interna',
@@ -16,12 +16,15 @@ const hoje = new Date();
 const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
 const VIEWS_TAREFAS = ['calendario', 'quadro', 'lista'];
-const VIEWS_VALIDAS = ['painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios'];
+const VIEWS_EXTRA_NOMES = ['inicio', 'criar', 'mensagens', 'empregos', 'integracoes'];
+const VIEWS_VALIDAS = ['painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios', ...VIEWS_EXTRA_NOMES];
 const viewSalva = localStorageGet('pbh_view');
 const tarefasSalva = localStorageGet('pbh_view_tarefas');
 
 const S = {
-  view: VIEWS_VALIDAS.includes(viewSalva) ? viewSalva : 'painel',
+  view: 'inicio', // a primeira tela é sempre a de projetos
+  projeto: '',     // projeto aberto ('' = todos)
+  projetos: [],
   viewTarefas: VIEWS_TAREFAS.includes(tarefasSalva) ? tarefasSalva : 'calendario',
   clients: [],
   cliente: localStorageGet('pbh_cliente') || '',
@@ -80,7 +83,7 @@ async function iniciar() {
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   mostrarEu();
-  await Promise.all([carregarClientes(), carregarUsuarios()]);
+  await Promise.all([carregarClientes(), carregarUsuarios(), carregarProjetos()]);
   render();
   if (S.me.trocar_senha) abrirMinhaConta(true);
 }
@@ -153,8 +156,22 @@ $('#loginForm').addEventListener('submit', async (e) => {
 $('#sair').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); S.me = null; mostrarLogin(); });
 $('#minhaConta').addEventListener('click', () => abrirMinhaConta(false));
 
+async function carregarProjetos() {
+  S.projetos = await api('/api/projects');
+  if (S.projeto && !S.projetos.some((p) => String(p.id) === String(S.projeto))) S.projeto = '';
+}
+
+async function abrirProjeto(id, view = 'painel') {
+  S.projeto = id ? String(id) : '';
+  S.cliente = '';
+  localStorageSet('pbh_cliente', '');
+  await carregarClientes();
+  S.view = view;
+  render();
+}
+
 async function carregarClientes() {
-  S.clients = await api('/api/clients');
+  S.clients = await api('/api/clients' + (S.projeto ? '?project_id=' + S.projeto : ''));
   if (S.cliente && !S.clients.some((c) => String(c.id) === String(S.cliente))) S.cliente = '';
   if (!S.cliente && S.clients.length === 1) S.cliente = String(S.clients[0].id);
   $('#fCliente').innerHTML = `<option value="">Todos os clientes</option>` +
@@ -166,7 +183,9 @@ $('#fCliente').addEventListener('change', (e) => { S.cliente = e.target.value; l
 $('#mesPrev').addEventListener('click', () => mudarMes(-1));
 $('#mesNext').addEventListener('click', () => mudarMes(1));
 $('#novaTarefa').addEventListener('click', () => abrirTarefa(null, {}));
-$$('#nav a').forEach((a) => a.addEventListener('click', () => {
+$$('#nav a').forEach((a) => a.addEventListener('click', async () => {
+  // "Projetos" volta para a tela inicial e limpa o projeto aberto
+  if (a.dataset.view === 'inicio' && S.projeto) { await abrirProjeto('', 'inicio'); return; }
   S.view = a.dataset.grupo === 'tarefas' ? S.viewTarefas : a.dataset.view;
   render();
 }));
@@ -191,6 +210,7 @@ function mudarMes(delta) {
 async function carregarTarefas() {
   const q = new URLSearchParams({ mes: S.mes });
   if (S.cliente) q.set('client_id', S.cliente);
+  else if (S.projeto) q.set('project_id', S.projeto);
   S.tasks = await api('/api/tasks?' + q);
 }
 
@@ -203,17 +223,18 @@ async function render() {
     if (ativo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   $('#mesLabel').textContent = mesLabel(S.mes);
-  const semMes = ['materiais', 'clientes', 'usuarios', 'programacao', 'area'].includes(S.view);
+  const semMes = ['materiais', 'clientes', 'usuarios', 'programacao', 'area', ...VIEWS_EXTRA_NOMES].includes(S.view);
   $('.mes').style.display = semMes ? 'none' : '';
   // "Nova tarefa" só aparece onde faz sentido criar tarefa
-  $('#novaTarefa').style.display = ['materiais', 'clientes', 'usuarios', 'programacao'].includes(S.view) ? 'none' : '';
-  // filtro de cliente não se aplica à gestão de usuários
-  $('#fCliente').style.display = S.view === 'usuarios' ? 'none' : '';
+  $('#novaTarefa').style.display = ['materiais', 'clientes', 'usuarios', 'programacao', ...VIEWS_EXTRA_NOMES].includes(S.view) ? 'none' : '';
+  // filtro de cliente não se aplica à gestão de usuários nem às telas globais
+  $('#fCliente').style.display = ['usuarios', 'inicio', 'mensagens', 'empregos', 'integracoes'].includes(S.view) ? 'none' : '';
+  mostrarProjetoAtual();
   window.scrollTo({ top: 0 });
   const v = $('#view');
   try {
-    if (!['materiais', 'clientes', 'usuarios', 'programacao', 'area'].includes(S.view)) await carregarTarefas();
-    ({ painel: viewPainel, calendario: viewCalendario, quadro: viewQuadro, lista: viewLista,
+    if (!['materiais', 'clientes', 'usuarios', 'programacao', 'area', ...VIEWS_EXTRA_NOMES].includes(S.view)) await carregarTarefas();
+    await ({ ...(window.VIEWS_EXTRA || {}), painel: viewPainel, calendario: viewCalendario, quadro: viewQuadro, lista: viewLista,
       captacao: viewCaptacao, materiais: viewMateriais, clientes: viewClientes, usuarios: viewUsuarios, programacao: viewProgramacao, area: viewArea })[S.view](v);
   } catch (e) {
     v.innerHTML = `<div class="empty">Não foi possível carregar: ${esc(e.message)}</div>`;
@@ -694,7 +715,7 @@ function viewClientes(v) {
   $('#novoCliente').addEventListener('click', async () => {
     const nome = prompt('Nome do cliente');
     if (!nome) return;
-    await api('/api/clients', { method: 'POST', body: { nome } });
+    await api('/api/clients', { method: 'POST', body: { nome, project_id: S.projeto || null } });
     await carregarClientes(); viewClientes(v); toast('Cliente criado');
   });
   $('#restaurar').addEventListener('change', async (e) => {

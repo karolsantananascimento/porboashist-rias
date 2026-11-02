@@ -1,6 +1,23 @@
-# Por Boas Histórias — Gestão de conteúdo
+# A Melhor Mídia do Brasil
 
-Sistema da agência para planejar e acompanhar as entregas de cada cliente: posts do feed, stories diários, artigos de blog com SEO e captações de fotos e vídeos.
+Central de criação e gestão. A primeira tela mostra os **projetos** (A Melhor Mídia do Brasil, Por Boas Histórias, Disco, Otter, Lumiére e Marconi Car) e o painel **Criar**. Tudo o que já existia no sistema da Por Boas Histórias (La Fleur, Marília e Laura) agora está no projeto *Por Boas Histórias*.
+
+## Projetos e equipe de agentes
+
+| Agente | Função |
+| --- | --- |
+| **Hugo** | Conteúdo: legendas, carrosséis, roteiros, posts de LinkedIn, blog com SEO |
+| **Luiz** | Artes: direção de arte, briefing e prompt de imagem |
+| **Davi** | Edição de vídeo: roteiro, decupagem e passo a passo |
+| **Camila** | Campanhas de anúncios (Meta, Google, LinkedIn): plano completo |
+| **Felipe Macedo** | Mensagens do Instagram/Facebook: sugere a resposta, você aprova e envia |
+| **Bianca** | Empregos: busca vagas, avalia aderência, monta proposta e respostas de cadastro com o seu perfil |
+
+Os agentes nunca publicam, enviam ou se candidatam sozinhos: o resultado vai para revisão e só sai com um clique seu. Cada projeto tem um **contexto** (identidade, tom, regras) editável no card do projeto. Variáveis novas: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `META_PAGE_TOKEN` (ver **Integrações** no sistema).
+
+## Gestão de conteúdo (Por Boas Histórias)
+
+Sistema para planejar e acompanhar as entregas de cada cliente: posts do feed, stories diários, artigos de blog com SEO e captações de fotos e vídeos.
 
 ## O que tem
 

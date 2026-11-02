@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Por Boas Histórias — Gestão</title>
+  <title>A Melhor Mídia do Brasil</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23b4532a'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Georgia'>B</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23b3202a'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='Georgia'>M</text></svg>">
 </head>
 <body>
   <div id="login" class="login hidden">
     <form id="loginForm" class="login-card">
-      <div class="brand-mark">B</div>
-      <h1>Por Boas Histórias</h1>
+      <div class="brand-mark">M</div>
+      <h1>A Melhor Mídia do Brasil</h1>
       <p>Entre com seu e-mail e senha.</p>
       <input type="email" id="email" placeholder="E-mail" autocomplete="username" required>
       <input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
@@ -22,7 +22,7 @@
       <p class="muted" style="font-size:12px">Primeiro acesso? Use o link enviado pelo administrador para criar sua senha.</p>
     </form>
     <form id="conviteForm" class="login-card hidden">
-      <div class="brand-mark">B</div>
+      <div class="brand-mark">M</div>
       <h1>Crie sua senha</h1>
       <p id="conviteEmail"></p>
       <input id="conviteNome" placeholder="Seu nome" autocomplete="name">
@@ -36,14 +36,17 @@
   <div id="app" class="app hidden">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">B</div>
+        <div class="brand-mark">M</div>
         <div>
-          <strong>Por Boas Histórias</strong>
-          <span>Gestão de conteúdo</span>
+          <strong>A Melhor Mídia do Brasil</strong>
+          <span>Central de criação e gestão</span>
         </div>
       </div>
+      <div class="proj-atual hidden" id="projAtual"></div>
       <nav id="nav" aria-label="Navegação principal">
-        <a data-view="painel" class="active"><i>◧</i>Painel</a>
+        <a data-view="inicio" class="active"><i>⌂</i>Projetos</a>
+        <a data-view="criar"><i>✦</i>Criar</a>
+        <a data-view="painel" data-proj="1"><i>◧</i>Painel do projeto</a>
 
         <span class="nav-sec">Produção</span>
         <a data-view="calendario" data-grupo="tarefas"><i>▦</i>Tarefas</a>
@@ -54,6 +57,11 @@
         <a data-view="area"><i>★</i>Área do cliente</a>
         <a data-view="materiais"><i>▤</i>Materiais</a>
         <a data-view="clientes"><i>☺</i>Contratos</a>
+
+        <span class="nav-sec">Equipe de agentes</span>
+        <a data-view="mensagens"><i>💬</i>Mensagens (Meta)</a>
+        <a data-view="empregos"><i>💼</i>Empregos</a>
+        <a data-view="integracoes"><i>⇄</i>Integrações</a>
 
         <span class="nav-sec" id="secAdmin">Administração</span>
         <a data-view="usuarios" id="navUsuarios" class="hidden"><i>⚙</i>Usuários</a>
@@ -83,5 +91,6 @@
   <dialog id="modal"></dialog>
   <div id="toast" class="toast"></div>
   <script src="/app.js"></script>
+  <script src="/projetos.js"></script>
 </body>
 </html>

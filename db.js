@@ -177,6 +177,68 @@ CREATE TABLE IF NOT EXISTS pautas_home (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS pautas_home_cliente ON pautas_home (client_id, coluna, ordem);
+
+-- Projetos: agrupam clientes/marcas (A Melhor Mídia do Brasil, Otter, Disco, Lumiére...)
+CREATE TABLE IF NOT EXISTS projects (
+  id SERIAL PRIMARY KEY,
+  nome TEXT NOT NULL UNIQUE,
+  cor TEXT NOT NULL DEFAULT '#b3202a',
+  descricao TEXT,
+  contexto TEXT,                               -- identidade, tom de voz e regras que os agentes seguem
+  ordem INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS project_id INT REFERENCES projects(id) ON DELETE SET NULL;
+
+-- Tabelas abaixo não têm chave estrangeira para clients (o restore de backup trunca clients)
+CREATE TABLE IF NOT EXISTS criacoes (
+  id SERIAL PRIMARY KEY,
+  project_id INT,
+  client_id INT,
+  agente TEXT NOT NULL,
+  formato TEXT,
+  pedido TEXT,
+  saida TEXT,
+  status TEXT NOT NULL DEFAULT 'rascunho',     -- rascunho | aprovado
+  usuario_id INT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS criacoes_projeto ON criacoes (project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mensagens (
+  id SERIAL PRIMARY KEY,
+  project_id INT,
+  canal TEXT NOT NULL DEFAULT 'manual',        -- instagram | facebook | manual
+  page_id TEXT,
+  remetente_id TEXT,
+  remetente_nome TEXT,
+  texto TEXT NOT NULL,
+  resposta TEXT,
+  status TEXT NOT NULL DEFAULT 'nova',         -- nova | respondida | ignorada
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  respondida_em TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS vagas (
+  id SERIAL PRIMARY KEY,
+  plataforma TEXT,
+  titulo TEXT NOT NULL,
+  empresa TEXT,
+  url TEXT,
+  descricao TEXT,
+  orcamento TEXT,
+  status TEXT NOT NULL DEFAULT 'nova',         -- nova | salva | candidatado | descartada
+  analise TEXT,
+  proposta TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS perfil_profissional (
+  id INT PRIMARY KEY DEFAULT 1,
+  dados JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 const BLOG_CHECKLIST = [
@@ -412,6 +474,74 @@ async function seedsIncrementais(c) {
   });
 }
 
+// Projetos e clientes vindos do que já estava cadastrado (aplicado uma única vez)
+const PROJETOS_INICIAIS = [
+  ['A Melhor Mídia do Brasil', '#b3202a',
+    'Marca-mãe e central de criação. Conteúdo próprio da A Melhor Mídia do Brasil.',
+    'Identidade visual: vermelho, preto e creme, referências de xadrez e teatro, tipografia bold. Tom de voz, público e regras: complete em Projetos > editar contexto.'],
+  ['Por Boas Histórias', '#8a5a44',
+    'Agência de conteúdo: La Fleur Collection (Resorts Samoa), Marília e Laura. Tudo o que já existia no sistema está aqui.',
+    'Hospitalidade e turismo (La Fleur) e saúde/gestão (Marília e Laura). O contexto detalhado de cada cliente fica em Contratos > Contexto do agente.'],
+  ['Disco', '#1f8a4c',
+    'Disco Criativo (conteúdo), Disco Mídia (tráfego e aquisição) e Disco Tech (SaaS), com os clientes atendidos pela squad.',
+    'Posicionamento: agência de marketing, conteúdo e tecnologia. Tagline: Estratégia • Design • Conteúdo. Conteúdo informa com autoridade sobre marketing e atrai clientes com storytelling e roteiros autorais (sem dancinhas e formatos virais genéricos). Marca preto e verde, fontes Anton e Inter; nas redes sociais usa estilo CLARO (fundo off-white, título preto com a palavra-chave em verde). Cada cliente tem identidade, tom e estilo próprios.'],
+  ['Otter', '#1d4e89',
+    'Agência Otter (produção cultural em Pernambuco) e demais empresas do Grupo Otter, como a Contrafluxo Pratas.',
+    'Grupo Otter: ecossistema de empresas de Karolina. Cultura e produção em Pernambuco; Contrafluxo Pratas vende joias em prata.'],
+  ['Lumiére', '#b8860b', 'Projeto Lumiére (Lumiere).', 'Contexto ainda não preenchido: complete identidade, tom e público.'],
+  ['Marconi Car', '#3a3f47', 'Projeto Marconi Car.', 'Contexto ainda não preenchido: complete identidade, tom e público.'],
+];
+
+// [cliente, projeto, posts/mês, observações]
+const CLIENTES_INICIAIS = [
+  ['A Melhor Mídia do Brasil', 'A Melhor Mídia do Brasil', 12, 'Conteúdo da própria marca.'],
+  ['Disco', 'Disco', 8, 'O Disco Criativo / Disco Mídia (@bydiscomidia). Cadência: 2 posts por semana.'],
+  ['Operizy', 'Disco', 30, 'Contrato anual com início em 09/10/2026. Cadência: 1 post por dia.'],
+  ['Senhorita Moça', 'Disco', 12, 'Boutique de moda feminina em Candeias. Cadência: 3 posts por semana. CTA padrão: Acesse www.senhoritamoca.com.br ou link na bio.'],
+  ['Michie Farfan', 'Disco', 8, 'Cadência: 2 posts por semana.'],
+  ['Agência Otter', 'Otter', 8, 'Produção cultural em Pernambuco.'],
+  ['Contrafluxo Pratas', 'Otter', 8, 'Loja de joias em prata. Cadência: 2 posts por semana.'],
+  ['Lumiere', 'Lumiére', 8, 'Cadência: 2 posts por semana.'],
+  ['Marconi Car', 'Marconi Car', 12, ''],
+];
+
+const PERFIL_INICIAL = {
+  nome: 'Karolina Nascimento', email: 'knasck@gmail.com', telefone: '', cidade: 'Recife, Pernambuco',
+  linkedin: '', portfolio: '',
+  headline: 'Head de Growth e CRM · Gestora de Tráfego · 15 anos em mídia paga, programática, CRM e automação',
+  resumo: 'Profissional de marketing com 15 anos de experiência em mídia paga, publicidade programática, arquitetura de CRM, automação, growth marketing e produção cultural. Head de Growth e CRM na AudiGrowth (consultoria de AdOps programático), fundadora da Agência Otter e gestora de tráfego.',
+  experiencias: 'Head de Growth e CRM — AudiGrowth\nFundadora e gestora de tráfego — Agência Otter (Pernambuco)\nDiretora de Marketing (CMO) — Ativos Precatórios (2026)\nCoordenadora de Growth — GoKursos / Grupo Ser Educacional\nGestora sênior de performance — Grupo Ser Educacional\nZoho Corporation LATAM · Sport Club do Recife · E-brands · Ortoestética (Grupo Salute) · Aposta Ganha · Agência LeanX · Agência Reality',
+  formacao: 'Marketing — UNIBRA\nMBA — IBMEC (em andamento)',
+  idiomas: '', pretensao: '', disponibilidade: '',
+  observacoes: 'Complete os campos em branco: a Bianca só usa o que estiver aqui.',
+};
+
+async function seedProjetos(c) {
+  const ids = {};
+  let ordem = 0;
+  for (const [nome, cor, descricao, contexto] of PROJETOS_INICIAIS) {
+    const { rows: [p] } = await c.query(
+      `INSERT INTO projects (nome, cor, descricao, contexto, ordem) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (nome) DO UPDATE SET nome=EXCLUDED.nome RETURNING id`,
+      [nome, cor, descricao, contexto, ordem++]);
+    ids[nome] = p.id;
+  }
+  // Tudo o que já existia no sistema (La Fleur, Marília, Laura...) passa a ser do projeto Por Boas Histórias
+  await c.query('UPDATE clients SET project_id=$1 WHERE project_id IS NULL', [ids['Por Boas Histórias']]);
+  for (const [nome, projeto, posts, obs] of CLIENTES_INICIAIS) {
+    const { rows: ja } = await c.query('SELECT id FROM clients WHERE lower(nome)=lower($1)', [nome]);
+    if (ja.length) { await c.query('UPDATE clients SET project_id=COALESCE(project_id,$1) WHERE id=$2', [ids[projeto], ja[0].id]); continue; }
+    const { rows: [cl] } = await c.query(
+      `INSERT INTO clients (nome, marcas, meta_posts, meta_stories_dia, meta_blog, observacoes, project_id)
+       VALUES ($1,'[]',$2,0,0,$3,$4) RETURNING id`, [nome, posts, obs, ids[projeto]]);
+    if (nome === 'Senhorita Moça') {
+      await c.query(`INSERT INTO contexto_cliente (client_id, rodape) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+        [cl.id, 'Acesse www.senhoritamoca.com.br ou link na bio.']);
+    }
+  }
+  await c.query(`INSERT INTO perfil_profissional (id, dados) VALUES (1,$1) ON CONFLICT DO NOTHING`, [JSON.stringify(PERFIL_INICIAL)]);
+}
+
 async function init() {
   const c = await pool.connect();
   try {
@@ -419,6 +549,8 @@ async function init() {
     await c.query(SCHEMA);
     await seedIfEmpty(c);
     await seedsIncrementais(c);
+    const { rowCount } = await c.query(`INSERT INTO seeds (chave) VALUES ('projetos_v1') ON CONFLICT DO NOTHING`);
+    if (rowCount) await seedProjetos(c);
     await bootstrapAdmin(c);
     await c.query('COMMIT');
   } catch (e) {
