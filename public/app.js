@@ -480,7 +480,7 @@ function viewQuadro(v) {
         ${cards.map((t) => `<div class="kcard" draggable="true" data-id="${t.id}">
           <div class="meta"><span class="tag ${t.tipo}">${TIPO_LABEL[t.tipo]}</span>${t.prioridade === 'alta' ? '<span class="tag alta">Prioridade</span>' : ''}
             <span>${t.data ? fmtData(t.data) + ' ' + dowDe(t.data) : ''}</span>${t.arte_url ? '<span title="Tem arte no Canva">🎨</span>' : ''}</div>
-          ${t.esteira ? `<div class="meta"><span class="tag esteira-${t.esteira}">${({ executando: '⏳ Time trabalhando', aguardando_aprovacao: '✋ Aguardando aprovação', aprovada: '✓ Aprovada', publicada: '✓ Publicada', erro: '⚠ Erro na execução' })[t.esteira] || ''}</span></div>` : ''}
+          ${t.esteira ? `<div class="meta"><span class="tag esteira-${t.esteira}">${({ executando: '⏳ Time trabalhando', aguardando_aprovacao: '✋ Aguardando aprovação', aprovada: '✓ Aprovada', agendada: '🗓 Agendada', publicando: '📲 Publicando', publicada: '✓ Publicada', erro: '⚠ Erro na execução' })[t.esteira] || ''}</span></div>` : ''}
           <div class="t">${esc(tituloTarefa(t))}</div>
           <div class="meta">${t.formato ? esc(t.formato) : ''}${t.responsavel ? ' · ' + esc(t.responsavel) : ''}${S.cliente ? '' : ' · ' + esc(clienteNome(t.client_id))}</div>
         </div>`).join('')}</div>`;

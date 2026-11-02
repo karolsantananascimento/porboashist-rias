@@ -26,7 +26,7 @@ async function gerar(pool, { project_id, client_id, de, ate }) {
     q(`SELECT t.id, t.tema, t.tipo, t.formato, ${ref} AS data, t.status, t.esteira, c.nome AS cliente FROM tasks t JOIN clients c ON c.id=t.client_id
        WHERE t.client_id = ANY($1) AND ${ref} BETWEEN $2 AND $3 AND ${naoPlaceholder} ORDER BY ${ref}, t.id LIMIT 40`),
     pool.query(`SELECT count(*)::int n FROM tasks WHERE client_id = ANY($1) AND aprovado_em::date BETWEEN $2 AND $3`, [ids, de, ate]).then((r) => r.rows),
-    pool.query(`SELECT esteira, count(*)::int n FROM tasks WHERE client_id = ANY($1) AND esteira IN ('executando','aguardando_aprovacao','aprovada') GROUP BY 1`, [ids]).then((r) => r.rows),
+    pool.query(`SELECT esteira, count(*)::int n FROM tasks WHERE client_id = ANY($1) AND esteira IN ('executando','aguardando_aprovacao','aprovada','agendada') GROUP BY 1`, [ids]).then((r) => r.rows),
     pool.query(`SELECT count(*)::int n FROM solicitacoes WHERE (client_id = ANY($1) OR (client_id IS NULL AND project_id=$4)) AND created_at::date BETWEEN $2 AND $3`, [ids, de, ate, project_id]).then((r) => r.rows),
     pool.query(`SELECT status, count(*)::int n FROM solicitacoes WHERE (client_id = ANY($1) OR (client_id IS NULL AND project_id=$4)) AND created_at::date BETWEEN $2 AND $3 GROUP BY 1`, [ids, de, ate, project_id]).then((r) => r.rows),
     pool.query(`SELECT agente, count(*)::int n FROM criacoes WHERE (client_id = ANY($1) OR (client_id IS NULL AND project_id=$4)) AND created_at::date BETWEEN $2 AND $3 GROUP BY 1`, [ids, de, ate, project_id]).then((r) => r.rows),

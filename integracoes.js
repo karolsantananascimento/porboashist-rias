@@ -242,19 +242,8 @@ function registrar(app, { pool, wrap, soAdmin }) {
     return r.headers.get('x-restli-id') || d.id;
   }
 
-  app.post('/api/publicar', wrap(async (req, res) => {
-    const b = req.body || {};
-    const texto = String(b.texto || '').trim().slice(0, 3000);
-    const imagem = String(b.imagem_url || '').trim();
-    const alvos = (Array.isArray(b.plataformas) ? b.plataformas : []).filter((p) => ['facebook', 'instagram', 'linkedin'].includes(p));
-    // O cliente vem da tarefa (quando há) ou da tela: publica sempre nas contas dele, nunca nas de outro
-    let cid = Number(b.client_id) || 0;
-    if (b.task_id) { const { rows: [t] } = await pool.query('SELECT client_id FROM tasks WHERE id=$1', [b.task_id]); if (t) cid = t.client_id; }
-    if (!cid) return res.status(400).json({ erro: 'Escolha o cliente da publicação' });
-    if (!texto) return res.status(400).json({ erro: 'Escreva o texto da publicação' });
-    if (!alvos.length) return res.status(400).json({ erro: 'Escolha onde publicar' });
-    if (imagem && !/^https:\/\/\S+$/i.test(imagem)) return res.status(400).json({ erro: 'O link da imagem precisa começar com https://' });
-    if (b.confirmado !== true) return res.status(400).json({ erro: 'Confirme a publicação' });
+  // Publica nas redes escolhidas (usado pelo botão "Publicar agora" e pelo agendador). Registra cada tentativa.
+  async function publicarCore(cid, alvos, texto, imagem, userId) {
     const meta = await lerConexao(pool, 'meta', cid);
     const li = await lerConexao(pool, 'linkedin', cid);
     const resultados = [];
@@ -269,12 +258,30 @@ function registrar(app, { pool, wrap, soAdmin }) {
       } catch (e) { status = 'erro'; erro = e.message; console.error(`Erro ao publicar em ${plat}:`, e.message); }
       await pool.query(
         `INSERT INTO publicacoes (plataforma, texto, imagem_url, externo_id, status, erro, usuario_id, client_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [plat, texto, imagem || null, externo ? String(externo) : null, status, erro, req.user.id, cid]);
+        [plat, texto, imagem || null, externo ? String(externo) : null, status, erro, userId || null, cid]);
       resultados.push({ plataforma: plat, status, erro });
     }
+    return resultados;
+  }
+  publicarCoreRef = publicarCore;
+
+  app.post('/api/publicar', wrap(async (req, res) => {
+    const b = req.body || {};
+    const texto = String(b.texto || '').trim().slice(0, 3000);
+    const imagem = String(b.imagem_url || '').trim();
+    const alvos = (Array.isArray(b.plataformas) ? b.plataformas : []).filter((p) => ['facebook', 'instagram', 'linkedin'].includes(p));
+    // O cliente vem da tarefa (quando há) ou da tela: publica sempre nas contas dele, nunca nas de outro
+    let cid = Number(b.client_id) || 0;
+    if (b.task_id) { const { rows: [t] } = await pool.query('SELECT client_id FROM tasks WHERE id=$1', [b.task_id]); if (t) cid = t.client_id; }
+    if (!cid) return res.status(400).json({ erro: 'Escolha o cliente da publicação' });
+    if (!texto) return res.status(400).json({ erro: 'Escreva o texto da publicação' });
+    if (!alvos.length) return res.status(400).json({ erro: 'Escolha onde publicar' });
+    if (imagem && !/^https:\/\/\S+$/i.test(imagem)) return res.status(400).json({ erro: 'O link da imagem precisa começar com https://' });
+    if (b.confirmado !== true) return res.status(400).json({ erro: 'Confirme a publicação' });
+    const resultados = await publicarCore(cid, alvos, texto, imagem, req.user.id);
     // Publicou em pelo menos uma rede: a tarefa aprovada passa a publicada
     if (b.task_id && resultados.some((r) => r.status === 'publicado')) {
-      await pool.query(`UPDATE tasks SET status='publicado', esteira='publicada', esteira_msg='Publicada', esteira_em=now(), updated_at=now() WHERE id=$1 AND esteira='aprovada'`, [b.task_id]);
+      await pool.query(`UPDATE tasks SET status='publicado', esteira='publicada', esteira_msg='Publicada', esteira_em=now(), updated_at=now() WHERE id=$1 AND esteira IN ('aprovada','agendada')`, [b.task_id]);
     }
     res.json({ resultados });
   }));
@@ -288,4 +295,5 @@ function registrar(app, { pool, wrap, soAdmin }) {
   }));
 }
 
-module.exports = { registrar, tokenDaPagina, verifyToken, lerConexao };
+let publicarCoreRef = null;
+module.exports = { registrar, tokenDaPagina, verifyToken, lerConexao, publicar: (...a) => publicarCoreRef(...a) };

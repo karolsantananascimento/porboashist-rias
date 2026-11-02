@@ -468,10 +468,11 @@ function abrirAjustes(t, depois) {
 }
 
 async function aprovarTarefa(t, depois) {
+  // Posts e stories passam pela Social media (Lara): agendar ou publicar agora. Os demais tipos só são aprovados.
+  if (['post', 'story'].includes(t.tipo)) return abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois, aprovar: true });
   try { await api(`/api/tasks/${t.id}/aprovar`, { method: 'POST' }); } catch (e) { return toast(e.message); }
-  toast('Aprovada. Segue para publicação.');
+  toast('Aprovada.');
   depois && depois();
-  if (['post', 'story'].includes(t.tipo)) abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois });
 }
 
 // Fila de aprovação do projeto ou do cliente
@@ -482,7 +483,7 @@ function filaAprovacao(el, filtro) {
     if (!el.isConnected) return clearTimeout(timer);
     let lista = [];
     try { lista = await api('/api/esteira?' + q); } catch { return; }
-    const rotulo = { executando: 'Time trabalhando', aguardando_aprovacao: 'Aguardando aprovação', aprovada: 'Aprovada: falta publicar', erro: 'Erro' };
+    const rotulo = { executando: 'Time trabalhando', aguardando_aprovacao: 'Aguardando aprovação', aprovada: 'Aprovada: falta publicar', agendada: 'Agendada (Lara)', publicando: 'Lara publicando', erro: 'Erro' };
     el.innerHTML = `<h3 class="secao-h">Esteira do time <span class="pill">${lista.length}</span></h3>
       ${lista.length ? lista.map((t) => `<article class="card esteira ${t.esteira}">
         <div class="msg-top"><span class="pill ${t.esteira === 'aprovada' ? 'ok' : ''}">${rotulo[t.esteira]}</span><span class="pill">${esc(TIPO_LABEL[t.tipo] || t.tipo)}</span>
@@ -490,10 +491,13 @@ function filaAprovacao(el, filtro) {
         <b>${esc(t.tema || 'Sem título')}</b>
         ${t.esteira === 'executando' ? `<p class="muted" style="margin:4px 0 0">⏳ ${esc(t.esteira_msg || '')}</p>` : ''}
         ${t.esteira === 'erro' ? `<p class="erro" style="margin:4px 0 0">${esc(t.esteira_msg || '')}</p>` : ''}
-        ${['aguardando_aprovacao', 'aprovada'].includes(t.esteira) ? `<p class="sol-desc">${esc((t.legenda || t.briefing || '').slice(0, 320))}</p>` : ''}
+        ${t.esteira === 'agendada' ? `<p class="muted" style="margin:4px 0 0">🗓 ${esc(t.esteira_msg || '')} · ${esc((t.plataformas || '').replace(/,/g, ', '))}. Publica sozinha no horário.</p>` : ''}
+        ${t.esteira === 'aprovada' && /falhou|interrompida|cancelado/i.test(t.esteira_msg || '') ? `<p class="erro" style="margin:4px 0 0">${esc(t.esteira_msg)}</p>` : ''}
+        ${['aguardando_aprovacao', 'aprovada', 'agendada'].includes(t.esteira) ? `<p class="sol-desc">${esc((t.legenda || t.briefing || '').slice(0, 320))}</p>` : ''}
         <div class="acoes-res">
-          ${t.esteira === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">✓ Aprovar e seguir para publicação</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
+          ${t.esteira === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">✓ Aprovar e passar para a Social media</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
           ${t.esteira === 'aprovada' ? `${['post', 'story'].includes(t.tipo) ? `<button class="btn small primary" data-pub="${t.id}">Publicar…</button>` : ''}<button class="btn small" data-conc="${t.id}">Marcar como concluída</button><button class="btn small" data-rev="${t.id}">Abrir</button>` : ''}
+          ${t.esteira === 'agendada' ? `<button class="btn small primary" data-pub="${t.id}">Publicar agora…</button><button class="btn small" data-desag="${t.id}">Cancelar agendamento</button>` : ''}
           ${t.esteira === 'erro' ? `<button class="btn small primary" data-ex="${t.id}">Tentar de novo</button>` : ''}
         </div></article>`).join('') : '<div class="card"><div class="empty" style="padding:16px">Nada na esteira. Envie um comando na caixa acima.</div></div>'}`;
     const achar = (id) => lista.find((x) => String(x.id) === String(id));
@@ -501,6 +505,7 @@ function filaAprovacao(el, filtro) {
     $$('[data-rev]', el).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev))));
     $$('[data-aj]', el).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));
     $$('[data-pub]', el).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois: desenhar }); }));
+    $$('[data-desag]', el).forEach((b) => b.addEventListener('click', async () => { if (!confirm('Cancelar o agendamento?')) return; try { await api(`/api/tasks/${b.dataset.desag}/desagendar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     $$('[data-conc]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.conc}/concluir`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     $$('[data-ex]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.ex}/executar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     clearTimeout(timer);
@@ -1242,28 +1247,54 @@ async function abrirPublicar(texto, opts = {}) {
     ['linkedin', 'LinkedIn' + (c.linkedin.nome ? ' · ' + c.linkedin.nome : ''), c.linkedin.conectado && !c.linkedin.expirado, 'Conecte em Integrações'],
   ];
   const d = document.createElement('dialog');
-  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>Publicar</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>${opts.aprovar ? 'Aprovar e passar para a Social media (Lara)' : 'Publicar'}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
     <div class="modal-body">
+      ${opts.aprovar ? `<div><label>Como a Lara segue</label><label class="chk"><input type="radio" name="pbModo" value="agendar" checked> Agendar (publica sozinha no horário)</label><label class="chk"><input type="radio" name="pbModo" value="agora"> Publicar agora (você confirma em seguida)</label></div>
+      <div id="pbQuando"><label>Data e hora</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="datetime-local" id="pbData"><button type="button" class="btn small" id="pbSug">💡 Sugestão da Lara</button></div><p class="muted" id="pbSugTxt" style="margin:4px 0 0"></p></div>` : ''}
       <div><label>Onde publicar</label>${opcoes.map(([k, l, ok, aviso]) => `<label class="chk ${ok ? '' : 'off'}"><input type="checkbox" data-pl="${k}" ${ok ? '' : 'disabled'}> ${esc(l)}${ok ? '' : ` <small>(${esc(aviso)})</small>`}</label>`).join('')}</div>
       <div><label>Texto</label><textarea id="pbTexto" rows="9">${esc(texto)}</textarea></div>
       <div><label>Link da imagem (https://, obrigatório no Instagram)</label><input id="pbImg" placeholder="https://"></div>
-      <p class="muted" style="margin:0">${opts.taskId ? 'Confira se o texto é só a legenda que vai ao ar. ' : ''}LinkedIn: sai só o texto. A publicação é imediata e pública.</p>
+      <p class="muted" style="margin:0">${opts.taskId ? 'Confira se o texto é só a legenda que vai ao ar. ' : ''}LinkedIn: sai só o texto. ${opts.aprovar ? 'Agendada, a Lara publica sozinha no horário escolhido; "Publicar agora" é imediato e público.' : 'A publicação é imediata e pública.'}</p>
       <p class="erro" id="pbErro" style="margin:0"></p><div id="pbRes"></div>
     </div>
-    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary" id="pbOk">Publicar agora</button></div></div></form>`;
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button>${opts.aprovar ? '<button type="button" class="btn" id="pbSo">Só aprovar</button>' : ''}<button type="button" class="btn primary" id="pbOk">${opts.aprovar ? 'Aprovar e agendar' : 'Publicar agora'}</button></div></div></form>`;
   document.body.appendChild(d); d.showModal();
   d.addEventListener('close', () => d.remove());
+  const modo = () => (opts.aprovar ? ($$('[name=pbModo]', d).find((x) => x.checked) || {}).value : 'agora');
+  if (opts.aprovar) {
+    const ajustaModo = () => { $('#pbQuando', d).style.display = modo() === 'agendar' ? '' : 'none'; $('#pbOk', d).textContent = modo() === 'agendar' ? 'Aprovar e agendar' : 'Aprovar e publicar agora'; };
+    $$('[name=pbModo]', d).forEach((x) => x.addEventListener('change', ajustaModo));
+    $('#pbSo', d).onclick = async () => { try { await api(`/api/tasks/${opts.taskId}/aprovar`, { method: 'POST' }); d.close(); toast('Aprovada. Publique depois pela fila.'); opts.depois && opts.depois(); } catch (e) { $('#pbErro', d).textContent = e.message; } };
+    $('#pbSug', d).onclick = async () => {
+      const pls = $$('[data-pl]', d).filter((x) => x.checked).map((x) => x.dataset.pl).join(',');
+      const b = $('#pbSug', d); b.disabled = true; b.textContent = 'Lara pensando…'; $('#pbErro', d).textContent = '';
+      try { const r = await api(`/api/tasks/${opts.taskId}/social-sugestao`, { method: 'POST', body: { plataformas: pls } }); if (r.texto) $('#pbTexto', d).value = r.texto; $('#pbSugTxt', d).textContent = r.horario ? '🕒 ' + r.horario : ''; }
+      catch (e) { $('#pbErro', d).textContent = e.message; }
+      b.disabled = false; b.textContent = '💡 Sugestão da Lara';
+    };
+  }
   $('#pbOk', d).onclick = async () => {
     const plataformas = $$('[data-pl]', d).filter((x) => x.checked).map((x) => x.dataset.pl);
     if (!plataformas.length) return ($('#pbErro', d).textContent = 'Escolha onde publicar');
+    if (opts.aprovar && modo() === 'agendar') {
+      const quando = $('#pbData', d).value;
+      if (!quando) return ($('#pbErro', d).textContent = 'Escolha a data e a hora');
+      const b0 = $('#pbOk', d); b0.disabled = true; $('#pbErro', d).textContent = '';
+      try {
+        await api(`/api/tasks/${opts.taskId}/aprovar`, { method: 'POST', body: { modo: 'agendar', agendar_para: new Date(quando).toISOString(), plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value } });
+        d.close(); toast('Aprovada e agendada pela Lara'); opts.depois && opts.depois();
+      } catch (e) { $('#pbErro', d).textContent = e.message; }
+      b0.disabled = false; return;
+    }
     if (!confirm('Publicar agora em: ' + plataformas.join(', ') + '?')) return;
     const b = $('#pbOk', d); b.disabled = true; b.textContent = 'Publicando…'; $('#pbErro', d).textContent = '';
     try {
+      if (opts.aprovar) { await api(`/api/tasks/${opts.taskId}/aprovar`, { method: 'POST' }); opts.aprovar = false; }
       const r = await api('/api/publicar', { method: 'POST', body: { plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value, confirmado: true, task_id: opts.taskId || null, client_id: clienteId } });
       if (opts.depois && r.resultados.some((x) => x.status === 'publicado')) opts.depois();
       $('#pbRes', d).innerHTML = r.resultados.map((x) => `<div class="alerta ${x.status === 'publicado' ? 'ok' : 'danger'}"><b>${esc(x.plataforma)}</b>: ${x.status === 'publicado' ? 'publicado' : esc(x.erro)}</div>`).join('');
     } catch (e) { $('#pbErro', d).textContent = e.message; }
-    b.disabled = false; b.textContent = 'Publicar agora';
+    b.disabled = false; b.textContent = modo() === 'agendar' ? 'Aprovar e agendar' : (opts.aprovar ? 'Aprovar e publicar agora' : 'Publicar agora');
   };
 }
 

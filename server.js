@@ -630,5 +630,5 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 const PORT = process.env.PORT || 3000;
 init()
   .then(() => require('./config').carregar(pool))
-  .then(() => app.listen(PORT, () => console.log(`A Melhor Mídia do Brasil rodando na porta ${PORT}`)))
+  .then(() => app.listen(PORT, () => { console.log(`A Melhor Mídia do Brasil rodando na porta ${PORT}`); require('./esteira').iniciarAgendador(pool); }))
   .catch((e) => { console.error('Falha ao iniciar o banco:', e); process.exit(1); });

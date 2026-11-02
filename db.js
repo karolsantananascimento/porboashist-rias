@@ -247,6 +247,12 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_msg TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS esteira_em TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_por TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS aprovado_em TIMESTAMPTZ;
+-- Social media: agendamento depois da aprovação humana (esteira = agendada -> publicando -> publicada)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS agendada_para TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS plataformas TEXT;       -- facebook,instagram,linkedin
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS publicar_texto TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS publicar_imagem TEXT;
+CREATE INDEX IF NOT EXISTS tasks_agendadas ON tasks (agendada_para) WHERE esteira = 'agendada';
 
 -- Relatórios gerados por período
 CREATE TABLE IF NOT EXISTS relatorios (
