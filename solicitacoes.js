@@ -226,8 +226,8 @@ function registrar(app, { pool, wrap, soAdmin }) {
     const token = 'mmb_' + crypto.randomBytes(24).toString('base64url');
     const hash = crypto.createHash('sha256').update(token).digest('hex');
     await pool.query(
-      `INSERT INTO configuracoes (chave, valor_enc, updated_at) VALUES ('IMPORT_TOKEN_HASH',$1,now())
-       ON CONFLICT (chave) DO UPDATE SET valor_enc=EXCLUDED.valor_enc, updated_at=now()`, [cifrar(hash)]);
+      `INSERT INTO configuracoes (chave, client_id, valor_enc, updated_at) VALUES ('IMPORT_TOKEN_HASH',0,$1,now())
+       ON CONFLICT (chave, client_id) DO UPDATE SET valor_enc=EXCLUDED.valor_enc, updated_at=now()`, [cifrar(hash)]);
     res.json({ token });
   }));
 }

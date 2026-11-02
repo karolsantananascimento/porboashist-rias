@@ -1,10 +1,10 @@
-// Conexão com Facebook, Instagram (login da Meta) e LinkedIn, e publicação com confirmação.
-// Os tokens ficam criptografados no banco (mesma chave do cofre de senhas: ACESSOS_KEY).
+// Conexão de cada cliente com Facebook, Instagram (login da Meta) e LinkedIn, e publicação com confirmação.
+// Os tokens ficam criptografados no banco (ACESSOS_KEY). Cada cliente tem as suas contas e, se quiser, as suas chaves de app.
 // Nada é publicado sem o clique de uma pessoa na tela de publicação.
 
-const { cfg, listar, definir, remover } = require('./config');
 const crypto = require('crypto');
 const { cifrar, decifrar } = require('./cofre');
+const { cfg, listar, definir, remover } = require('./config');
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const META_ESCOPOS = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'pages_messaging',
@@ -13,21 +13,22 @@ const LINKEDIN_ESCOPOS = ['openid', 'profile', 'w_member_social'];
 
 const base = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
-async function lerConexao(pool, provedor) {
-  const { rows: [r] } = await pool.query('SELECT * FROM conexoes WHERE provedor=$1', [provedor]);
+async function lerConexao(pool, provedor, clienteId) {
+  const { rows: [r] } = await pool.query('SELECT * FROM conexoes WHERE provedor=$1 AND client_id=$2', [provedor, clienteId || 0]);
   if (!r) return null;
   try { return { ...JSON.parse(decifrar(r.dados_enc)), conectado_em: r.updated_at }; } catch { return null; }
 }
 
-async function salvarConexao(pool, provedor, dados) {
+async function salvarConexao(pool, provedor, clienteId, dados) {
   await pool.query(
-    `INSERT INTO conexoes (provedor, dados_enc, updated_at) VALUES ($1,$2,now())
-     ON CONFLICT (provedor) DO UPDATE SET dados_enc=EXCLUDED.dados_enc, updated_at=now()`,
-    [provedor, cifrar(JSON.stringify(dados))]);
+    `INSERT INTO conexoes (provedor, client_id, dados_enc, updated_at) VALUES ($1,$2,$3,now())
+     ON CONFLICT (provedor, client_id) DO UPDATE SET dados_enc=EXCLUDED.dados_enc, updated_at=now()`,
+    [provedor, clienteId || 0, cifrar(JSON.stringify(dados))]);
 }
 
-const verifyToken = () => cfg('META_VERIFY_TOKEN') ||
-  (cfg('META_APP_SECRET') ? crypto.createHash('sha256').update('verify:' + cfg('META_APP_SECRET')).digest('hex').slice(0, 24) : null);
+// Token de verificação do webhook de um escopo (cliente ou padrão)
+const verifyToken = (clienteId = 0) => cfg('META_VERIFY_TOKEN', clienteId) ||
+  (cfg('META_APP_SECRET', clienteId) ? crypto.createHash('sha256').update('verify:' + cfg('META_APP_SECRET', clienteId)).digest('hex').slice(0, 24) : null);
 
 async function jsonDe(url, opts = {}) {
   const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(20000) });
@@ -39,9 +40,9 @@ async function jsonDe(url, opts = {}) {
   return d;
 }
 
-// Token da página usado para responder mensagens (conexão salva ou variável antiga)
-async function tokenDaPagina(pool) {
-  const c = await lerConexao(pool, 'meta');
+// Token da página do cliente, usado para responder mensagens (a variável antiga só vale como padrão)
+async function tokenDaPagina(pool, clienteId) {
+  const c = await lerConexao(pool, 'meta', clienteId);
   const pg = c && c.paginas && c.paginas.find((p) => p.id === c.pagina_id);
   return (pg && pg.token) || process.env.META_PAGE_TOKEN || null;
 }
@@ -49,110 +50,132 @@ async function tokenDaPagina(pool) {
 function registrar(app, { pool, wrap, soAdmin }) {
   const ASSINAR = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
   const assinarState = (s) => crypto.createHmac('sha256', ASSINAR).update(s).digest('hex').slice(0, 32);
-  const novoState = (userId) => { const s = `${userId}.${crypto.randomBytes(12).toString('hex')}`; return `${s}.${assinarState(s)}`; };
-  const stateOk = (state, userId) => {
-    const [u, n, sig] = String(state || '').split('.');
-    return u === String(userId) && n && sig && assinarState(`${u}.${n}`) === sig;
+  const novoState = (userId, clienteId) => { const s = `${userId}.${clienteId}.${crypto.randomBytes(12).toString('hex')}`; return `${s}.${assinarState(s)}`; };
+  const lerState = (state, userId) => {
+    const [u, cid, n, sig] = String(state || '').split('.');
+    if (u !== String(userId) || !cid || !n || !sig || assinarState(`${u}.${cid}.${n}`) !== sig) return null;
+    return Number(cid);
   };
-  const voltar = (res, msg, ok) => res.redirect(`/?integracao=${ok ? 'ok' : 'erro'}&msg=${encodeURIComponent(msg)}`);
+  const clienteDe = async (id) => {
+    const { rows: [c] } = await pool.query('SELECT id, nome, project_id FROM clients WHERE id=$1', [id]);
+    return c || null;
+  };
+  const voltar = async (res, msg, ok, clienteId) => {
+    const c = clienteId ? await clienteDe(clienteId) : null;
+    res.redirect(`/?integracao=${ok ? 'ok' : 'erro'}&msg=${encodeURIComponent(msg)}${c ? `&client_id=${c.id}&project_id=${c.project_id || ''}` : ''}`);
+  };
 
   // ----- Meta (Facebook + Instagram) -----
   app.get('/oauth/meta/iniciar', wrap(async (req, res) => {
-    if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false);
-    if (!cfg('META_APP_ID') || !cfg('META_APP_SECRET')) return voltar(res, 'Falta configurar META_APP_ID e META_APP_SECRET no Render.', false);
+    const cid = Number(req.query.client_id);
+    const cl = cid ? await clienteDe(cid) : null;
+    if (!cl) return voltar(res, 'Escolha o cliente antes de conectar.', false);
+    if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false, cid);
+    if (!cfg('META_APP_ID', cid) || !cfg('META_APP_SECRET', cid)) return voltar(res, 'Falta o app da Meta: cole o ID e a chave secreta (do cliente ou as padrão).', false, cid);
     const u = new URL('https://www.facebook.com/v21.0/dialog/oauth');
     u.search = new URLSearchParams({
-      client_id: cfg('META_APP_ID'), redirect_uri: `${base(req)}/oauth/meta/retorno`,
-      state: novoState(req.user.id), scope: META_ESCOPOS.join(','), response_type: 'code',
+      client_id: cfg('META_APP_ID', cid), redirect_uri: `${base(req)}/oauth/meta/retorno`,
+      state: novoState(req.user.id, cid), scope: META_ESCOPOS.join(','), response_type: 'code',
     });
     res.redirect(u.toString());
   }));
 
   app.get('/oauth/meta/retorno', wrap(async (req, res) => {
-    if (req.query.error) return voltar(res, 'A Meta cancelou a conexão: ' + (req.query.error_description || req.query.error), false);
-    if (!stateOk(req.query.state, req.user.id) || req.user.papel !== 'admin') return voltar(res, 'Conexão inválida. Tente de novo.', false);
+    const cid = lerState(req.query.state, req.user.id);
+    if (req.query.error) return voltar(res, 'A Meta cancelou a conexão: ' + (req.query.error_description || req.query.error), false, cid);
+    if (!cid || req.user.papel !== 'admin') return voltar(res, 'Conexão inválida. Tente de novo.', false, cid);
     try {
+      const appId = cfg('META_APP_ID', cid); const segredo = cfg('META_APP_SECRET', cid);
       const curto = await jsonDe(`${GRAPH}/oauth/access_token?` + new URLSearchParams({
-        client_id: cfg('META_APP_ID'), client_secret: cfg('META_APP_SECRET'),
-        redirect_uri: `${base(req)}/oauth/meta/retorno`, code: String(req.query.code) }));
+        client_id: appId, client_secret: segredo, redirect_uri: `${base(req)}/oauth/meta/retorno`, code: String(req.query.code) }));
       const longo = await jsonDe(`${GRAPH}/oauth/access_token?` + new URLSearchParams({
-        grant_type: 'fb_exchange_token', client_id: cfg('META_APP_ID'),
-        client_secret: cfg('META_APP_SECRET'), fb_exchange_token: curto.access_token }));
+        grant_type: 'fb_exchange_token', client_id: appId, client_secret: segredo, fb_exchange_token: curto.access_token }));
       const eu = await jsonDe(`${GRAPH}/me?fields=id,name&access_token=${encodeURIComponent(longo.access_token)}`);
       const contas = await jsonDe(`${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50&access_token=${encodeURIComponent(longo.access_token)}`);
       const paginas = (contas.data || []).map((p) => ({
         id: p.id, nome: p.name, token: p.access_token,
         ig_id: p.instagram_business_account?.id || null, ig_usuario: p.instagram_business_account?.username || null,
       }));
-      if (!paginas.length) return voltar(res, 'Conectou, mas nenhuma página do Facebook foi liberada. Refaça e marque a página.', false);
-      const dados = { usuario: eu.name, paginas, pagina_id: paginas[0].id };
-      await salvarConexao(pool, 'meta', dados);
-      // Recebe as mensagens da página no webhook (se falhar, segue: dá para configurar no painel da Meta)
+      if (!paginas.length) return voltar(res, 'Conectou, mas nenhuma página do Facebook foi liberada. Refaça e marque a página.', false, cid);
+      await salvarConexao(pool, 'meta', cid, { usuario: eu.name, paginas, pagina_id: paginas[0].id });
+      // Mensagens dessas páginas passam a cair neste cliente
+      await pool.query('DELETE FROM meta_paginas WHERE client_id=$1', [cid]);
       for (const p of paginas) {
+        for (const id of [p.id, p.ig_id].filter(Boolean)) {
+          await pool.query('INSERT INTO meta_paginas (page_id, client_id) VALUES ($1,$2) ON CONFLICT (page_id) DO UPDATE SET client_id=EXCLUDED.client_id', [String(id), cid]);
+        }
         await fetch(`${GRAPH}/${p.id}/subscribed_apps?subscribed_fields=messages`, {
           method: 'POST', headers: { authorization: `Bearer ${p.token}` }, signal: AbortSignal.timeout(15000) }).catch(() => null);
       }
-      voltar(res, `Facebook conectado: ${paginas.map((p) => p.nome).join(', ')}`, true);
-    } catch (e) { console.error('Erro OAuth Meta', e.message); voltar(res, 'Não consegui concluir a conexão com a Meta: ' + e.message, false); }
+      voltar(res, `Facebook conectado: ${paginas.map((p) => p.nome).join(', ')}`, true, cid);
+    } catch (e) { console.error('Erro OAuth Meta', e.message); voltar(res, 'Não consegui concluir a conexão com a Meta: ' + e.message, false, cid); }
   }));
 
   // ----- LinkedIn -----
   app.get('/oauth/linkedin/iniciar', wrap(async (req, res) => {
-    if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false);
-    if (!cfg('LINKEDIN_CLIENT_ID') || !cfg('LINKEDIN_CLIENT_SECRET')) return voltar(res, 'Falta configurar LINKEDIN_CLIENT_ID e LINKEDIN_CLIENT_SECRET no Render.', false);
+    const cid = Number(req.query.client_id);
+    const cl = cid ? await clienteDe(cid) : null;
+    if (!cl) return voltar(res, 'Escolha o cliente antes de conectar.', false);
+    if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false, cid);
+    if (!cfg('LINKEDIN_CLIENT_ID', cid) || !cfg('LINKEDIN_CLIENT_SECRET', cid)) return voltar(res, 'Falta o app do LinkedIn: cole o Client ID e o Secret (do cliente ou os padrão).', false, cid);
     const u = new URL('https://www.linkedin.com/oauth/v2/authorization');
     u.search = new URLSearchParams({
-      response_type: 'code', client_id: cfg('LINKEDIN_CLIENT_ID'), redirect_uri: `${base(req)}/oauth/linkedin/retorno`,
-      state: novoState(req.user.id), scope: LINKEDIN_ESCOPOS.join(' '),
+      response_type: 'code', client_id: cfg('LINKEDIN_CLIENT_ID', cid), redirect_uri: `${base(req)}/oauth/linkedin/retorno`,
+      state: novoState(req.user.id, cid), scope: LINKEDIN_ESCOPOS.join(' '),
     });
     res.redirect(u.toString());
   }));
 
   app.get('/oauth/linkedin/retorno', wrap(async (req, res) => {
-    if (req.query.error) return voltar(res, 'O LinkedIn cancelou a conexão: ' + (req.query.error_description || req.query.error), false);
-    if (!stateOk(req.query.state, req.user.id) || req.user.papel !== 'admin') return voltar(res, 'Conexão inválida. Tente de novo.', false);
+    const cid = lerState(req.query.state, req.user.id);
+    if (req.query.error) return voltar(res, 'O LinkedIn cancelou a conexão: ' + (req.query.error_description || req.query.error), false, cid);
+    if (!cid || req.user.papel !== 'admin') return voltar(res, 'Conexão inválida. Tente de novo.', false, cid);
     try {
       const t = await jsonDe('https://www.linkedin.com/oauth/v2/accessToken', {
         method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ grant_type: 'authorization_code', code: String(req.query.code),
-          redirect_uri: `${base(req)}/oauth/linkedin/retorno`, client_id: cfg('LINKEDIN_CLIENT_ID'),
-          client_secret: cfg('LINKEDIN_CLIENT_SECRET') }) });
+          redirect_uri: `${base(req)}/oauth/linkedin/retorno`, client_id: cfg('LINKEDIN_CLIENT_ID', cid),
+          client_secret: cfg('LINKEDIN_CLIENT_SECRET', cid) }) });
       const eu = await jsonDe('https://api.linkedin.com/v2/userinfo', { headers: { authorization: `Bearer ${t.access_token}` } });
-      await salvarConexao(pool, 'linkedin', {
+      await salvarConexao(pool, 'linkedin', cid, {
         token: t.access_token, expira_em: Date.now() + (t.expires_in || 5184000) * 1000,
         autor: `urn:li:person:${eu.sub}`, nome: eu.name || [eu.given_name, eu.family_name].filter(Boolean).join(' '),
       });
-      voltar(res, `LinkedIn conectado: ${eu.name || 'conta'}`, true);
-    } catch (e) { console.error('Erro OAuth LinkedIn', e.message); voltar(res, 'Não consegui concluir a conexão com o LinkedIn: ' + e.message, false); }
+      voltar(res, `LinkedIn conectado: ${eu.name || 'conta'}`, true, cid);
+    } catch (e) { console.error('Erro OAuth LinkedIn', e.message); voltar(res, 'Não consegui concluir a conexão com o LinkedIn: ' + e.message, false, cid); }
   }));
 
-  // ----- Painel de chaves das APIs -----
-  app.get('/api/configuracoes', soAdmin, (req, res) => res.json(listar()));
+  // ----- Chaves das APIs: padrão do sistema (client_id ausente) ou do cliente -----
+  const escopo = (req) => Number(req.query.client_id || req.body?.client_id || 0) || 0;
+  app.get('/api/configuracoes', soAdmin, (req, res) => res.json(listar(escopo(req))));
   app.put('/api/configuracoes/:chave', soAdmin, wrap(async (req, res) => {
-    try { await definir(pool, req.params.chave, req.body.valor); }
+    try { await definir(pool, req.params.chave, req.body.valor, escopo(req)); }
     catch (e) { if (/Cofre/.test(e.message)) e.message = 'O cofre não está configurado: defina ACESSOS_KEY no Render.'; throw e; }
-    res.json(listar());
+    res.json(listar(escopo(req)));
   }));
   app.delete('/api/configuracoes/:chave', soAdmin, wrap(async (req, res) => {
-    await remover(pool, req.params.chave);
-    res.json(listar());
+    await remover(pool, req.params.chave, escopo(req));
+    res.json(listar(escopo(req)));
   }));
 
-  // ----- Status e gestão -----
+  // ----- Status das conexões de um cliente -----
   app.get('/api/conexoes', wrap(async (req, res) => {
-    const [meta, li] = await Promise.all([lerConexao(pool, 'meta'), lerConexao(pool, 'linkedin')]);
+    const cid = Number(req.query.client_id) || 0;
+    if (!cid) return res.status(400).json({ erro: 'Escolha o cliente' });
+    const [meta, li] = await Promise.all([lerConexao(pool, 'meta', cid), lerConexao(pool, 'linkedin', cid)]);
     const pg = meta && meta.paginas.find((p) => p.id === meta.pagina_id);
+    const admin = req.user.papel === 'admin';
     res.json({
       meta: {
-        app_configurado: !!(cfg('META_APP_ID') && cfg('META_APP_SECRET')),
+        app_configurado: !!(cfg('META_APP_ID', cid) && cfg('META_APP_SECRET', cid)),
         conectado: !!meta, usuario: meta?.usuario || null, pagina_id: meta?.pagina_id || null,
         paginas: (meta?.paginas || []).map((p) => ({ id: p.id, nome: p.nome, ig_usuario: p.ig_usuario })),
         facebook: pg ? pg.nome : null, instagram: pg?.ig_usuario || null,
-        webhook: `${base(req)}/webhook/meta`, verify_token: req.user.papel === 'admin' ? verifyToken() : null,
+        webhook: `${base(req)}/webhook/meta`, verify_token: admin ? verifyToken(cid) : null,
         redirect: `${base(req)}/oauth/meta/retorno`,
       },
       linkedin: {
-        app_configurado: !!(cfg('LINKEDIN_CLIENT_ID') && cfg('LINKEDIN_CLIENT_SECRET')),
+        app_configurado: !!(cfg('LINKEDIN_CLIENT_ID', cid) && cfg('LINKEDIN_CLIENT_SECRET', cid)),
         conectado: !!li, nome: li?.nome || null, expira_em: li?.expira_em || null,
         expirado: !!(li && li.expira_em < Date.now()), redirect: `${base(req)}/oauth/linkedin/retorno`,
       },
@@ -160,17 +183,20 @@ function registrar(app, { pool, wrap, soAdmin }) {
   }));
 
   app.put('/api/conexoes/meta/pagina', soAdmin, wrap(async (req, res) => {
-    const c = await lerConexao(pool, 'meta');
-    if (!c) return res.status(404).json({ erro: 'Facebook não está conectado' });
+    const cid = Number(req.body.client_id) || 0;
+    const c = await lerConexao(pool, 'meta', cid);
+    if (!c) return res.status(404).json({ erro: 'Facebook não está conectado para este cliente' });
     if (!c.paginas.some((p) => p.id === req.body.pagina_id)) return res.status(400).json({ erro: 'Página inválida' });
     delete c.conectado_em;
-    await salvarConexao(pool, 'meta', { ...c, pagina_id: req.body.pagina_id });
+    await salvarConexao(pool, 'meta', cid, { ...c, pagina_id: req.body.pagina_id });
     res.json({ ok: true });
   }));
 
   app.delete('/api/conexoes/:provedor', soAdmin, wrap(async (req, res) => {
     if (!['meta', 'linkedin'].includes(req.params.provedor)) return res.status(400).json({ erro: 'Provedor inválido' });
-    await pool.query('DELETE FROM conexoes WHERE provedor=$1', [req.params.provedor]);
+    const cid = Number(req.query.client_id) || 0;
+    await pool.query('DELETE FROM conexoes WHERE provedor=$1 AND client_id=$2', [req.params.provedor, cid]);
+    if (req.params.provedor === 'meta') await pool.query('DELETE FROM meta_paginas WHERE client_id=$1', [cid]);
     res.json({ ok: true });
   }));
 
@@ -200,7 +226,7 @@ function registrar(app, { pool, wrap, soAdmin }) {
   }
 
   async function publicarLinkedin(c, texto) {
-    if (c.expira_em < Date.now()) throw new Error('A conexão com o LinkedIn expirou. Conecte de novo em Integrações.');
+    if (c.expira_em < Date.now()) throw new Error('A conexão com o LinkedIn expirou. Conecte de novo em Acessos e APIs.');
     const r = await fetch('https://api.linkedin.com/v2/ugcPosts', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${c.token}`, 'X-Restli-Protocol-Version': '2.0.0' },
@@ -221,25 +247,29 @@ function registrar(app, { pool, wrap, soAdmin }) {
     const texto = String(b.texto || '').trim().slice(0, 3000);
     const imagem = String(b.imagem_url || '').trim();
     const alvos = (Array.isArray(b.plataformas) ? b.plataformas : []).filter((p) => ['facebook', 'instagram', 'linkedin'].includes(p));
+    // O cliente vem da tarefa (quando há) ou da tela: publica sempre nas contas dele, nunca nas de outro
+    let cid = Number(b.client_id) || 0;
+    if (b.task_id) { const { rows: [t] } = await pool.query('SELECT client_id FROM tasks WHERE id=$1', [b.task_id]); if (t) cid = t.client_id; }
+    if (!cid) return res.status(400).json({ erro: 'Escolha o cliente da publicação' });
     if (!texto) return res.status(400).json({ erro: 'Escreva o texto da publicação' });
     if (!alvos.length) return res.status(400).json({ erro: 'Escolha onde publicar' });
     if (imagem && !/^https:\/\/\S+$/i.test(imagem)) return res.status(400).json({ erro: 'O link da imagem precisa começar com https://' });
     if (b.confirmado !== true) return res.status(400).json({ erro: 'Confirme a publicação' });
-    const meta = await lerConexao(pool, 'meta');
-    const li = await lerConexao(pool, 'linkedin');
+    const meta = await lerConexao(pool, 'meta', cid);
+    const li = await lerConexao(pool, 'linkedin', cid);
     const resultados = [];
     for (const plat of alvos) {
       let status = 'publicado', externo = null, erro = null;
       try {
-        if (plat === 'linkedin') { if (!li) throw new Error('LinkedIn não está conectado'); externo = await publicarLinkedin(li, texto); }
+        if (plat === 'linkedin') { if (!li) throw new Error('LinkedIn não está conectado para este cliente'); externo = await publicarLinkedin(li, texto); }
         else {
-          if (!meta) throw new Error('Facebook/Instagram não está conectado');
+          if (!meta) throw new Error('Facebook/Instagram não está conectado para este cliente');
           externo = plat === 'facebook' ? await publicarFacebook(meta, texto, imagem) : await publicarInstagram(meta, texto, imagem);
         }
       } catch (e) { status = 'erro'; erro = e.message; console.error(`Erro ao publicar em ${plat}:`, e.message); }
       await pool.query(
-        `INSERT INTO publicacoes (plataforma, texto, imagem_url, externo_id, status, erro, usuario_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [plat, texto, imagem || null, externo ? String(externo) : null, status, erro, req.user.id]);
+        `INSERT INTO publicacoes (plataforma, texto, imagem_url, externo_id, status, erro, usuario_id, client_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [plat, texto, imagem || null, externo ? String(externo) : null, status, erro, req.user.id, cid]);
       resultados.push({ plataforma: plat, status, erro });
     }
     // Publicou em pelo menos uma rede: a tarefa aprovada passa a publicada
@@ -250,7 +280,10 @@ function registrar(app, { pool, wrap, soAdmin }) {
   }));
 
   app.get('/api/publicacoes', wrap(async (req, res) => {
-    const { rows } = await pool.query('SELECT id, plataforma, texto, status, erro, created_at FROM publicacoes ORDER BY created_at DESC LIMIT 30');
+    const cid = Number(req.query.client_id) || 0;
+    const { rows } = cid
+      ? await pool.query('SELECT id, plataforma, texto, status, erro, created_at FROM publicacoes WHERE client_id=$1 ORDER BY created_at DESC LIMIT 30', [cid])
+      : await pool.query('SELECT id, plataforma, texto, status, erro, created_at FROM publicacoes ORDER BY created_at DESC LIMIT 30');
     res.json(rows);
   }));
 }

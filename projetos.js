@@ -2,7 +2,7 @@
 // mensagens da Meta, vagas de emprego e status das integrações.
 // Nada é publicado, enviado ou candidatado sem um clique de uma pessoa.
 
-const { cfg } = require('./config');
+const { cfg, escoposMeta } = require('./config');
 const crypto = require('crypto');
 const { tokenDaPagina, verifyToken } = require('./integracoes');
 
@@ -292,16 +292,22 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
 
   // ---------- Mensagens (Felipe) ----------
   app.get('/api/mensagens', wrap(async (req, res) => {
-    const { rows } = await pool.query(`SELECT * FROM mensagens ORDER BY (status='nova') DESC, created_at DESC LIMIT 80`);
+    const w = []; const v = [];
+    if (req.query.client_id) { v.push(req.query.client_id); w.push(`client_id=$${v.length}`); }
+    else if (req.query.project_id) { v.push(req.query.project_id); w.push(`project_id=$${v.length}`); }
+    const { rows } = await pool.query(
+      `SELECT * FROM mensagens ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY (status='nova') DESC, created_at DESC LIMIT 80`, v);
     res.json(rows);
   }));
 
   app.post('/api/mensagens', wrap(async (req, res) => {
     const t = texto(req.body.texto, 3000).trim();
     if (!t) return res.status(400).json({ erro: 'Cole o texto da mensagem' });
+    const { rows: [cl] } = await pool.query('SELECT id, project_id FROM clients WHERE id=$1', [req.body.client_id]);
+    if (!cl) return res.status(400).json({ erro: 'Escolha o cliente da mensagem' });
     const { rows: [m] } = await pool.query(
-      `INSERT INTO mensagens (project_id, canal, remetente_nome, texto) VALUES ($1,'manual',$2,$3) RETURNING *`,
-      [req.body.project_id || null, texto(req.body.remetente_nome, 120) || null, t]);
+      `INSERT INTO mensagens (project_id, client_id, canal, remetente_nome, texto) VALUES ($1,$2,'manual',$3,$4) RETURNING *`,
+      [cl.project_id, cl.id, texto(req.body.remetente_nome, 120) || null, t]);
     res.json(m);
   }));
 
@@ -309,9 +315,7 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const { rows: [m] } = await pool.query('SELECT * FROM mensagens WHERE id=$1', [req.params.id]);
     if (!m) return res.status(404).json({ erro: 'Mensagem não encontrada' });
     if (!dentroDoLimite(req.user.id)) return res.status(429).json({ erro: 'Limite de gerações por hora atingido.' });
-    const projectId = req.body.project_id || m.project_id || null;
-    if (projectId && projectId !== m.project_id) await pool.query('UPDATE mensagens SET project_id=$1 WHERE id=$2', [projectId, m.id]);
-    const contexto = await blocoContexto(pool, projectId, req.body.client_id || null);
+    const contexto = await blocoContexto(pool, m.project_id, m.client_id);
     const sugestao = await chamarTexto({
       system: `${AGENTES.felipe.instrucoes}\n\n${REGRAS}`,
       user: `${contexto}\n\nCANAL: ${m.canal}\nMENSAGEM RECEBIDA${m.remetente_nome ? ` DE ${m.remetente_nome}` : ''}:\n${m.texto}\n\n${req.body.ajuste ? `AJUSTE PEDIDO PELA EQUIPE: ${texto(req.body.ajuste, 400)}\n` : ''}Escreva a resposta.`,
@@ -328,8 +332,8 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     if (!resposta) return res.status(400).json({ erro: 'Escreva ou gere a resposta antes de enviar' });
     let enviado = false;
     if (m.canal !== 'manual' && m.remetente_id) {
-      const token = await tokenDaPagina(pool);
-      if (!token) return res.status(400).json({ erro: 'Conecte o Facebook/Instagram em Integrações para enviar daqui. Por enquanto, copie a resposta e envie manualmente.' });
+      const token = await tokenDaPagina(pool, m.client_id);
+      if (!token) return res.status(400).json({ erro: 'Conecte o Facebook/Instagram deste cliente em Acessos e APIs para enviar daqui. Por enquanto, copie a resposta e envie manualmente.' });
       const r = await fetch('https://graph.facebook.com/v21.0/me/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -483,27 +487,35 @@ module.exports.REGRAS = REGRAS;
 module.exports.guiaDe = guiaDe;
 module.exports.blocoContexto = blocoContexto;
 module.exports.webhook = function registrarWebhook(app, { pool, wrap }) {
+  // Verificação da Meta: aceita o token de qualquer escopo (padrão ou de algum cliente)
   app.get('/webhook/meta', (req, res) => {
-    const esperado = verifyToken();
-    if (esperado && req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === esperado) {
-      return res.status(200).send(String(req.query['hub.challenge'] || ''));
-    }
+    const recebido = req.query['hub.verify_token'];
+    const ok = req.query['hub.mode'] === 'subscribe' && recebido && escoposMeta().some((id) => verifyToken(id) === recebido);
+    if (ok) return res.status(200).send(String(req.query['hub.challenge'] || ''));
     res.sendStatus(403);
   });
 
   app.post('/webhook/meta', wrap(async (req, res) => {
-    const segredo = cfg('META_APP_SECRET');
-    if (!segredo) { console.warn('Webhook da Meta ignorado: falta META_APP_SECRET'); return res.sendStatus(200); }
+    // A mensagem chega sem dizer o cliente: a assinatura vale se bater com o segredo de algum app cadastrado
+    const segredos = [...new Set(escoposMeta().map((id) => cfg('META_APP_SECRET', id)).filter(Boolean))];
+    if (!segredos.length) { console.warn('Webhook da Meta ignorado: falta META_APP_SECRET'); return res.sendStatus(200); }
     const assinatura = String(req.headers['x-hub-signature-256'] || '');
-    const calc = 'sha256=' + crypto.createHmac('sha256', segredo).update(req.rawBody || Buffer.alloc(0)).digest('hex');
-    if (assinatura.length !== calc.length || !crypto.timingSafeEqual(Buffer.from(assinatura), Buffer.from(calc))) return res.sendStatus(401);
+    const confere = segredos.some((seg) => {
+      const calc = 'sha256=' + crypto.createHmac('sha256', seg).update(req.rawBody || Buffer.alloc(0)).digest('hex');
+      return assinatura.length === calc.length && crypto.timingSafeEqual(Buffer.from(assinatura), Buffer.from(calc));
+    });
+    if (!confere) return res.sendStatus(401);
     const canal = req.body.object === 'instagram' ? 'instagram' : 'facebook';
     for (const entry of req.body.entry || []) {
+      // A página (ou conta do Instagram) diz de qual cliente é a mensagem
+      const { rows: [pg] } = await pool.query(
+        'SELECT m.client_id, c.project_id FROM meta_paginas m JOIN clients c ON c.id=m.client_id WHERE m.page_id=$1', [String(entry.id || '')]);
+      if (!pg) { console.warn('Mensagem de página sem cliente vinculado:', entry.id); continue; }
       for (const ev of entry.messaging || []) {
         if (!ev.message || ev.message.is_echo || !ev.message.text || !ev.sender?.id) continue;
         await pool.query(
-          `INSERT INTO mensagens (canal, page_id, remetente_id, texto) VALUES ($1,$2,$3,$4)`,
-          [canal, String(entry.id || ''), String(ev.sender.id), String(ev.message.text).slice(0, 3000)]);
+          `INSERT INTO mensagens (canal, page_id, remetente_id, texto, client_id, project_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [canal, String(entry.id || ''), String(ev.sender.id), String(ev.message.text).slice(0, 3000), pg.client_id, pg.project_id]);
       }
     }
     res.sendStatus(200);

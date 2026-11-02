@@ -314,6 +314,17 @@ CREATE TABLE IF NOT EXISTS publicacoes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Integrações, mensagens e chaves por cliente (client_id 0 = padrão do sistema)
+ALTER TABLE conexoes ADD COLUMN IF NOT EXISTS client_id INT NOT NULL DEFAULT 0;
+ALTER TABLE conexoes DROP CONSTRAINT IF EXISTS conexoes_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS conexoes_prov_cli ON conexoes (provedor, client_id);
+ALTER TABLE configuracoes ADD COLUMN IF NOT EXISTS client_id INT NOT NULL DEFAULT 0;
+ALTER TABLE configuracoes DROP CONSTRAINT IF EXISTS configuracoes_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS configuracoes_chave_cli ON configuracoes (chave, client_id);
+ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS client_id INT;
+ALTER TABLE publicacoes ADD COLUMN IF NOT EXISTS client_id INT;
+CREATE TABLE IF NOT EXISTS meta_paginas (page_id TEXT PRIMARY KEY, client_id INT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS perfil_profissional (
   id INT PRIMARY KEY DEFAULT 1,
   dados JSONB NOT NULL DEFAULT '{}',

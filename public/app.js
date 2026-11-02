@@ -92,6 +92,7 @@ function mostrarEu() {
   $('#meNome').textContent = S.me.nome || S.me.email.split('@')[0];
   $('#meEmail').textContent = S.me.email;
   $('#navUsuarios').classList.toggle('hidden', S.me.papel !== 'admin');
+  $('#navApis').classList.toggle('hidden', S.me.papel !== 'admin');
   $('#secAdmin').classList.toggle('hidden', S.me.papel !== 'admin');
   if (S.view === 'usuarios' && S.me.papel !== 'admin') S.view = 'painel';
 }
@@ -1241,7 +1242,8 @@ async function viewArea(v, parte) {
       <button class="btn small" data-ir="clientes">Contrato e metas</button></div></div>`}
 
     ${parte === 'recursos' ? '' : `
-    <div class="secao-titulo"><h3>Acessos das redes</h3>${admin ? '<button class="btn small" id="novoAcesso">+ Adicionar acesso</button>' : ''}</div>
+    <div id="integBloco"></div>
+    <div class="secao-titulo"><h3>Logins das redes e ferramentas</h3>${admin ? '<button class="btn small" id="novoAcesso">+ Adicionar acesso</button>' : ''}</div>
     ${ocultos ? `<p class="muted" style="margin-top:-4px">${ocultos} acesso(s) visíveis só para administradores.</p>` : ''}
     <div class="cofre">${acessos.map((a) => `<div class="card acesso" data-a="${a.id}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
@@ -1282,6 +1284,7 @@ async function viewArea(v, parte) {
     $('[data-editar-acesso]', card)?.addEventListener('click', () => abrirAcesso(cl, acessos.find((a) => a.id === id)));
   });
   $('#novoAcesso')?.addEventListener('click', () => abrirAcesso(cl, null));
+  if (parte === 'acessos' && window.blocoIntegracoes) window.blocoIntegracoes($('#integBloco', v), cl);
 }
 
 function abrirLink(cl, l) {

@@ -35,12 +35,12 @@ function seletorKit(id, atual, nomeAtual) {
 const lerKit = (id) => { const sel = $('#' + id); const o = sel.options[sel.selectedIndex]; return { id: sel.value || '', nome: sel.value ? o.textContent : '' }; };
 
 // ---------------- Navegação: projeto > cliente > abas ----------------
-const ABAS = [['solicitar', 'Solicitar'], ['quadro', 'Pautas'], ['recursos', 'Recursos'], ['acessos', 'Acessos'], ['relatorios', 'Relatórios']];
+const ABAS = [['solicitar', 'Solicitar'], ['quadro', 'Pautas'], ['mensagens', 'Mensagens'], ['recursos', 'Recursos'], ['acessos', 'Acessos e APIs'], ['relatorios', 'Relatórios']];
 const GRUPO_ABA = {
   solicitar: 'solicitar', visao: 'solicitar', solicitacoes: 'solicitar', criar: 'solicitar',
   quadro: 'quadro', calendario: 'quadro', lista: 'quadro', captacao: 'quadro', painel: 'quadro',
   recursos: 'recursos', programacao: 'recursos', materiais: 'recursos', area: 'recursos',
-  acessos: 'acessos', relatorios: 'relatorios',
+  acessos: 'acessos', relatorios: 'relatorios', mensagens: 'mensagens',
 };
 const VIEWS_DO_PROJETO = [...Object.keys(GRUPO_ABA), 'clientes'];
 const clienteAtual = () => (S.cliente ? S.clients.find((c) => String(c.id) === String(S.cliente)) : null);
@@ -182,7 +182,6 @@ async function viewInicio(v) {
     ['hugo', 'Conteúdo', 'Legendas, carrosséis, roteiros e artigos'],
     ['luiz', 'Artes', 'Direção de arte e prompts de imagem'],
     ['davi', 'Edição de vídeo', 'Roteiro, decupagem e passo a passo'],
-    ['felipe', 'Responder mensagens', 'Instagram e Facebook (Meta)'],
     ['camila', 'Campanhas de anúncios', 'Meta, Google e LinkedIn Ads'],
     ['bianca', 'Empregos', 'Workana, LinkedIn: vagas, propostas, cadastros'],
   ].map(([id, titulo, sub]) => {
@@ -341,7 +340,7 @@ function mostrarCriacao(c, el) {
     catch (e) { toast(e.message); }
   };
   $('#crTarefa').onclick = () => virarTarefa(c);
-  const pub = $('#crPublicar'); if (pub) pub.onclick = () => abrirPublicar($('#crTexto').value);
+  const pub = $('#crPublicar'); if (pub) pub.onclick = () => abrirPublicar($('#crTexto').value, { clientId: c.client_id });
   $('#crExcluir').onclick = async () => {
     if (!confirm('Excluir esta criação?')) return;
     try { await api('/api/criacoes/' + c.id, { method: 'DELETE' }); el.innerHTML = ''; toast('Excluída'); if (S.view === 'criar') render(); } catch (e) { toast(e.message); }
@@ -471,7 +470,7 @@ async function aprovarTarefa(t, depois) {
   try { await api(`/api/tasks/${t.id}/aprovar`, { method: 'POST' }); } catch (e) { return toast(e.message); }
   toast('Aprovada. Segue para publicação.');
   depois && depois();
-  if (['post', 'story'].includes(t.tipo)) abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, depois });
+  if (['post', 'story'].includes(t.tipo)) abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois });
 }
 
 // Fila de aprovação do projeto ou do cliente
@@ -500,7 +499,7 @@ function filaAprovacao(el, filtro) {
     $$('[data-ap]', el).forEach((b) => b.addEventListener('click', () => aprovarTarefa(achar(b.dataset.ap), desenhar)));
     $$('[data-rev]', el).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev))));
     $$('[data-aj]', el).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));
-    $$('[data-pub]', el).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, depois: desenhar }); }));
+    $$('[data-pub]', el).forEach((b) => b.addEventListener('click', () => { const t = achar(b.dataset.pub); abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois: desenhar }); }));
     $$('[data-conc]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.conc}/concluir`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     $$('[data-ex]', el).forEach((b) => b.addEventListener('click', async () => { try { await api(`/api/tasks/${b.dataset.ex}/executar`, { method: 'POST' }); desenhar(); } catch (e) { toast(e.message); } }));
     clearTimeout(timer);
@@ -799,15 +798,20 @@ function abrirImportar() {
   };
 }
 
-// ---------------- Mensagens (Felipe) ----------------
+// ---------------- Mensagens (Felipe) · por projeto e cliente ----------------
 async function viewMensagens(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
-  const [msgs, integ] = await Promise.all([api('/api/mensagens'), api('/api/integracoes')]);
+  const p = S.projeto ? projetoPorId(S.projeto) : null;
+  if (!p) { S.view = 'inicio'; return render(); }
+  const c = clienteAtual();
+  const msgs = await api('/api/mensagens?' + (c ? 'client_id=' + c.id : 'project_id=' + p.id));
   const f = agente('felipe');
+  const nomeCli = (id) => (S.clients.find((x) => x.id === id) || {}).nome || '';
   const card = (m) => `
     <div class="card msg ${m.status}" data-m="${m.id}">
       <div class="msg-top"><span class="pill">${esc({ instagram: 'Instagram', facebook: 'Facebook', manual: 'Colada' }[m.canal] || m.canal)}</span>
         <b>${esc(m.remetente_nome || (m.remetente_id ? 'Contato ' + m.remetente_id.slice(-4) : 'Contato'))}</b>
+        ${c ? '' : `<span class="pill">${esc(nomeCli(m.client_id))}</span>`}
         <small>${esc(new Date(m.created_at).toLocaleString('pt-BR'))}</small>
         <span class="pill ${m.status === 'respondida' ? 'ok' : ''}">${{ nova: 'Nova', respondida: 'Respondida', ignorada: 'Ignorada' }[m.status]}</span></div>
       <p class="msg-txt">${esc(m.texto)}</p>
@@ -816,7 +820,6 @@ async function viewMensagens(v) {
       <textarea rows="4" data-resp="${m.id}" ${m.status === 'respondida' ? 'readonly' : ''}>${esc(m.resposta || '')}</textarea>
       <div class="acoes-res">
         ${m.status === 'respondida' ? '' : `
-        <select data-proj="${m.id}" aria-label="Projeto da resposta">${opcoesProjetos(m.project_id || S.projeto || (S.projetos[0] || {}).id)}</select>
         <button class="btn small" data-sug="${m.id}">${f.icone} ${m.resposta ? 'Sugerir outra' : 'Sugerir resposta'}</button>
         <button class="btn small primary" data-env="${m.id}">${m.canal === 'manual' ? 'Marcar como respondida' : 'Enviar pela Meta'}</button>`}
         <button class="btn small" data-cp="${m.id}">Copiar</button>
@@ -825,21 +828,32 @@ async function viewMensagens(v) {
       </div>`}
     </div>`;
   v.innerHTML = `
-    <div class="view-head"><div><h2>Mensagens · ${esc(f.nome)}</h2>
+    <div class="view-head"><div><h2>Mensagens · ${esc(c ? c.nome : p.nome)}</h2>
       <p>${esc(f.descricao)}</p></div>
       <button class="btn" id="msgNova">+ Colar mensagem</button></div>
-    ${integ.meta.recebe ? '' : '<div class="alerta">As mensagens do Instagram/Facebook ainda não chegam sozinhas. Veja como conectar em <a href="#" data-go-int>Integrações</a>. Enquanto isso, cole a mensagem aqui e o Felipe sugere a resposta.</div>'}
+    <div class="alerta" id="msgAviso" hidden></div>
     <div id="msgLista" class="msg-lista">${msgs.length ? msgs.map(card).join('') : '<div class="empty">Nenhuma mensagem ainda.</div>'}</div>`;
-  $$('[data-go-int]', v).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.view = 'integracoes'; render(); }));
+  // Aviso de conexão do cliente (só quando há um cliente escolhido)
+  if (c) {
+    api('/api/conexoes?client_id=' + c.id).then((i) => {
+      if (i.meta.conectado) return;
+      const av = $('#msgAviso', v); av.hidden = false;
+      av.innerHTML = `As mensagens do Instagram e do Facebook de <b>${esc(c.nome)}</b> ainda não chegam sozinhas. Conecte em <a href="#" data-go-acessos>Acessos e APIs</a>. Enquanto isso, cole a mensagem aqui e o Felipe sugere a resposta.`;
+      $$('[data-go-acessos]', av).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); S.view = 'acessos'; render(); }));
+    }).catch(() => {});
+  } else {
+    const av = $('#msgAviso', v); av.hidden = false; av.textContent = 'Escolha um cliente na barra acima para ver só as mensagens dele e conectar as contas dele.';
+  }
   $('#msgNova').addEventListener('click', () => {
     const d = $('#modal');
     d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>Colar mensagem recebida</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
-      <div class="modal-body"><div><label>Nome do contato (opcional)</label><input id="mnNome"></div>
+      <div class="modal-body"><div><label>Cliente</label><select id="mnCli">${S.clients.map((x) => `<option value="${x.id}" ${c && c.id === x.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></div>
+      <div><label>Nome do contato (opcional)</label><input id="mnNome"></div>
       <div><label>Mensagem</label><textarea id="mnTxt" rows="5"></textarea></div><p class="erro" id="mnErro" style="margin:0"></p></div>
       <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="mnOk">Adicionar</button></div></div></form>`;
     d.showModal();
     $('#mnOk').onclick = async () => {
-      try { await api('/api/mensagens', { method: 'POST', body: { remetente_nome: $('#mnNome').value, texto: $('#mnTxt').value, project_id: Number(S.projeto) || null } }); d.close(); render(); }
+      try { await api('/api/mensagens', { method: 'POST', body: { remetente_nome: $('#mnNome').value, texto: $('#mnTxt').value, client_id: Number($('#mnCli').value) } }); d.close(); render(); }
       catch (e) { $('#mnErro').textContent = e.message; }
     };
   });
@@ -848,7 +862,7 @@ async function viewMensagens(v) {
   $$('[data-sug]', v).forEach((b) => b.addEventListener('click', () => lida(async () => {
     b.disabled = true; b.textContent = 'Felipe está escrevendo…';
     try {
-      const m = await api(`/api/mensagens/${b.dataset.sug}/sugerir`, { method: 'POST', body: { project_id: Number($(`[data-proj="${b.dataset.sug}"]`, v).value) || null } });
+      const m = await api(`/api/mensagens/${b.dataset.sug}/sugerir`, { method: 'POST', body: {} });
       $(`[data-resp="${m.id}"]`, v).value = m.resposta;
       b.textContent = 'Sugerir outra';
     } finally { b.disabled = false; if (/escrevendo/.test(b.textContent)) b.textContent = 'Sugerir resposta'; }
@@ -1002,15 +1016,77 @@ async function empPerfil(el) {
   };
 }
 
-// ---------------- Integrações ----------------
+// ---------------- Chaves das APIs: formulário reutilizável (padrão do sistema ou de um cliente) ----------------
+const GRUPOS_API = { ia: 'Agentes (Claude)', meta: 'Facebook e Instagram (Meta)', linkedin: 'LinkedIn' };
+const ORIGEM_API = { cliente: 'Deste cliente', painel: 'No painel', padrao: 'Padrão do sistema', ambiente: 'No Render' };
+
+function formChaves(chaves, clienteId) {
+  return Object.entries(GRUPOS_API).map(([g, nome]) => {
+    const lista = chaves.filter((k) => k.grupo === g);
+    if (!lista.length) return '';
+    return `<h4 class="chv-g">${nome}</h4>` + lista.map((k) => `
+      <div class="chv"><label>${esc(k.rotulo)}</label>
+        <div class="chv-l"><input type="${k.secreto ? 'password' : 'text'}" data-chv="${k.chave}" placeholder="${k.definido ? esc(k.previa) : 'Cole aqui'}" autocomplete="off">
+          <button class="btn small primary" data-chv-ok="${k.chave}">Salvar</button>
+          ${['cliente', 'painel'].includes(k.origem) ? `<button class="btn small ghost danger" data-chv-rm="${k.chave}">Remover</button>` : ''}
+          <span class="pill ${k.definido ? 'ok' : ''}">${k.definido ? ORIGEM_API[k.origem] : 'Vazio'}</span></div></div>`).join('');
+  }).join('');
+}
+
+function ligarChaves(el, clienteId, recarregar) {
+  const q = clienteId ? '?client_id=' + clienteId : '';
+  $$('[data-chv-ok]', el).forEach((b) => b.addEventListener('click', async () => {
+    const campo = $(`[data-chv="${b.dataset.chvOk}"]`, el);
+    const erro = $('.chv-erro', el);
+    if (!campo.value.trim()) return (erro.textContent = 'Cole o valor antes de salvar');
+    try { await api('/api/configuracoes/' + b.dataset.chvOk + q, { method: 'PUT', body: { valor: campo.value } }); toast('Chave salva'); recarregar(); }
+    catch (e) { erro.textContent = e.message; }
+  }));
+  $$('[data-chv-rm]', el).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Remover esta chave?')) return;
+    try { await api('/api/configuracoes/' + b.dataset.chvRm + q, { method: 'DELETE' }); recarregar(); } catch (e) { toast(e.message); }
+  }));
+}
+
+// ---------------- APIs padrão (administração): valem para todos os clientes sem chaves próprias ----------------
 async function viewIntegracoes(v) {
+  if (S.me.papel !== 'admin') { S.view = 'inicio'; return render(); }
+  const [ia, chaves, imp] = await Promise.all([api('/api/agentes').then((l) => l[0].ativo), api('/api/configuracoes'), api('/api/importar/token')]);
+  v.innerHTML = `
+    <div class="view-head"><div><h2>APIs padrão</h2><p>Valem para todos os clientes que não tiverem chaves próprias. Cada cliente conecta as suas contas na aba <b>Acessos e APIs</b> do projeto.</p></div></div>
+    <div class="card" style="margin-bottom:16px"><h3>Chaves padrão ${ia ? '<span class="pill ok">Agentes ativos</span>' : '<span class="pill">Agentes desligados</span>'}</h3>
+      <p class="muted">Ficam criptografadas e valem mais que as variáveis do Render. A chave do Claude é única do sistema; Meta e LinkedIn podem ser trocadas por cliente.</p>
+      <div id="chavesPadrao">${formChaves(chaves, 0)}</div><p class="erro chv-erro"></p></div>
+    <div class="grid cols-2">
+      <div class="card"><h3>Webhook da Meta (mensagens)</h3>
+        <p class="muted">Um único endereço serve para todos os clientes: a mensagem é encaminhada ao cliente dono da página.</p>
+        <p><code class="url">${esc(location.origin)}/webhook/meta</code> <button class="btn small" id="cpWh">Copiar</button></p>
+        <p class="muted">Endereços de retorno do login (cadastre nos apps da Meta e do LinkedIn): <code class="url">${esc(location.origin)}/oauth/meta/retorno</code> e <code class="url">${esc(location.origin)}/oauth/linkedin/retorno</code>.</p></div>
+      <div class="card"><h3>Importação automática de pautas</h3>
+        <p class="muted">Para enviar pautas de fora do sistema, gere um token e envie um POST para <code>/importar/pautas</code> com <code>Authorization: Bearer SEU_TOKEN</code>.</p>
+        <div class="acoes-res"><button class="btn small" id="impTok">${imp.existe ? 'Gerar novo token' : 'Gerar token'}</button>${imp.existe ? '<span class="pill ok">Token ativo</span>' : ''}</div>
+        <div id="impTokRes"></div></div>
+    </div>`;
+  ligarChaves($('#chavesPadrao', v).parentElement, 0, () => viewIntegracoes(v));
+  $('#cpWh', v).onclick = () => copiar(location.origin + '/webhook/meta');
+  $('#impTok', v).onclick = async () => {
+    if (imp.existe && !confirm('O token anterior deixará de funcionar. Continuar?')) return;
+    try { const r = await api('/api/importar/token', { method: 'POST', body: {} });
+      $('#impTokRes', v).innerHTML = `<p style="margin-top:10px">Copie agora; ele não aparece de novo:</p><p><code class="url">${esc(r.token)}</code> <button class="btn small" id="impTokCp">Copiar</button></p>`;
+      $('#impTokCp', v).onclick = () => copiar(r.token); } catch (e) { toast(e.message); }
+  };
+}
+
+// ---------------- Acessos e APIs de um cliente: contas conectadas, chaves próprias e webhook ----------------
+async function blocoIntegracoes(el, cl) {
+  if (!el) return;
   const adm = S.me.papel === 'admin';
-  const [ia, c, pubs, chaves, imp] = await Promise.all([
-    api('/api/agentes').then((l) => l[0].ativo), api('/api/conexoes'), api('/api/publicacoes'),
-    adm ? api('/api/configuracoes') : [], adm ? api('/api/importar/token') : { existe: false }]);
+  const [c, pubs, chaves] = await Promise.all([
+    api('/api/conexoes?client_id=' + cl.id), api('/api/publicacoes?client_id=' + cl.id), adm ? api('/api/configuracoes?client_id=' + cl.id) : []]);
   const st = (ok, sim, nao) => `<span class="pill ${ok ? 'ok' : ''}">${ok ? sim : nao}</span>`;
   const m = c.meta, li = c.linkedin;
-  const passo = (t) => `<li>${t}</li>`;
+  const conectar = (prov) => `/oauth/${prov}/iniciar?client_id=${cl.id}`;
+  const exp = li.expira_em ? new Date(li.expira_em).toLocaleDateString('pt-BR') : '';
 
   const cartaoMeta = `<div class="card"><h3>Facebook e Instagram ${st(m.conectado, 'Conectado', m.app_configurado ? 'Não conectado' : 'Falta o app da Meta')}</h3>
     ${m.conectado ? `
@@ -1018,100 +1094,51 @@ async function viewIntegracoes(v) {
       <label>Página usada para publicar e responder</label>
       <select id="mtPagina" ${adm ? '' : 'disabled'}>${m.paginas.map((p) => `<option value="${esc(p.id)}" ${p.id === m.pagina_id ? 'selected' : ''}>${esc(p.nome)}${p.ig_usuario ? ' · @' + esc(p.ig_usuario) : ' · sem Instagram vinculado'}</option>`).join('')}</select>
       <p class="muted">Facebook: <b>${esc(m.facebook || '-')}</b> · Instagram: <b>${m.instagram ? '@' + esc(m.instagram) : 'não vinculado'}</b></p>
-      ${adm ? '<div class="acoes-res"><a class="btn small" href="/oauth/meta/iniciar">Reconectar</a><button class="btn small danger" id="mtDesc">Desconectar</button></div>' : ''}
-    ` : m.app_configurado ? `<p class="muted">Clique para entrar com o Facebook e liberar a sua página e o Instagram profissional vinculado a ela.</p>
-      ${adm ? '<a class="btn primary" href="/oauth/meta/iniciar">Conectar Facebook e Instagram</a>' : '<p class="muted">Peça a um administrador para conectar.</p>'}` : `
-      <p class="muted">Antes de conectar, é preciso criar um app na Meta (uma vez só):</p>
-      <ol class="passos">
-        ${passo('Acesse <b>developers.facebook.com</b> > Meus apps > Criar app > tipo <b>Empresa</b>.')}
-        ${passo('Adicione os produtos <b>Login do Facebook para Empresas</b> e <b>Messenger</b> (e Instagram).')}
-        ${passo(`Em URIs de redirecionamento OAuth válidos, cadastre: <code class="url">${esc(m.redirect)}</code>`)}
-        ${passo('Copie o <b>ID do app</b> e a <b>Chave secreta do app</b> e coloque no Render como <code>META_APP_ID</code> e <code>META_APP_SECRET</code>.')}
-        ${passo('Com o app em modo de desenvolvimento, funciona para você e para quem for administrador ou testador do app. Para outras pessoas, a Meta exige a análise do app.')}
-      </ol>`}
+      ${adm ? `<div class="acoes-res"><a class="btn small" href="${conectar('meta')}">Reconectar</a><button class="btn small danger" id="mtDesc">Desconectar</button></div>` : ''}
+    ` : m.app_configurado ? `<p class="muted">Entre com o Facebook de <b>${esc(cl.nome)}</b> e libere a página e o Instagram profissional vinculado a ela.</p>
+      ${adm ? `<a class="btn primary" href="${conectar('meta')}">Conectar Facebook e Instagram</a>` : '<p class="muted">Peça a um administrador para conectar.</p>'}` : `
+      <p class="muted">Falta o app da Meta. Cole o ID e a chave secreta nas chaves deste cliente (abaixo), ou nas <b>APIs padrão</b> se o app for compartilhado. No app da Meta, cadastre o retorno do login: <code class="url">${esc(m.redirect)}</code></p>`}
   </div>`;
 
-  const cartaoWebhook = `<div class="card"><h3>Receber mensagens ${st(m.conectado && !!m.verify_token, 'Pronto para configurar', 'Conecte primeiro')}</h3>
-    <p class="muted">No app da Meta, em Webhooks (Page e Instagram), use a URL e o token abaixo e assine <b>messages</b>.</p>
-    <label>URL de callback</label><p><code class="url">${esc(m.webhook)}</code> <button class="btn small" id="cpWh">Copiar</button></p>
-    ${m.verify_token ? `<label>Token de verificação</label><p><code class="url">${esc(m.verify_token)}</code> <button class="btn small" id="cpTk">Copiar</button></p>` : ''}
-    <p class="muted">As mensagens aparecem em <b>Mensagens (Meta)</b>; o Felipe sugere a resposta e você aprova.</p></div>`;
-
-  const exp = li.expira_em ? new Date(li.expira_em).toLocaleDateString('pt-BR') : '';
   const cartaoLi = `<div class="card"><h3>LinkedIn ${st(li.conectado && !li.expirado, 'Conectado', li.expirado ? 'Expirou' : li.app_configurado ? 'Não conectado' : 'Falta o app do LinkedIn')}</h3>
     ${li.conectado ? `<p>Perfil: <b>${esc(li.nome || '')}</b></p><p class="muted">A conexão vale até ${esc(exp)}; depois é só reconectar.</p>
-      ${adm ? '<div class="acoes-res"><a class="btn small" href="/oauth/linkedin/iniciar">Reconectar</a><button class="btn small danger" id="liDesc">Desconectar</button></div>' : ''}`
-      : li.app_configurado ? `<p class="muted">Conecte o seu perfil para publicar posts daqui.</p>${adm ? '<a class="btn primary" href="/oauth/linkedin/iniciar">Conectar LinkedIn</a>' : ''}` : `
-      <p class="muted">Antes de conectar, crie um app (uma vez só):</p>
-      <ol class="passos">
-        ${passo('Acesse <b>linkedin.com/developers</b> > Create app (é preciso vincular uma Página da empresa).')}
-        ${passo('Na aba Products, solicite <b>Share on LinkedIn</b> e <b>Sign In with LinkedIn using OpenID Connect</b>.')}
-        ${passo(`Na aba Auth, em Authorized redirect URLs, cadastre: <code class="url">${esc(li.redirect)}</code>`)}
-        ${passo('Copie o <b>Client ID</b> e o <b>Client Secret</b> e coloque no Render como <code>LINKEDIN_CLIENT_ID</code> e <code>LINKEDIN_CLIENT_SECRET</code>.')}
-      </ol>`}
+      ${adm ? `<div class="acoes-res"><a class="btn small" href="${conectar('linkedin')}">Reconectar</a><button class="btn small danger" id="liDesc">Desconectar</button></div>` : ''}`
+      : li.app_configurado ? `<p class="muted">Conecte o perfil de <b>${esc(cl.nome)}</b> para publicar posts daqui.</p>${adm ? `<a class="btn primary" href="${conectar('linkedin')}">Conectar LinkedIn</a>` : ''}` : `
+      <p class="muted">Falta o app do LinkedIn. Cole o Client ID e o Secret nas chaves deste cliente (abaixo) ou nas <b>APIs padrão</b>. Retorno do login: <code class="url">${esc(li.redirect)}</code></p>`}
   </div>`;
 
-  const GRUPOS = { ia: 'Agentes (Claude)', meta: 'Facebook e Instagram (Meta)', linkedin: 'LinkedIn' };
-  const painelChaves = adm ? `
-    <div class="card" style="margin-bottom:16px"><h3>Chaves das APIs</h3>
-      <p class="muted">Cole aqui as chaves dos apps. Ficam criptografadas e valem mais que as variáveis do Render. Depois de salvar, use os botões de conectar logo abaixo.</p>
-      ${Object.entries(GRUPOS).map(([g, nome]) => `<h4 class="chv-g">${nome}</h4>` + chaves.filter((k) => k.grupo === g).map((k) => `
-        <div class="chv"><label>${esc(k.rotulo)}</label>
-          <div class="chv-l"><input type="${k.secreto ? 'password' : 'text'}" data-chv="${k.chave}" placeholder="${k.definido ? esc(k.previa) : 'Cole aqui'}" autocomplete="off">
-            <button class="btn small primary" data-chv-ok="${k.chave}">Salvar</button>
-            ${k.origem === 'painel' ? `<button class="btn small ghost danger" data-chv-rm="${k.chave}">Remover</button>` : ''}
-            <span class="pill ${k.definido ? 'ok' : ''}">${k.definido ? (k.origem === 'painel' ? 'No painel' : 'No Render') : 'Vazio'}</span></div></div>`).join('')).join('')}
-      <p class="erro" id="chvErro"></p>
-    </div>` : '';
-  const painelImport = adm ? `<div class="card"><h3>Importação automática de pautas</h3>
-      <p class="muted">Para enviar pautas de fora do sistema (por exemplo, de uma automação), gere um token e envie um POST para <code>/importar/pautas</code> com o cabeçalho <code>Authorization: Bearer SEU_TOKEN</code>. O formato é o mesmo do botão "Importar pautas" em Criar.</p>
-      <div class="acoes-res"><button class="btn small" id="impTok">${imp.existe ? 'Gerar novo token' : 'Gerar token'}</button>${imp.existe ? '<span class="pill ok">Token ativo</span>' : ''}</div>
-      <div id="impTokRes"></div></div>` : '';
+  const cartaoHook = `<div class="card"><h3>Receber mensagens ${st(m.conectado, 'Pronto', 'Conecte primeiro')}</h3>
+    <p class="muted">No app da Meta, em Webhooks (Page e Instagram), use a URL e o token abaixo e assine <b>messages</b>. As mensagens aparecem na aba <b>Mensagens</b> deste cliente.</p>
+    <label>URL de callback</label><p><code class="url">${esc(m.webhook)}</code> <button class="btn small" id="cpWh">Copiar</button></p>
+    ${m.verify_token ? `<label>Token de verificação</label><p><code class="url">${esc(m.verify_token)}</code> <button class="btn small" id="cpTk">Copiar</button></p>` : ''}</div>`;
 
-  v.innerHTML = `
-    <div class="view-head"><div><h2>Integrações</h2><p>Conecte suas contas. Nada é publicado ou enviado sem o seu clique de confirmação.</p></div></div>
-    ${painelChaves}
-    <div class="grid cols-2">
-      ${cartaoMeta}${cartaoLi}${cartaoWebhook}
-      <div class="card"><h3>Agentes (IA) ${st(ia, 'Ativos', 'Desligados')}</h3>
-        <p class="muted">Hugo, Luiz, Davi, Camila, Felipe e Bianca usam a API do Claude. Variável no Render: <code>ANTHROPIC_API_KEY</code>.</p></div>
-      ${painelImport}
-      <div class="card"><h3>Workana</h3><p class="muted">A Workana não oferece integração aberta para candidaturas. A Bianca prepara a proposta e as respostas de cadastro; você cola e envia.</p></div>
-      <div class="card"><h3>Anúncios (Meta, Google, LinkedIn)</h3><p class="muted">A Camila monta o plano completo. Para subir os anúncios de fato, use o seu Assistente de Marketing (gestoragente).</p></div>
-    </div>
-    <h3 class="secao-h">Últimas publicações</h3>
-    <div class="card">${pubs.length ? pubs.map((x) => `<div class="linha-cr" style="cursor:default"><span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${esc({ facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn' }[x.plataforma])}</span>
-      <span class="lc-t"><b>${esc((x.texto || '').split('\n')[0].slice(0, 90))}</b><small>${esc(new Date(x.created_at).toLocaleString('pt-BR'))}${x.erro ? ' · ' + esc(x.erro) : ''}</small></span>
-      <span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${x.status === 'publicado' ? 'Publicado' : 'Erro'}</span></div>`).join('') : '<div class="empty">Nada publicado por aqui ainda.</div>'}</div>`;
+  const cartaoChaves = adm ? `<div class="card"><h3>Chaves de API deste cliente</h3>
+    <p class="muted">Opcional. Se ficar vazio, <b>${esc(cl.nome)}</b> usa as chaves padrão do sistema. Preencha quando o cliente tiver o próprio app da Meta ou do LinkedIn.</p>
+    <div id="chavesCli">${formChaves(chaves, cl.id)}</div><p class="erro chv-erro"></p></div>` : '';
 
-  $$('[data-chv-ok]', v).forEach((b) => b.addEventListener('click', async () => {
-    const campo = $(`[data-chv="${b.dataset.chvOk}"]`, v);
-    if (!campo.value.trim()) return ($('#chvErro', v).textContent = 'Cole o valor antes de salvar');
-    try { await api('/api/configuracoes/' + b.dataset.chvOk, { method: 'PUT', body: { valor: campo.value } }); toast('Chave salva'); viewIntegracoes(v); }
-    catch (e) { $('#chvErro', v).textContent = e.message; }
-  }));
-  $$('[data-chv-rm]', v).forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Remover esta chave do painel?')) return;
-    try { await api('/api/configuracoes/' + b.dataset.chvRm, { method: 'DELETE' }); viewIntegracoes(v); } catch (e) { toast(e.message); }
-  }));
-  const it = $('#impTok', v);
-  if (it) it.onclick = async () => {
-    if (imp.existe && !confirm('O token anterior deixará de funcionar. Continuar?')) return;
-    try { const r = await api('/api/importar/token', { method: 'POST', body: {} });
-      $('#impTokRes', v).innerHTML = `<p style="margin-top:10px">Copie agora; ele não aparece de novo:</p><p><code class="url">${esc(r.token)}</code> <button class="btn small" id="impTokCp">Copiar</button></p>`;
-      $('#impTokCp', v).onclick = () => copiar(r.token); } catch (e) { toast(e.message); }
-  };
-  const cp = (id, t) => { const b = $(id, v); if (b) b.onclick = () => copiar(t); };
+  el.innerHTML = `<div class="secao-titulo"><h3>Contas e APIs · ${esc(cl.nome)}</h3></div>
+    <div class="grid cols-2" style="margin-bottom:18px">${cartaoMeta}${cartaoLi}${cartaoHook}${cartaoChaves}</div>
+    <div class="card" style="margin-bottom:18px"><h3 style="margin-bottom:8px">Últimas publicações de ${esc(cl.nome)}</h3>
+      ${pubs.length ? pubs.slice(0, 8).map((x) => `<div class="linha-cr" style="cursor:default"><span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${esc({ facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn' }[x.plataforma])}</span>
+        <span class="lc-t"><b>${esc((x.texto || '').split('\n')[0].slice(0, 90))}</b><small>${esc(new Date(x.created_at).toLocaleString('pt-BR'))}${x.erro ? ' · ' + esc(x.erro) : ''}</small></span>
+        <span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${x.status === 'publicado' ? 'Publicado' : 'Erro'}</span></div>`).join('') : '<div class="empty" style="padding:12px">Nada publicado por aqui ainda.</div>'}</div>`;
+
+  const recarregar = () => blocoIntegracoes(el, cl);
+  if (adm) ligarChaves($('#chavesCli', el).parentElement, cl.id, recarregar);
+  const cp = (id, t) => { const b = $(id, el); if (b) b.onclick = () => copiar(t); };
   cp('#cpWh', m.webhook); cp('#cpTk', m.verify_token);
-  const sel = $('#mtPagina', v);
-  if (sel) sel.onchange = async () => { try { await api('/api/conexoes/meta/pagina', { method: 'PUT', body: { pagina_id: sel.value } }); toast('Página atualizada'); viewIntegracoes(v); } catch (e) { toast(e.message); } };
-  const desc = (id, prov, nome) => { const b = $(id, v); if (b) b.onclick = async () => { if (!confirm(`Desconectar ${nome}?`)) return; await api('/api/conexoes/' + prov, { method: 'DELETE' }); viewIntegracoes(v); }; };
+  const sel = $('#mtPagina', el);
+  if (sel) sel.onchange = async () => { try { await api('/api/conexoes/meta/pagina', { method: 'PUT', body: { client_id: cl.id, pagina_id: sel.value } }); toast('Página atualizada'); recarregar(); } catch (e) { toast(e.message); } };
+  const desc = (id, prov, nome) => { const b = $(id, el); if (b) b.onclick = async () => { if (!confirm(`Desconectar ${nome} de ${cl.nome}?`)) return; await api(`/api/conexoes/${prov}?client_id=${cl.id}`, { method: 'DELETE' }); recarregar(); }; };
   desc('#mtDesc', 'meta', 'o Facebook e o Instagram'); desc('#liDesc', 'linkedin', 'o LinkedIn');
 }
+window.blocoIntegracoes = blocoIntegracoes;
 
 // ---------------- Publicar (com confirmação) ----------------
 async function abrirPublicar(texto, opts = {}) {
-  const c = await api('/api/conexoes');
+  const clienteId = opts.clientId || (S.cliente ? Number(S.cliente) : 0);
+  if (!clienteId) return toast('Escolha o cliente antes de publicar');
+  const c = await api('/api/conexoes?client_id=' + clienteId);
   const opcoes = [
     ['facebook', 'Facebook' + (c.meta.facebook ? ' · ' + c.meta.facebook : ''), c.meta.conectado, 'Conecte em Integrações'],
     ['instagram', 'Instagram' + (c.meta.instagram ? ' · @' + c.meta.instagram : ''), c.meta.conectado && !!c.meta.instagram, c.meta.conectado ? 'Sem Instagram vinculado à página' : 'Conecte em Integrações'],
@@ -1135,7 +1162,7 @@ async function abrirPublicar(texto, opts = {}) {
     if (!confirm('Publicar agora em: ' + plataformas.join(', ') + '?')) return;
     const b = $('#pbOk', d); b.disabled = true; b.textContent = 'Publicando…'; $('#pbErro', d).textContent = '';
     try {
-      const r = await api('/api/publicar', { method: 'POST', body: { plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value, confirmado: true, task_id: opts.taskId || null } });
+      const r = await api('/api/publicar', { method: 'POST', body: { plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value, confirmado: true, task_id: opts.taskId || null, client_id: clienteId } });
       if (opts.depois && r.resultados.some((x) => x.status === 'publicado')) opts.depois();
       $('#pbRes', d).innerHTML = r.resultados.map((x) => `<div class="alerta ${x.status === 'publicado' ? 'ok' : 'danger'}"><b>${esc(x.plataforma)}</b>: ${x.status === 'publicado' ? 'publicado' : esc(x.erro)}</div>`).join('');
     } catch (e) { $('#pbErro', d).textContent = e.message; }
@@ -1147,7 +1174,8 @@ async function abrirPublicar(texto, opts = {}) {
 (() => {
   const q = new URLSearchParams(location.search);
   if (!q.get('integracao')) return;
-  S.view = 'integracoes';
+  if (q.get('project_id') && q.get('client_id')) { S.projeto = q.get('project_id'); S.cliente = q.get('client_id'); S.view = 'acessos'; }
+  else S.view = 'inicio';
   const msg = q.get('msg') || '';
   history.replaceState(null, '', '/');
   setTimeout(() => toast(msg), 1500);
