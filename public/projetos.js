@@ -151,11 +151,8 @@ function ligarCaixaDemandas(v, clientes, opts = {}) {
 async function viewInicio(v) {
   await Promise.all([carregarProjetos(), carregarAgentes()]);
   const clientesTodos = await api('/api/clients');
-  const perfilCard = S.projetos.some((x) => x.tipo === 'empregos') ? await api('/api/perfil').catch(() => ({})) : {};
   // Projetos: só botões; ao clicar abre a área do projeto
-  const cards = S.projetos.map((p) => p.tipo === 'empregos'
-    ? `<button class="proj-btn" style="--cor:${esc(p.cor)}" data-emp="1">${perfilCard.foto ? `<img class="avatar" src="${perfilCard.foto}" alt="">` : '<span class="pb-ico">💼</span>'}<span>${esc(p.nome)}</span></button>`
-    : `<button class="proj-btn" style="--cor:${esc(p.cor)}" data-abrir="${p.id}"><span class="pb-ico">${esc((p.nome || '?').trim().charAt(0).toUpperCase())}</span><span>${esc(p.nome)}</span>${p.atrasadas ? `<em class="pb-late" title="Tarefas atrasadas">${p.atrasadas}</em>` : ''}</button>`).join('');
+  const cards = S.projetos.map((p) => `<button class="proj-btn" style="--cor:${esc(p.cor)}" ${p.tipo === 'empregos' ? 'data-emp="1"' : `data-abrir="${p.id}"`}>${esc(p.nome)}</button>`).join('');
 
   const acoes = [
     ['hugo', 'Conteúdo', 'Legendas, carrosséis, roteiros e artigos'],
