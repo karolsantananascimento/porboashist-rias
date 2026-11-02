@@ -450,7 +450,7 @@ function acompanharEsteira(taskId, clientId, msgEl, quandoPronto) {
 // Texto que vai ao ar: extrai a legenda do que o Hugo escreveu (o resto é briefing e conferências)
 function extrairLegenda(txt) {
   const t = String(txt || '');
-  const m = t.match(/^[#*\s]*LEGENDA[^\n]*\n([\s\S]*?)(?=\n[#*\s]*(BRIEFING|HASHTAGS|CONFERIR|OP[ÇC][ÕO]ES|CARD\s*1|CAPA)\b|$)/im);
+  const m = t.match(/^[#*\s]*LEGENDA[^\n]*\n([\s\S]*?)(?=\n[#*\s]*(BRIEFING|HASHTAGS|CONFERIR|OP[ÇC][ÕO]ES|CARD\s*1|CAPA)\b|(?![\s\S]))/im);
   return (m ? m[1] : t).replace(/^\s+|\s+$/g, '');
 }
 
@@ -475,6 +475,13 @@ async function aprovarTarefa(t, depois) {
   depois && depois();
 }
 
+// Conteúdo que a pessoa aprova: a legenda (post), o roteiro (story) ou o plano/briefing (criação e tráfego)
+function conteudoDaTarefa(t) {
+  if (t.tipo === 'post') return extrairLegenda(t.legenda || t.briefing || '');
+  if (t.tipo === 'story') return extrairLegenda(t.briefing || '');
+  return String(t.legenda || t.briefing || '').slice(0, 2500);
+}
+
 // Fila de aprovação do projeto ou do cliente
 function filaAprovacao(el, filtro) {
   const q = filtro.client_id ? 'client_id=' + filtro.client_id : 'project_id=' + filtro.project_id;
@@ -493,7 +500,10 @@ function filaAprovacao(el, filtro) {
         ${t.esteira === 'erro' ? `<p class="erro" style="margin:4px 0 0">${esc(t.esteira_msg || '')}</p>` : ''}
         ${t.esteira === 'agendada' ? `<p class="muted" style="margin:4px 0 0">🗓 ${esc(t.esteira_msg || '')} · ${esc((t.plataformas || '').replace(/,/g, ', '))}. Publica sozinha no horário.</p>` : ''}
         ${t.esteira === 'aprovada' && /falhou|interrompida|cancelado/i.test(t.esteira_msg || '') ? `<p class="erro" style="margin:4px 0 0">${esc(t.esteira_msg)}</p>` : ''}
-        ${['aguardando_aprovacao', 'aprovada', 'agendada'].includes(t.esteira) ? `<p class="sol-desc">${esc((t.legenda || t.briefing || '').slice(0, 320))}</p>` : ''}
+        ${['aguardando_aprovacao', 'aprovada', 'agendada'].includes(t.esteira) ? `
+          <div class="est-label">Conteúdo</div><div class="est-conteudo">${esc(conteudoDaTarefa(t))}</div>
+          <div class="est-label">Criativo</div>
+          ${t.arte_url ? `<a class="est-arte" href="${esc(t.arte_url)}" target="_blank" rel="noopener">🎨 Abrir criativo no Canva ↗</a>` : '<div class="muted" style="font-size:13px">Sem link do criativo (adicione em Revisar › Arte no Canva)</div>'}` : ''}
         <div class="acoes-res">
           ${t.esteira === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">✓ Aprovar e passar para a Social media</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
           ${t.esteira === 'aprovada' ? `${['post', 'story'].includes(t.tipo) ? `<button class="btn small primary" data-pub="${t.id}">Publicar…</button>` : ''}<button class="btn small" data-conc="${t.id}">Marcar como concluída</button><button class="btn small" data-rev="${t.id}">Abrir</button>` : ''}
