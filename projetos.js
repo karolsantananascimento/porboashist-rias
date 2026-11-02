@@ -2,6 +2,7 @@
 // mensagens da Meta, vagas de emprego e status das integrações.
 // Nada é publicado, enviado ou candidatado sem um clique de uma pessoa.
 
+const { cfg } = require('./config');
 const crypto = require('crypto');
 const { tokenDaPagina, verifyToken } = require('./integracoes');
 
@@ -65,7 +66,7 @@ const publicoAgente = (a, id, ativo) => ({ id, nome: a.nome, cargo: a.cargo, ico
 
 // ---------- Chamada à API do Claude (texto livre) ----------
 async function chamarTexto({ system, user, maxTokens = 3500, tools, timeoutMs = 110000 }) {
-  const chave = process.env.ANTHROPIC_API_KEY;
+  const chave = cfg('ANTHROPIC_API_KEY');
   if (!chave) { const e = new Error('Os agentes ainda não estão ativos: falta configurar ANTHROPIC_API_KEY no Render.'); e.status = 503; throw e; }
   let r;
   try {
@@ -136,7 +137,7 @@ const ordemJson = (s) => {
 
 // ---------- Rotas ----------
 module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
-  const ativo = () => !!process.env.ANTHROPIC_API_KEY;
+  const ativo = () => !!cfg('ANTHROPIC_API_KEY');
 
   // Projetos (cards da tela inicial)
   app.get('/api/projects', wrap(async (req, res) => {
@@ -146,7 +147,8 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
         (SELECT coalesce(json_agg(c.nome ORDER BY c.nome), '[]') FROM clients c WHERE c.project_id=p.id) AS nomes_clientes,
         (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo<>'story' AND t.status<>'publicado') AS abertas,
         (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo<>'story' AND t.status<>'publicado' AND t.data < current_date) AS atrasadas,
-        (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo='post' AND to_char(t.data,'YYYY-MM')=to_char(current_date,'YYYY-MM')) AS posts_mes
+        (SELECT count(*)::int FROM tasks t JOIN clients c ON c.id=t.client_id WHERE c.project_id=p.id AND t.tipo='post' AND to_char(t.data,'YYYY-MM')=to_char(current_date,'YYYY-MM')) AS posts_mes,
+        (SELECT count(*)::int FROM solicitacoes s WHERE s.project_id=p.id AND s.status IN ('nova','andamento')) AS solicitacoes_abertas
       FROM projects p ORDER BY p.ordem, p.id`);
     res.json(rows);
   }));
@@ -436,7 +438,7 @@ module.exports.webhook = function registrarWebhook(app, { pool, wrap }) {
   });
 
   app.post('/webhook/meta', wrap(async (req, res) => {
-    const segredo = process.env.META_APP_SECRET;
+    const segredo = cfg('META_APP_SECRET');
     if (!segredo) { console.warn('Webhook da Meta ignorado: falta META_APP_SECRET'); return res.sendStatus(200); }
     const assinatura = String(req.headers['x-hub-signature-256'] || '');
     const calc = 'sha256=' + crypto.createHmac('sha256', segredo).update(req.rawBody || Buffer.alloc(0)).digest('hex');

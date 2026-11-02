@@ -556,6 +556,9 @@ const projetos = require('./projetos');
 projetos(app, { pool, wrap, soAdmin });
 projetos.webhook(app, { pool, wrap });
 require('./integracoes').registrar(app, { pool, wrap, soAdmin });
+const solic = require('./solicitacoes');
+solic.registrar(app, { pool, wrap, soAdmin });
+solic.registrarPublico(app, { pool, wrap });
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {
@@ -617,5 +620,6 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 
 const PORT = process.env.PORT || 3000;
 init()
+  .then(() => require('./config').carregar(pool))
   .then(() => app.listen(PORT, () => console.log(`A Melhor Mídia do Brasil rodando na porta ${PORT}`)))
   .catch((e) => { console.error('Falha ao iniciar o banco:', e); process.exit(1); });

@@ -2,6 +2,7 @@
 // Os tokens ficam criptografados no banco (mesma chave do cofre de senhas: ACESSOS_KEY).
 // Nada é publicado sem o clique de uma pessoa na tela de publicação.
 
+const { cfg, listar, definir, remover } = require('./config');
 const crypto = require('crypto');
 const { cifrar, decifrar } = require('./cofre');
 
@@ -25,8 +26,8 @@ async function salvarConexao(pool, provedor, dados) {
     [provedor, cifrar(JSON.stringify(dados))]);
 }
 
-const verifyToken = () => process.env.META_VERIFY_TOKEN ||
-  (process.env.META_APP_SECRET ? crypto.createHash('sha256').update('verify:' + process.env.META_APP_SECRET).digest('hex').slice(0, 24) : null);
+const verifyToken = () => cfg('META_VERIFY_TOKEN') ||
+  (cfg('META_APP_SECRET') ? crypto.createHash('sha256').update('verify:' + cfg('META_APP_SECRET')).digest('hex').slice(0, 24) : null);
 
 async function jsonDe(url, opts = {}) {
   const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(20000) });
@@ -58,10 +59,10 @@ function registrar(app, { pool, wrap, soAdmin }) {
   // ----- Meta (Facebook + Instagram) -----
   app.get('/oauth/meta/iniciar', wrap(async (req, res) => {
     if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false);
-    if (!process.env.META_APP_ID || !process.env.META_APP_SECRET) return voltar(res, 'Falta configurar META_APP_ID e META_APP_SECRET no Render.', false);
+    if (!cfg('META_APP_ID') || !cfg('META_APP_SECRET')) return voltar(res, 'Falta configurar META_APP_ID e META_APP_SECRET no Render.', false);
     const u = new URL('https://www.facebook.com/v21.0/dialog/oauth');
     u.search = new URLSearchParams({
-      client_id: process.env.META_APP_ID, redirect_uri: `${base(req)}/oauth/meta/retorno`,
+      client_id: cfg('META_APP_ID'), redirect_uri: `${base(req)}/oauth/meta/retorno`,
       state: novoState(req.user.id), scope: META_ESCOPOS.join(','), response_type: 'code',
     });
     res.redirect(u.toString());
@@ -72,11 +73,11 @@ function registrar(app, { pool, wrap, soAdmin }) {
     if (!stateOk(req.query.state, req.user.id) || req.user.papel !== 'admin') return voltar(res, 'Conexão inválida. Tente de novo.', false);
     try {
       const curto = await jsonDe(`${GRAPH}/oauth/access_token?` + new URLSearchParams({
-        client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
+        client_id: cfg('META_APP_ID'), client_secret: cfg('META_APP_SECRET'),
         redirect_uri: `${base(req)}/oauth/meta/retorno`, code: String(req.query.code) }));
       const longo = await jsonDe(`${GRAPH}/oauth/access_token?` + new URLSearchParams({
-        grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET, fb_exchange_token: curto.access_token }));
+        grant_type: 'fb_exchange_token', client_id: cfg('META_APP_ID'),
+        client_secret: cfg('META_APP_SECRET'), fb_exchange_token: curto.access_token }));
       const eu = await jsonDe(`${GRAPH}/me?fields=id,name&access_token=${encodeURIComponent(longo.access_token)}`);
       const contas = await jsonDe(`${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50&access_token=${encodeURIComponent(longo.access_token)}`);
       const paginas = (contas.data || []).map((p) => ({
@@ -98,10 +99,10 @@ function registrar(app, { pool, wrap, soAdmin }) {
   // ----- LinkedIn -----
   app.get('/oauth/linkedin/iniciar', wrap(async (req, res) => {
     if (req.user.papel !== 'admin') return voltar(res, 'Só administradores conectam contas.', false);
-    if (!process.env.LINKEDIN_CLIENT_ID || !process.env.LINKEDIN_CLIENT_SECRET) return voltar(res, 'Falta configurar LINKEDIN_CLIENT_ID e LINKEDIN_CLIENT_SECRET no Render.', false);
+    if (!cfg('LINKEDIN_CLIENT_ID') || !cfg('LINKEDIN_CLIENT_SECRET')) return voltar(res, 'Falta configurar LINKEDIN_CLIENT_ID e LINKEDIN_CLIENT_SECRET no Render.', false);
     const u = new URL('https://www.linkedin.com/oauth/v2/authorization');
     u.search = new URLSearchParams({
-      response_type: 'code', client_id: process.env.LINKEDIN_CLIENT_ID, redirect_uri: `${base(req)}/oauth/linkedin/retorno`,
+      response_type: 'code', client_id: cfg('LINKEDIN_CLIENT_ID'), redirect_uri: `${base(req)}/oauth/linkedin/retorno`,
       state: novoState(req.user.id), scope: LINKEDIN_ESCOPOS.join(' '),
     });
     res.redirect(u.toString());
@@ -114,8 +115,8 @@ function registrar(app, { pool, wrap, soAdmin }) {
       const t = await jsonDe('https://www.linkedin.com/oauth/v2/accessToken', {
         method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ grant_type: 'authorization_code', code: String(req.query.code),
-          redirect_uri: `${base(req)}/oauth/linkedin/retorno`, client_id: process.env.LINKEDIN_CLIENT_ID,
-          client_secret: process.env.LINKEDIN_CLIENT_SECRET }) });
+          redirect_uri: `${base(req)}/oauth/linkedin/retorno`, client_id: cfg('LINKEDIN_CLIENT_ID'),
+          client_secret: cfg('LINKEDIN_CLIENT_SECRET') }) });
       const eu = await jsonDe('https://api.linkedin.com/v2/userinfo', { headers: { authorization: `Bearer ${t.access_token}` } });
       await salvarConexao(pool, 'linkedin', {
         token: t.access_token, expira_em: Date.now() + (t.expires_in || 5184000) * 1000,
@@ -125,13 +126,25 @@ function registrar(app, { pool, wrap, soAdmin }) {
     } catch (e) { console.error('Erro OAuth LinkedIn', e.message); voltar(res, 'Não consegui concluir a conexão com o LinkedIn: ' + e.message, false); }
   }));
 
+  // ----- Painel de chaves das APIs -----
+  app.get('/api/configuracoes', soAdmin, (req, res) => res.json(listar()));
+  app.put('/api/configuracoes/:chave', soAdmin, wrap(async (req, res) => {
+    try { await definir(pool, req.params.chave, req.body.valor); }
+    catch (e) { if (/Cofre/.test(e.message)) e.message = 'O cofre não está configurado: defina ACESSOS_KEY no Render.'; throw e; }
+    res.json(listar());
+  }));
+  app.delete('/api/configuracoes/:chave', soAdmin, wrap(async (req, res) => {
+    await remover(pool, req.params.chave);
+    res.json(listar());
+  }));
+
   // ----- Status e gestão -----
   app.get('/api/conexoes', wrap(async (req, res) => {
     const [meta, li] = await Promise.all([lerConexao(pool, 'meta'), lerConexao(pool, 'linkedin')]);
     const pg = meta && meta.paginas.find((p) => p.id === meta.pagina_id);
     res.json({
       meta: {
-        app_configurado: !!(process.env.META_APP_ID && process.env.META_APP_SECRET),
+        app_configurado: !!(cfg('META_APP_ID') && cfg('META_APP_SECRET')),
         conectado: !!meta, usuario: meta?.usuario || null, pagina_id: meta?.pagina_id || null,
         paginas: (meta?.paginas || []).map((p) => ({ id: p.id, nome: p.nome, ig_usuario: p.ig_usuario })),
         facebook: pg ? pg.nome : null, instagram: pg?.ig_usuario || null,
@@ -139,7 +152,7 @@ function registrar(app, { pool, wrap, soAdmin }) {
         redirect: `${base(req)}/oauth/meta/retorno`,
       },
       linkedin: {
-        app_configurado: !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET),
+        app_configurado: !!(cfg('LINKEDIN_CLIENT_ID') && cfg('LINKEDIN_CLIENT_SECRET')),
         conectado: !!li, nome: li?.nome || null, expira_em: li?.expira_em || null,
         expirado: !!(li && li.expira_em < Date.now()), redirect: `${base(req)}/oauth/linkedin/retorno`,
       },

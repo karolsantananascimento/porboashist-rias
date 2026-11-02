@@ -387,3 +387,16 @@ label.chk { display: flex; gap: 8px; align-items: center; text-transform: none; 
 label.chk input { width: auto; }
 label.chk.off { color: var(--ink-3); }
 ol.passos { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }
+
+.sol-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+.sol-col { display: grid; gap: 10px; align-content: start; }
+.sol-col h4 { margin: 0; font-size: 13px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+.sol { padding: 14px; display: grid; gap: 6px; }
+.sol.alta { border-left: 4px solid var(--danger); }
+.sol-desc { margin: 0; white-space: pre-wrap; color: var(--ink-2); font-size: 13px; max-height: 96px; overflow: hidden; }
+@media (max-width: 900px) { .sol-grid { grid-template-columns: 1fr; } }
+
+.chv-g { margin: 16px 0 6px; font-size: 13px; color: var(--ink-2); }
+.chv { margin-bottom: 8px; }
+.chv-l { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chv-l input { flex: 1; min-width: 220px; }

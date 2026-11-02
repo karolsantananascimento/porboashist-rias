@@ -2,6 +2,7 @@
 // a partir do contexto de cada cliente, usando a API do Claude. Nada é publicado: o texto vai para a tarefa
 // só quando a pessoa clica em "Usar na tarefa" e salva.
 
+const { cfg } = require('./config');
 const { BLOG_CHECKLIST } = require('./db');
 const MODELO = process.env.AGENTE_MODELO || 'claude-sonnet-5-5';
 const LIMITE_POR_HORA = Number(process.env.AGENTE_LIMITE_HORA || 40);
@@ -294,7 +295,7 @@ async function blocoExemplos(pool, clientId, tipo, ctx) {
 
 // ---------- Chamada à API do Claude ----------
 async function chamarClaude({ system, user, ferramenta, maxTokens, timeoutMs = 110000 }) {
-  const chave = process.env.ANTHROPIC_API_KEY;
+  const chave = cfg('ANTHROPIC_API_KEY');
   if (!chave) {
     const e = new Error('O agente ainda não está ativo: falta configurar ANTHROPIC_API_KEY no Render.');
     e.status = 503; throw e;
@@ -412,7 +413,7 @@ const texto = (v, max = 4000) => String(v ?? '').slice(0, max);
 
 // ---------- Rotas ----------
 module.exports = function registrarAgente(app, { pool, wrap }) {
-  app.get('/api/agente/status', (req, res) => res.json({ ativo: !!process.env.ANTHROPIC_API_KEY, modelo: MODELO }));
+  app.get('/api/agente/status', (req, res) => res.json({ ativo: !!cfg('ANTHROPIC_API_KEY'), modelo: MODELO }));
   app.get('/api/agente/competencias', (req, res) => res.json(COMPETENCIAS.map(([nome, descricao]) => ({ nome, descricao }))));
 
   app.get('/api/clients/:id/contexto', wrap(async (req, res) => {

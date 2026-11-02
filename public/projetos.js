@@ -44,12 +44,14 @@ async function viewInicio(v) {
           <span><b>${p.clientes}</b> ${p.clientes === 1 ? 'cliente' : 'clientes'}</span>
           <span><b>${p.abertas}</b> em aberto</span>
           <span class="${p.atrasadas ? 'late' : ''}"><b>${p.atrasadas}</b> atrasadas</span>
+          <span><b>${p.solicitacoes_abertas}</b> solicitações</span>
         </div>
         ${p.nomes_clientes.length ? `<div class="proj-tags">${p.nomes_clientes.slice(0, 6).map((n) => `<i>${esc(n)}</i>`).join('')}</div>` : ''}
       </button>
       <div class="proj-acts">
         <button class="btn small" data-abrir="${p.id}">Abrir painel</button>
         <button class="btn small" data-criar-em="${p.id}">✦ Criar</button>
+        <button class="btn small" data-solic-em="${p.id}">✉ Solicitações</button>
         <button class="btn ghost small" data-editar="${p.id}">Contexto</button>
       </div>
     </article>`).join('');
@@ -79,6 +81,7 @@ async function viewInicio(v) {
 
   $$('[data-abrir]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.abrir, 'painel')));
   $$('[data-criar-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.criarEm, 'criar')));
+  $$('[data-solic-em]', v).forEach((b) => b.addEventListener('click', () => abrirProjeto(b.dataset.solicEm, 'solicitacoes')));
   $$('[data-editar]', v).forEach((b) => b.addEventListener('click', () => abrirContextoProjeto(projetoPorId(b.dataset.editar))));
   $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => iniciarAgente(b.dataset.ag)));
   const np = $('#novoProj', v);
@@ -121,6 +124,7 @@ async function abrirCriar(agId, opcoes = {}) {
   const a = agente(agId);
   const d = $('#modal');
   const projetoInicial = opcoes.projeto || S.projeto || (S.projetos[0] && S.projetos[0].id);
+  const pedidoInicial = opcoes.pedido || '';
   const clientesDe = (pid) => S.clients.filter((c) => !pid || String(c.project_id) === String(pid));
   d.innerHTML = `<form method="dialog" class="criar">
     <div class="modal-head"><h3>${a.icone} ${esc(a.nome)} · ${esc(a.cargo)}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
@@ -132,7 +136,7 @@ async function abrirCriar(agId, opcoes = {}) {
         <select id="crFmt">${a.formatos.map((f) => `<option>${esc(f)}</option>`).join('')}</select></div>
         <div><label>Canal / plataforma</label><input id="crCanal" placeholder="Instagram, LinkedIn, Meta Ads..."></div></div>
       <div><label>O que você quer criar</label>
-        <textarea id="crPedido" rows="5" placeholder="Ex.: promoção de fim de ano, público feminino 25-45, tom leve; CTA para o WhatsApp"></textarea></div>
+        <textarea id="crPedido" rows="5" placeholder="Ex.: promoção de fim de ano, público feminino 25-45, tom leve; CTA para o WhatsApp">${esc(pedidoInicial)}</textarea></div>
       <div id="crSaida"></div>
       <p class="erro" id="crErro" style="margin:0"></p>
     </div>
@@ -145,7 +149,8 @@ async function abrirCriar(agId, opcoes = {}) {
     let lista = S.clients;
     if (String(S.projeto) !== String(pid)) lista = await api('/api/clients?project_id=' + pid);
     $('#crCli').innerHTML = '<option value="">Sem cliente específico</option>' + lista.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
-    if (S.cliente && lista.some((c) => String(c.id) === String(S.cliente))) $('#crCli').value = S.cliente;
+    const pref = opcoes.cliente || S.cliente;
+    if (pref && lista.some((c) => String(c.id) === String(pref))) $('#crCli').value = pref;
   };
   $('#crProj').addEventListener('change', clientes);
   clientes();
@@ -160,6 +165,7 @@ async function abrirCriar(agId, opcoes = {}) {
         agente: agId, project_id: Number($('#crProj').value) || null, client_id: Number($('#crCli').value) || null,
         formato: $('#crFmt').value, plataforma: $('#crCanal').value, pedido: $('#crPedido').value } });
       mostrarCriacao(c, $('#crSaida'));
+      if (opcoes.aoGerar) opcoes.aoGerar(c);
     } catch (err) { $('#crErro').textContent = err.message; }
     btn.disabled = false; btn.textContent = `Gerar de novo com ${a.nome}`;
   });
@@ -224,7 +230,8 @@ async function viewCriar(v) {
   const hist = await api('/api/criacoes' + (S.projeto ? '?project_id=' + S.projeto : ''));
   v.innerHTML = `
     <div class="view-head"><div><h2>Criar${p ? ' · ' + esc(p.nome) : ''}</h2>
-      <p>Escolha quem vai fazer. Nada é publicado sozinho: você revisa, edita e aprova.</p></div></div>
+      <p>Escolha quem vai fazer. Nada é publicado sozinho: você revisa, edita e aprova.</p></div>
+      <button class="btn" id="impPautas">⇪ Importar pautas</button></div>
     ${AGENTES.length && !AGENTES[0].ativo ? '<div class="alerta">Os agentes ainda não estão ativos: falta configurar <b>ANTHROPIC_API_KEY</b> no Render.</div>' : ''}
     <div class="ag-grid">${time}</div>
     <h3 class="secao-h">Criações recentes</h3>
@@ -235,6 +242,7 @@ async function viewCriar(v) {
         <span class="pill ${c.status === 'aprovado' ? 'ok' : ''}">${c.status === 'aprovado' ? 'Aprovado' : 'Rascunho'}</span></button>`;
     }).join('') : '<div class="empty">Nada criado ainda. Escolha um agente acima.</div>'}</div>`;
   $$('[data-ag]', v).forEach((b) => b.addEventListener('click', () => abrirCriar(b.dataset.ag)));
+  $('#impPautas', v).addEventListener('click', () => abrirImportar());
   $$('[data-cr]', v).forEach((b) => b.addEventListener('click', () => {
     const c = hist.find((x) => String(x.id) === b.dataset.cr);
     const a = agente(c.agente);
@@ -245,6 +253,160 @@ async function viewCriar(v) {
     mostrarCriacao(c, $('#crSaida'));
     d.addEventListener('close', () => render(), { once: true });
   }));
+}
+
+// ---------------- Solicitações (janela de cada projeto) ----------------
+const SOL_TIPOS = { conteudo: 'Conteúdo', arte: 'Arte', video: 'Vídeo', campanha: 'Campanha de anúncios', mensagem: 'Mensagens', outro: 'Outro' };
+const SOL_AGENTE = { conteudo: 'hugo', arte: 'luiz', video: 'davi', campanha: 'camila', mensagem: 'felipe' };
+const SOL_STATUS = { nova: 'Nova', andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
+const fmtPrazo = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '');
+
+async function viewSolicitacoes(v) {
+  await Promise.all([carregarProjetos(), carregarAgentes()]);
+  const p = S.projeto ? projetoPorId(S.projeto) : null;
+  const lista = await api('/api/solicitacoes' + (S.projeto ? '?project_id=' + S.projeto : ''));
+  const nomeProj = (id) => (projetoPorId(id) || {}).nome || '';
+  const coluna = (chave, titulo) => {
+    const itens = lista.filter((x) => (chave === 'concluida' ? ['concluida', 'cancelada'].includes(x.status) : x.status === chave));
+    return `<section class="sol-col"><h4>${titulo} <span class="pill">${itens.length}</span></h4>
+      ${itens.length ? itens.map((x) => {
+        const a = SOL_AGENTE[x.tipo] && agente(SOL_AGENTE[x.tipo]);
+        return `<article class="card sol ${x.prioridade === 'alta' ? 'alta' : ''}">
+          <div class="msg-top"><span class="pill">${esc(SOL_TIPOS[x.tipo])}</span>${x.prioridade === 'alta' ? '<span class="pill" style="background:var(--danger-soft);color:var(--danger)">Alta</span>' : ''}
+            ${x.origem === 'formulario' ? '<span class="pill">Formulário</span>' : ''}${p ? '' : `<small>${esc(nomeProj(x.project_id))}</small>`}</div>
+          <b>${esc(x.titulo)}</b>
+          ${x.descricao ? `<p class="sol-desc">${esc(x.descricao)}</p>` : ''}
+          <small class="muted">${esc([x.solicitante, x.contato, x.prazo ? 'prazo ' + fmtPrazo(x.prazo) : ''].filter(Boolean).join(' · '))}</small>
+          <div class="acoes-res">
+            ${a ? `<button class="btn small primary" data-fazer="${x.id}">${a.icone} ${x.tipo === 'mensagem' ? 'Abrir Mensagens' : 'Criar com ' + esc(a.nome)}</button>` : ''}
+            <select data-st="${x.id}" aria-label="Status">${Object.entries(SOL_STATUS).map(([k, l]) => `<option value="${k}" ${x.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+            <button class="btn small ghost" data-ed="${x.id}">Editar</button>
+            <button class="btn small ghost danger" data-rm="${x.id}">Excluir</button>
+          </div></article>`;
+      }).join('') : '<div class="empty" style="padding:16px">Nada aqui.</div>'}</section>`;
+  };
+  v.innerHTML = `
+    <div class="view-head"><div><h2>Solicitações${p ? ' · ' + esc(p.nome) : ''}</h2>
+      <p>Pedidos de conteúdo, arte, vídeo e campanhas. Receba pelo formulário do projeto ou registre aqui.</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${p ? '<button class="btn" id="solLink">🔗 Link para clientes</button>' : ''}
+        <button class="btn primary" id="solNova">+ Nova solicitação</button></div></div>
+    ${p ? '' : '<div class="alerta">Mostrando todos os projetos. Abra um projeto para pegar o link do formulário dele.</div>'}
+    <div class="sol-grid">${coluna('nova', 'Novas')}${coluna('andamento', 'Em andamento')}${coluna('concluida', 'Concluídas')}</div>`;
+
+  const recarregar = () => render();
+  const porId = (id) => lista.find((x) => String(x.id) === String(id));
+  $('#solNova', v).onclick = () => abrirSolicitacao(null, recarregar);
+  const lk = $('#solLink', v);
+  if (lk) lk.onclick = () => abrirLinkSolicitacao(p);
+  $$('[data-ed]', v).forEach((b) => b.addEventListener('click', () => abrirSolicitacao(porId(b.dataset.ed), recarregar)));
+  $$('[data-rm]', v).forEach((b) => b.addEventListener('click', async () => { if (!confirm('Excluir esta solicitação?')) return; await api('/api/solicitacoes/' + b.dataset.rm, { method: 'DELETE' }); recarregar(); }));
+  $$('[data-st]', v).forEach((sel) => sel.addEventListener('change', async () => { try { await api('/api/solicitacoes/' + sel.dataset.st, { method: 'PUT', body: { status: sel.value } }); recarregar(); } catch (e) { toast(e.message); } }));
+  $$('[data-fazer]', v).forEach((b) => b.addEventListener('click', () => {
+    const x = porId(b.dataset.fazer);
+    const ag = SOL_AGENTE[x.tipo];
+    if (ag === 'felipe') { S.view = 'mensagens'; render(); return; }
+    abrirCriar(ag, {
+      projeto: x.project_id, cliente: x.client_id,
+      pedido: `${x.titulo}\n\n${x.descricao || ''}${x.prazo ? `\nPrazo: ${fmtPrazo(x.prazo)}` : ''}${x.solicitante ? `\nSolicitante: ${x.solicitante}` : ''}`.trim(),
+      aoGerar: async () => { if (x.status === 'nova') { try { await api('/api/solicitacoes/' + x.id, { method: 'PUT', body: { status: 'andamento' } }); } catch { /* segue */ } } },
+    });
+  }));
+}
+
+function abrirSolicitacao(x, depois) {
+  const d = $('#modal');
+  const projetoSel = x?.project_id || S.projeto || (S.projetos[0] || {}).id;
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>${x ? 'Editar solicitação' : 'Nova solicitação'}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <div class="row"><div><label>Projeto</label><select id="soProj" ${x ? 'disabled' : ''}>${opcoesProjetos(projetoSel)}</select></div>
+        <div><label>Tipo</label><select id="soTipo">${Object.entries(SOL_TIPOS).map(([k, l]) => `<option value="${k}" ${x?.tipo === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <div><label>Título</label><input id="soTit" value="${esc(x?.titulo || '')}" maxlength="200"></div>
+      <div><label>Detalhes</label><textarea id="soDesc" rows="5">${esc(x?.descricao || '')}</textarea></div>
+      <div class="row"><div><label>Solicitante</label><input id="soSol" value="${esc(x?.solicitante || '')}"></div>
+        <div><label>Contato</label><input id="soCont" value="${esc(x?.contato || '')}"></div></div>
+      <div class="row"><div><label>Prazo</label><input type="date" id="soPrazo" value="${esc(x?.prazo ? String(x.prazo).slice(0, 10) : '')}"></div>
+        <div><label>Prioridade</label><select id="soPri">${[['baixa', 'Baixa'], ['normal', 'Normal'], ['alta', 'Alta']].map(([k, l]) => `<option value="${k}" ${(x?.prioridade || 'normal') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <p class="erro" id="soErro" style="margin:0"></p>
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Cancelar</button><button type="button" class="btn primary" id="soSalvar">Salvar</button></div></div>
+  </form>`;
+  d.showModal();
+  $('#soSalvar').onclick = async () => {
+    const body = { project_id: Number($('#soProj').value), tipo: $('#soTipo').value, titulo: $('#soTit').value, descricao: $('#soDesc').value,
+      solicitante: $('#soSol').value, contato: $('#soCont').value, prazo: $('#soPrazo').value, prioridade: $('#soPri').value };
+    try { await api(x ? '/api/solicitacoes/' + x.id : '/api/solicitacoes', { method: x ? 'PUT' : 'POST', body }); d.close(); toast('Solicitação salva'); depois && depois(); }
+    catch (e) { $('#soErro').textContent = e.message; }
+  };
+}
+
+async function abrirLinkSolicitacao(p) {
+  const { link } = await api(`/api/projects/${p.id}/link-solicitacao`, { method: 'POST', body: {} });
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>Link de solicitações · ${esc(p.nome)}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body"><p style="margin:0">Quem receber este link preenche um formulário simples (sem login) e a solicitação aparece aqui como <b>Nova</b>.</p>
+    <p><code class="url" id="lkUrl">${esc(link)}</code></p>
+    <div class="acoes-res"><button type="button" class="btn small primary" id="lkCp">Copiar link</button><a class="btn small" href="${esc(link)}" target="_blank" rel="noopener">Abrir formulário ↗</a>
+      <button type="button" class="btn small danger" id="lkNovo">Gerar outro link</button></div>
+    <p class="muted" style="margin:0">Se o link vazar, gere outro: o antigo deixa de funcionar.</p></div></form>`;
+  d.showModal();
+  $('#lkCp').onclick = () => copiar(link);
+  $('#lkNovo').onclick = async () => {
+    if (!confirm('O link antigo deixará de funcionar. Continuar?')) return;
+    const r = await api(`/api/projects/${p.id}/link-solicitacao`, { method: 'POST', body: { regenerar: true } });
+    $('#lkUrl').textContent = r.link; $('#lkCp').onclick = () => copiar(r.link); toast('Novo link gerado');
+  };
+}
+
+// ---------------- Importar pautas (geradas no Claude) ----------------
+const EXEMPLO_PAUTAS = `{
+  "projeto": "Disco",
+  "cliente": "Operizy",
+  "itens": [
+    { "data": "2026-11-10", "tipo": "post", "formato": "carrossel", "editorial": "Educativo",
+      "tema": "3 erros de mídia paga", "legenda": "Texto da legenda...", "briefing": "CARD 1 · CAPA: ..." }
+  ]
+}`;
+
+function abrirImportar() {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog">
+    <div class="modal-head"><h3>Importar pautas</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <p class="muted" style="margin:0">Peça as pautas ao Claude no formato abaixo e cole aqui. Elas ocupam as tarefas vazias do mesmo dia ou viram tarefas novas; nada é publicado.</p>
+      <div class="row"><div><label>Projeto (se não vier no texto)</label><select id="ipProj"><option value="">—</option>${opcoesProjetos(S.projeto)}</select></div>
+        <div><label>Cliente (se não vier no texto)</label><select id="ipCli"><option value="">—</option></select></div></div>
+      <div><label>Pautas em JSON</label><textarea id="ipJson" rows="12" class="resultado" placeholder='${esc(EXEMPLO_PAUTAS)}'></textarea></div>
+      <details><summary>Ver formato</summary><pre class="analise">${esc(EXEMPLO_PAUTAS)}</pre>
+        <small class="muted">Campos de cada item: data (AAAA-MM-DD), tipo (post, story, blog, captacao), formato, editorial, tema, legenda, briefing, palavra_chave, links, status.</small></details>
+      <p class="erro" id="ipErro" style="margin:0"></p><div id="ipRes"></div>
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary" id="ipOk">Importar</button></div></div>
+  </form>`;
+  d.showModal();
+  const clientes = async () => {
+    const pid = $('#ipProj').value;
+    const lista = pid ? await api('/api/clients?project_id=' + pid) : [];
+    $('#ipCli').innerHTML = '<option value="">—</option>' + lista.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+    if (S.cliente && lista.some((c) => String(c.id) === String(S.cliente))) $('#ipCli').value = S.cliente;
+  };
+  $('#ipProj').addEventListener('change', clientes); clientes();
+  $('#ipOk').onclick = async () => {
+    $('#ipErro').textContent = ''; $('#ipRes').innerHTML = '';
+    let dados;
+    try { dados = JSON.parse($('#ipJson').value); } catch { return ($('#ipErro').textContent = 'Não consegui ler o JSON. Confira se copiou tudo.'); }
+    if (Array.isArray(dados)) dados = { itens: dados };
+    if (!dados.project_id && !dados.projeto && $('#ipProj').value) dados.project_id = Number($('#ipProj').value);
+    if (!dados.client_id && !dados.cliente && $('#ipCli').value) dados.client_id = Number($('#ipCli').value);
+    const b = $('#ipOk'); b.disabled = true; b.textContent = 'Importando…';
+    try {
+      const r = await api('/api/importar/pautas', { method: 'POST', body: dados });
+      $('#ipRes').innerHTML = `<div class="alerta ok"><b>${r.criadas}</b> novas · <b>${r.preenchidas}</b> preencheram tarefas vazias${r.erros.length ? ` · <b>${r.erros.length}</b> com problema` : ''}</div>` +
+        r.erros.map((e) => `<div class="alerta danger">${esc(e)}</div>`).join('');
+    } catch (e) { $('#ipErro').textContent = e.message; }
+    b.disabled = false; b.textContent = 'Importar';
+  };
 }
 
 // ---------------- Mensagens (Felipe) ----------------
@@ -438,8 +600,10 @@ async function empPerfil(el) {
 
 // ---------------- Integrações ----------------
 async function viewIntegracoes(v) {
-  const [ia, c, pubs] = await Promise.all([api('/api/agentes').then((l) => l[0].ativo), api('/api/conexoes'), api('/api/publicacoes')]);
   const adm = S.me.papel === 'admin';
+  const [ia, c, pubs, chaves, imp] = await Promise.all([
+    api('/api/agentes').then((l) => l[0].ativo), api('/api/conexoes'), api('/api/publicacoes'),
+    adm ? api('/api/configuracoes') : [], adm ? api('/api/importar/token') : { existe: false }]);
   const st = (ok, sim, nao) => `<span class="pill ${ok ? 'ok' : ''}">${ok ? sim : nao}</span>`;
   const m = c.meta, li = c.linkedin;
   const passo = (t) => `<li>${t}</li>`;
@@ -483,12 +647,31 @@ async function viewIntegracoes(v) {
       </ol>`}
   </div>`;
 
+  const GRUPOS = { ia: 'Agentes (Claude)', meta: 'Facebook e Instagram (Meta)', linkedin: 'LinkedIn' };
+  const painelChaves = adm ? `
+    <div class="card" style="margin-bottom:16px"><h3>Chaves das APIs</h3>
+      <p class="muted">Cole aqui as chaves dos apps. Ficam criptografadas e valem mais que as variáveis do Render. Depois de salvar, use os botões de conectar logo abaixo.</p>
+      ${Object.entries(GRUPOS).map(([g, nome]) => `<h4 class="chv-g">${nome}</h4>` + chaves.filter((k) => k.grupo === g).map((k) => `
+        <div class="chv"><label>${esc(k.rotulo)}</label>
+          <div class="chv-l"><input type="${k.secreto ? 'password' : 'text'}" data-chv="${k.chave}" placeholder="${k.definido ? esc(k.previa) : 'Cole aqui'}" autocomplete="off">
+            <button class="btn small primary" data-chv-ok="${k.chave}">Salvar</button>
+            ${k.origem === 'painel' ? `<button class="btn small ghost danger" data-chv-rm="${k.chave}">Remover</button>` : ''}
+            <span class="pill ${k.definido ? 'ok' : ''}">${k.definido ? (k.origem === 'painel' ? 'No painel' : 'No Render') : 'Vazio'}</span></div></div>`).join('')).join('')}
+      <p class="erro" id="chvErro"></p>
+    </div>` : '';
+  const painelImport = adm ? `<div class="card"><h3>Importação automática de pautas</h3>
+      <p class="muted">Para enviar pautas de fora do sistema (por exemplo, de uma automação), gere um token e envie um POST para <code>/importar/pautas</code> com o cabeçalho <code>Authorization: Bearer SEU_TOKEN</code>. O formato é o mesmo do botão "Importar pautas" em Criar.</p>
+      <div class="acoes-res"><button class="btn small" id="impTok">${imp.existe ? 'Gerar novo token' : 'Gerar token'}</button>${imp.existe ? '<span class="pill ok">Token ativo</span>' : ''}</div>
+      <div id="impTokRes"></div></div>` : '';
+
   v.innerHTML = `
     <div class="view-head"><div><h2>Integrações</h2><p>Conecte suas contas. Nada é publicado ou enviado sem o seu clique de confirmação.</p></div></div>
+    ${painelChaves}
     <div class="grid cols-2">
       ${cartaoMeta}${cartaoLi}${cartaoWebhook}
       <div class="card"><h3>Agentes (IA) ${st(ia, 'Ativos', 'Desligados')}</h3>
         <p class="muted">Hugo, Luiz, Davi, Camila, Felipe e Bianca usam a API do Claude. Variável no Render: <code>ANTHROPIC_API_KEY</code>.</p></div>
+      ${painelImport}
       <div class="card"><h3>Workana</h3><p class="muted">A Workana não oferece integração aberta para candidaturas. A Bianca prepara a proposta e as respostas de cadastro; você cola e envia.</p></div>
       <div class="card"><h3>Anúncios (Meta, Google, LinkedIn)</h3><p class="muted">A Camila monta o plano completo. Para subir os anúncios de fato, use o seu Assistente de Marketing (gestoragente).</p></div>
     </div>
@@ -497,6 +680,23 @@ async function viewIntegracoes(v) {
       <span class="lc-t"><b>${esc((x.texto || '').split('\n')[0].slice(0, 90))}</b><small>${esc(new Date(x.created_at).toLocaleString('pt-BR'))}${x.erro ? ' · ' + esc(x.erro) : ''}</small></span>
       <span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${x.status === 'publicado' ? 'Publicado' : 'Erro'}</span></div>`).join('') : '<div class="empty">Nada publicado por aqui ainda.</div>'}</div>`;
 
+  $$('[data-chv-ok]', v).forEach((b) => b.addEventListener('click', async () => {
+    const campo = $(`[data-chv="${b.dataset.chvOk}"]`, v);
+    if (!campo.value.trim()) return ($('#chvErro', v).textContent = 'Cole o valor antes de salvar');
+    try { await api('/api/configuracoes/' + b.dataset.chvOk, { method: 'PUT', body: { valor: campo.value } }); toast('Chave salva'); viewIntegracoes(v); }
+    catch (e) { $('#chvErro', v).textContent = e.message; }
+  }));
+  $$('[data-chv-rm]', v).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Remover esta chave do painel?')) return;
+    try { await api('/api/configuracoes/' + b.dataset.chvRm, { method: 'DELETE' }); viewIntegracoes(v); } catch (e) { toast(e.message); }
+  }));
+  const it = $('#impTok', v);
+  if (it) it.onclick = async () => {
+    if (imp.existe && !confirm('O token anterior deixará de funcionar. Continuar?')) return;
+    try { const r = await api('/api/importar/token', { method: 'POST', body: {} });
+      $('#impTokRes', v).innerHTML = `<p style="margin-top:10px">Copie agora; ele não aparece de novo:</p><p><code class="url">${esc(r.token)}</code> <button class="btn small" id="impTokCp">Copiar</button></p>`;
+      $('#impTokCp', v).onclick = () => copiar(r.token); } catch (e) { toast(e.message); }
+  };
   const cp = (id, t) => { const b = $(id, v); if (b) b.onclick = () => copiar(t); };
   cp('#cpWh', m.webhook); cp('#cpTk', m.verify_token);
   const sel = $('#mtPagina', v);
@@ -548,4 +748,4 @@ async function abrirPublicar(texto) {
   setTimeout(() => toast(msg), 1500);
 })();
 
-window.VIEWS_EXTRA = { inicio: viewInicio, criar: viewCriar, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };
+window.VIEWS_EXTRA = { inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };

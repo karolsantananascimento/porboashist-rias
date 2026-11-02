@@ -234,10 +234,35 @@ CREATE TABLE IF NOT EXISTS vagas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Janela de solicitações de cada projeto
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS token_solicitacao TEXT;
+CREATE TABLE IF NOT EXISTS solicitacoes (
+  id SERIAL PRIMARY KEY,
+  project_id INT REFERENCES projects(id) ON DELETE CASCADE,
+  client_id INT,
+  titulo TEXT NOT NULL,
+  tipo TEXT NOT NULL DEFAULT 'outro',          -- conteudo | arte | video | campanha | mensagem | outro
+  descricao TEXT,
+  solicitante TEXT,
+  contato TEXT,
+  prazo DATE,
+  prioridade TEXT NOT NULL DEFAULT 'normal',   -- baixa | normal | alta
+  status TEXT NOT NULL DEFAULT 'nova',         -- nova | andamento | concluida | cancelada
+  origem TEXT NOT NULL DEFAULT 'interna',      -- interna | formulario
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS solicitacoes_projeto ON solicitacoes (project_id, status, created_at DESC);
+
 -- Contas conectadas (tokens criptografados) e histórico de publicações
 CREATE TABLE IF NOT EXISTS conexoes (
   provedor TEXT PRIMARY KEY,                   -- meta | linkedin
   dados_enc TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS configuracoes (
+  chave TEXT PRIMARY KEY,
+  valor_enc TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS publicacoes (
