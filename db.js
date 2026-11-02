@@ -234,6 +234,24 @@ CREATE TABLE IF NOT EXISTS vagas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Contas conectadas (tokens criptografados) e histórico de publicações
+CREATE TABLE IF NOT EXISTS conexoes (
+  provedor TEXT PRIMARY KEY,                   -- meta | linkedin
+  dados_enc TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS publicacoes (
+  id SERIAL PRIMARY KEY,
+  plataforma TEXT NOT NULL,
+  texto TEXT,
+  imagem_url TEXT,
+  externo_id TEXT,
+  status TEXT NOT NULL,                        -- publicado | erro
+  erro TEXT,
+  usuario_id INT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS perfil_profissional (
   id INT PRIMARY KEY DEFAULT 1,
   dados JSONB NOT NULL DEFAULT '{}',

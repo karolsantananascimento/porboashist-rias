@@ -3,6 +3,7 @@
 // Nada é publicado, enviado ou candidatado sem um clique de uma pessoa.
 
 const crypto = require('crypto');
+const { tokenDaPagina, verifyToken } = require('./integracoes');
 
 const MODELO = process.env.AGENTE_MODELO || 'claude-sonnet-5-5';
 const LIMITE_POR_HORA = Number(process.env.AGENTE_LIMITE_HORA || 40);
@@ -276,8 +277,8 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     if (!resposta) return res.status(400).json({ erro: 'Escreva ou gere a resposta antes de enviar' });
     let enviado = false;
     if (m.canal !== 'manual' && m.remetente_id) {
-      const token = process.env.META_PAGE_TOKEN;
-      if (!token) return res.status(400).json({ erro: 'Falta configurar META_PAGE_TOKEN no Render para enviar pelo Instagram/Facebook. Copie a resposta e envie manualmente.' });
+      const token = await tokenDaPagina(pool);
+      if (!token) return res.status(400).json({ erro: 'Conecte o Facebook/Instagram em Integrações para enviar daqui. Por enquanto, copie a resposta e envie manualmente.' });
       const r = await fetch('https://graph.facebook.com/v21.0/me/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -422,23 +423,12 @@ Responda exatamente neste formato:
     res.json({ encontradas: achadas.length, novas });
   }));
 
-  // ---------- Integrações ----------
-  app.get('/api/integracoes', (req, res) => res.json({
-    ia: ativo(),
-    meta: {
-      recebe: !!(process.env.META_VERIFY_TOKEN && process.env.META_APP_SECRET),
-      envia: !!process.env.META_PAGE_TOKEN,
-      webhook: `${req.protocol}://${req.get('host')}/webhook/meta`,
-    },
-    linkedin: { conectado: false },
-    workana: { conectado: false },
-  }));
 };
 
 // ---------- Webhook da Meta (fora de /api: a Meta não tem a sessão) ----------
 module.exports.webhook = function registrarWebhook(app, { pool, wrap }) {
   app.get('/webhook/meta', (req, res) => {
-    const esperado = process.env.META_VERIFY_TOKEN;
+    const esperado = verifyToken();
     if (esperado && req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === esperado) {
       return res.status(200).send(String(req.query['hub.challenge'] || ''));
     }

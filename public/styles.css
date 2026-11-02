@@ -382,3 +382,8 @@ code.url { word-break: break-all; }
 dialog.mini { width: min(420px, calc(100vw - 24px)); }
 dialog.mini .modal-body { display: block; }
 @media (max-width: 720px) { .proj-grid, .ag-grid { grid-template-columns: 1fr; } }
+
+label.chk { display: flex; gap: 8px; align-items: center; text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
+label.chk input { width: auto; }
+label.chk.off { color: var(--ink-3); }
+ol.passos { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }

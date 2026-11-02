@@ -133,6 +133,13 @@ app.use('/api', wrap(async (req, res, next) => {
   req.user = u;
   next();
 }));
+// Retorno do login das redes sociais (navegação do navegador, não chamada de API)
+app.use('/oauth', wrap(async (req, res, next) => {
+  const u = await usuarioDaSessao(req);
+  if (!u) return res.redirect('/');
+  req.user = u;
+  next();
+}));
 const soAdmin = (req, res, next) => (req.user.papel === 'admin' ? next() : res.status(403).json({ erro: 'Apenas administradores' }));
 
 // ---------- Minha conta ----------
@@ -548,6 +555,7 @@ require('./agente')(app, { pool, wrap });
 const projetos = require('./projetos');
 projetos(app, { pool, wrap, soAdmin });
 projetos.webhook(app, { pool, wrap });
+require('./integracoes').registrar(app, { pool, wrap, soAdmin });
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {

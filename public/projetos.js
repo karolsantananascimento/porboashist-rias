@@ -173,6 +173,7 @@ function mostrarCriacao(c, el) {
       <button type="button" class="btn small" id="crSalvar">Salvar edição</button>
       <button type="button" class="btn small" id="crAprovar">${c.status === 'aprovado' ? 'Aprovado ✓' : 'Aprovar'}</button>
       <button type="button" class="btn small" id="crTarefa">Virar tarefa</button>
+      ${['hugo', 'camila'].includes(c.agente) ? '<button type="button" class="btn small primary" id="crPublicar">Publicar…</button>' : ''}
       <button type="button" class="btn small danger" id="crExcluir">Excluir</button>
     </div>`;
   $('#crCopiar').onclick = () => copiar($('#crTexto').value);
@@ -182,6 +183,7 @@ function mostrarCriacao(c, el) {
     catch (e) { toast(e.message); }
   };
   $('#crTarefa').onclick = () => virarTarefa(c);
+  const pub = $('#crPublicar'); if (pub) pub.onclick = () => abrirPublicar($('#crTexto').value);
   $('#crExcluir').onclick = async () => {
     if (!confirm('Excluir esta criação?')) return;
     try { await api('/api/criacoes/' + c.id, { method: 'DELETE' }); el.innerHTML = ''; toast('Excluída'); if (S.view === 'criar') render(); } catch (e) { toast(e.message); }
@@ -436,27 +438,114 @@ async function empPerfil(el) {
 
 // ---------------- Integrações ----------------
 async function viewIntegracoes(v) {
-  const i = await api('/api/integracoes');
+  const [ia, c, pubs] = await Promise.all([api('/api/agentes').then((l) => l[0].ativo), api('/api/conexoes'), api('/api/publicacoes')]);
+  const adm = S.me.papel === 'admin';
   const st = (ok, sim, nao) => `<span class="pill ${ok ? 'ok' : ''}">${ok ? sim : nao}</span>`;
+  const m = c.meta, li = c.linkedin;
+  const passo = (t) => `<li>${t}</li>`;
+
+  const cartaoMeta = `<div class="card"><h3>Facebook e Instagram ${st(m.conectado, 'Conectado', m.app_configurado ? 'Não conectado' : 'Falta o app da Meta')}</h3>
+    ${m.conectado ? `
+      <p>Conta: <b>${esc(m.usuario || '')}</b></p>
+      <label>Página usada para publicar e responder</label>
+      <select id="mtPagina" ${adm ? '' : 'disabled'}>${m.paginas.map((p) => `<option value="${esc(p.id)}" ${p.id === m.pagina_id ? 'selected' : ''}>${esc(p.nome)}${p.ig_usuario ? ' · @' + esc(p.ig_usuario) : ' · sem Instagram vinculado'}</option>`).join('')}</select>
+      <p class="muted">Facebook: <b>${esc(m.facebook || '-')}</b> · Instagram: <b>${m.instagram ? '@' + esc(m.instagram) : 'não vinculado'}</b></p>
+      ${adm ? '<div class="acoes-res"><a class="btn small" href="/oauth/meta/iniciar">Reconectar</a><button class="btn small danger" id="mtDesc">Desconectar</button></div>' : ''}
+    ` : m.app_configurado ? `<p class="muted">Clique para entrar com o Facebook e liberar a sua página e o Instagram profissional vinculado a ela.</p>
+      ${adm ? '<a class="btn primary" href="/oauth/meta/iniciar">Conectar Facebook e Instagram</a>' : '<p class="muted">Peça a um administrador para conectar.</p>'}` : `
+      <p class="muted">Antes de conectar, é preciso criar um app na Meta (uma vez só):</p>
+      <ol class="passos">
+        ${passo('Acesse <b>developers.facebook.com</b> > Meus apps > Criar app > tipo <b>Empresa</b>.')}
+        ${passo('Adicione os produtos <b>Login do Facebook para Empresas</b> e <b>Messenger</b> (e Instagram).')}
+        ${passo(`Em URIs de redirecionamento OAuth válidos, cadastre: <code class="url">${esc(m.redirect)}</code>`)}
+        ${passo('Copie o <b>ID do app</b> e a <b>Chave secreta do app</b> e coloque no Render como <code>META_APP_ID</code> e <code>META_APP_SECRET</code>.')}
+        ${passo('Com o app em modo de desenvolvimento, funciona para você e para quem for administrador ou testador do app. Para outras pessoas, a Meta exige a análise do app.')}
+      </ol>`}
+  </div>`;
+
+  const cartaoWebhook = `<div class="card"><h3>Receber mensagens ${st(m.conectado && !!m.verify_token, 'Pronto para configurar', 'Conecte primeiro')}</h3>
+    <p class="muted">No app da Meta, em Webhooks (Page e Instagram), use a URL e o token abaixo e assine <b>messages</b>.</p>
+    <label>URL de callback</label><p><code class="url">${esc(m.webhook)}</code> <button class="btn small" id="cpWh">Copiar</button></p>
+    ${m.verify_token ? `<label>Token de verificação</label><p><code class="url">${esc(m.verify_token)}</code> <button class="btn small" id="cpTk">Copiar</button></p>` : ''}
+    <p class="muted">As mensagens aparecem em <b>Mensagens (Meta)</b>; o Felipe sugere a resposta e você aprova.</p></div>`;
+
+  const exp = li.expira_em ? new Date(li.expira_em).toLocaleDateString('pt-BR') : '';
+  const cartaoLi = `<div class="card"><h3>LinkedIn ${st(li.conectado && !li.expirado, 'Conectado', li.expirado ? 'Expirou' : li.app_configurado ? 'Não conectado' : 'Falta o app do LinkedIn')}</h3>
+    ${li.conectado ? `<p>Perfil: <b>${esc(li.nome || '')}</b></p><p class="muted">A conexão vale até ${esc(exp)}; depois é só reconectar.</p>
+      ${adm ? '<div class="acoes-res"><a class="btn small" href="/oauth/linkedin/iniciar">Reconectar</a><button class="btn small danger" id="liDesc">Desconectar</button></div>' : ''}`
+      : li.app_configurado ? `<p class="muted">Conecte o seu perfil para publicar posts daqui.</p>${adm ? '<a class="btn primary" href="/oauth/linkedin/iniciar">Conectar LinkedIn</a>' : ''}` : `
+      <p class="muted">Antes de conectar, crie um app (uma vez só):</p>
+      <ol class="passos">
+        ${passo('Acesse <b>linkedin.com/developers</b> > Create app (é preciso vincular uma Página da empresa).')}
+        ${passo('Na aba Products, solicite <b>Share on LinkedIn</b> e <b>Sign In with LinkedIn using OpenID Connect</b>.')}
+        ${passo(`Na aba Auth, em Authorized redirect URLs, cadastre: <code class="url">${esc(li.redirect)}</code>`)}
+        ${passo('Copie o <b>Client ID</b> e o <b>Client Secret</b> e coloque no Render como <code>LINKEDIN_CLIENT_ID</code> e <code>LINKEDIN_CLIENT_SECRET</code>.')}
+      </ol>`}
+  </div>`;
+
   v.innerHTML = `
-    <div class="view-head"><div><h2>Integrações</h2><p>O que já está conectado e o que falta. Os agentes só enviam algo depois do seu clique.</p></div></div>
+    <div class="view-head"><div><h2>Integrações</h2><p>Conecte suas contas. Nada é publicado ou enviado sem o seu clique de confirmação.</p></div></div>
     <div class="grid cols-2">
-      <div class="card"><h3>Agentes (IA) ${st(i.ia, 'Ativos', 'Desligados')}</h3>
+      ${cartaoMeta}${cartaoLi}${cartaoWebhook}
+      <div class="card"><h3>Agentes (IA) ${st(ia, 'Ativos', 'Desligados')}</h3>
         <p class="muted">Hugo, Luiz, Davi, Camila, Felipe e Bianca usam a API do Claude. Variável no Render: <code>ANTHROPIC_API_KEY</code>.</p></div>
-      <div class="card"><h3>Meta · receber mensagens ${st(i.meta.recebe, 'Conectado', 'Falta configurar')}</h3>
-        <p class="muted">No app da Meta (Messenger/Instagram), configure o webhook com a URL abaixo e o mesmo token de verificação.</p>
-        <p><code class="url">${esc(i.meta.webhook)}</code> <button class="btn small" id="cpWh">Copiar</button></p>
-        <p class="muted">Variáveis no Render: <code>META_VERIFY_TOKEN</code> (você escolhe o texto) e <code>META_APP_SECRET</code> (segredo do app).</p></div>
-      <div class="card"><h3>Meta · enviar respostas ${st(i.meta.envia, 'Conectado', 'Falta configurar')}</h3>
-        <p class="muted">Variável no Render: <code>META_PAGE_TOKEN</code> (token da página com permissão de mensagens). A Meta só permite responder em até 24 horas após a mensagem do contato.</p></div>
-      <div class="card"><h3>LinkedIn ${st(false, '', 'Manual')}</h3>
-        <p class="muted">Hugo escreve os posts e a Bianca monta propostas, mas a publicação e o envio de candidaturas são manuais: copie o texto e cole no LinkedIn.</p></div>
-      <div class="card"><h3>Workana ${st(false, '', 'Manual')}</h3>
-        <p class="muted">A Workana não oferece integração aberta para candidaturas. A Bianca prepara proposta e respostas de cadastro com o seu perfil; você cola e envia.</p></div>
-      <div class="card"><h3>Anúncios (Meta, Google, LinkedIn)</h3>
-        <p class="muted">A Camila monta o plano completo da campanha. Para subir os anúncios de fato, use o seu Assistente de Marketing (gestoragente), que já tem a conexão com as contas de anúncios.</p></div>
-    </div>`;
-  $('#cpWh').onclick = () => copiar(i.meta.webhook);
+      <div class="card"><h3>Workana</h3><p class="muted">A Workana não oferece integração aberta para candidaturas. A Bianca prepara a proposta e as respostas de cadastro; você cola e envia.</p></div>
+      <div class="card"><h3>Anúncios (Meta, Google, LinkedIn)</h3><p class="muted">A Camila monta o plano completo. Para subir os anúncios de fato, use o seu Assistente de Marketing (gestoragente).</p></div>
+    </div>
+    <h3 class="secao-h">Últimas publicações</h3>
+    <div class="card">${pubs.length ? pubs.map((x) => `<div class="linha-cr" style="cursor:default"><span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${esc({ facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn' }[x.plataforma])}</span>
+      <span class="lc-t"><b>${esc((x.texto || '').split('\n')[0].slice(0, 90))}</b><small>${esc(new Date(x.created_at).toLocaleString('pt-BR'))}${x.erro ? ' · ' + esc(x.erro) : ''}</small></span>
+      <span class="pill ${x.status === 'publicado' ? 'ok' : ''}">${x.status === 'publicado' ? 'Publicado' : 'Erro'}</span></div>`).join('') : '<div class="empty">Nada publicado por aqui ainda.</div>'}</div>`;
+
+  const cp = (id, t) => { const b = $(id, v); if (b) b.onclick = () => copiar(t); };
+  cp('#cpWh', m.webhook); cp('#cpTk', m.verify_token);
+  const sel = $('#mtPagina', v);
+  if (sel) sel.onchange = async () => { try { await api('/api/conexoes/meta/pagina', { method: 'PUT', body: { pagina_id: sel.value } }); toast('Página atualizada'); viewIntegracoes(v); } catch (e) { toast(e.message); } };
+  const desc = (id, prov, nome) => { const b = $(id, v); if (b) b.onclick = async () => { if (!confirm(`Desconectar ${nome}?`)) return; await api('/api/conexoes/' + prov, { method: 'DELETE' }); viewIntegracoes(v); }; };
+  desc('#mtDesc', 'meta', 'o Facebook e o Instagram'); desc('#liDesc', 'linkedin', 'o LinkedIn');
 }
+
+// ---------------- Publicar (com confirmação) ----------------
+async function abrirPublicar(texto) {
+  const c = await api('/api/conexoes');
+  const opcoes = [
+    ['facebook', 'Facebook' + (c.meta.facebook ? ' · ' + c.meta.facebook : ''), c.meta.conectado, 'Conecte em Integrações'],
+    ['instagram', 'Instagram' + (c.meta.instagram ? ' · @' + c.meta.instagram : ''), c.meta.conectado && !!c.meta.instagram, c.meta.conectado ? 'Sem Instagram vinculado à página' : 'Conecte em Integrações'],
+    ['linkedin', 'LinkedIn' + (c.linkedin.nome ? ' · ' + c.linkedin.nome : ''), c.linkedin.conectado && !c.linkedin.expirado, 'Conecte em Integrações'],
+  ];
+  const d = document.createElement('dialog');
+  d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>Publicar</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+    <div class="modal-body">
+      <div><label>Onde publicar</label>${opcoes.map(([k, l, ok, aviso]) => `<label class="chk ${ok ? '' : 'off'}"><input type="checkbox" data-pl="${k}" ${ok ? '' : 'disabled'}> ${esc(l)}${ok ? '' : ` <small>(${esc(aviso)})</small>`}</label>`).join('')}</div>
+      <div><label>Texto</label><textarea id="pbTexto" rows="9">${esc(texto)}</textarea></div>
+      <div><label>Link da imagem (https://, obrigatório no Instagram)</label><input id="pbImg" placeholder="https://"></div>
+      <p class="muted" style="margin:0">LinkedIn: sai só o texto. A publicação é imediata e pública.</p>
+      <p class="erro" id="pbErro" style="margin:0"></p><div id="pbRes"></div>
+    </div>
+    <div class="modal-foot"><div></div><div style="display:flex;gap:8px"><button class="btn" value="x">Fechar</button><button type="button" class="btn primary" id="pbOk">Publicar agora</button></div></div></form>`;
+  document.body.appendChild(d); d.showModal();
+  d.addEventListener('close', () => d.remove());
+  $('#pbOk', d).onclick = async () => {
+    const plataformas = $$('[data-pl]', d).filter((x) => x.checked).map((x) => x.dataset.pl);
+    if (!plataformas.length) return ($('#pbErro', d).textContent = 'Escolha onde publicar');
+    if (!confirm('Publicar agora em: ' + plataformas.join(', ') + '?')) return;
+    const b = $('#pbOk', d); b.disabled = true; b.textContent = 'Publicando…'; $('#pbErro', d).textContent = '';
+    try {
+      const r = await api('/api/publicar', { method: 'POST', body: { plataformas, texto: $('#pbTexto', d).value, imagem_url: $('#pbImg', d).value, confirmado: true } });
+      $('#pbRes', d).innerHTML = r.resultados.map((x) => `<div class="alerta ${x.status === 'publicado' ? 'ok' : 'danger'}"><b>${esc(x.plataforma)}</b>: ${x.status === 'publicado' ? 'publicado' : esc(x.erro)}</div>`).join('');
+    } catch (e) { $('#pbErro', d).textContent = e.message; }
+    b.disabled = false; b.textContent = 'Publicar agora';
+  };
+}
+
+// Volta do login da Meta/LinkedIn: abre Integrações e mostra o resultado
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (!q.get('integracao')) return;
+  S.view = 'integracoes';
+  const msg = q.get('msg') || '';
+  history.replaceState(null, '', '/');
+  setTimeout(() => toast(msg), 1500);
+})();
 
 window.VIEWS_EXTRA = { inicio: viewInicio, criar: viewCriar, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };
