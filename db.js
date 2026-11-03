@@ -518,6 +518,22 @@ async function seedsIncrementais(c) {
     if (rowCount) await fn();
   };
 
+  // Pautas de novembro do Disco (planilha da agência) com as artes já prontas, aguardando a aprovação humana
+  await aplicar('disco_novembro_v1', async () => {
+    const fs = require('fs'); const path = require('path');
+    const { rows: [cl] } = await c.query(`SELECT c.id FROM clients c JOIN projects p ON p.id=c.project_id WHERE p.nome='Disco' AND c.nome='Disco' LIMIT 1`);
+    if (!cl) return;
+    const pautas = JSON.parse(fs.readFileSync(path.join(__dirname, 'seeds', 'disco-novembro.json'), 'utf8'));
+    for (const t of pautas) {
+      const { rowCount } = await c.query('SELECT 1 FROM tasks WHERE client_id=$1 AND data=$2 AND tema=$3', [cl.id, t.data, t.tema]);
+      if (rowCount) continue;
+      await c.query(
+        `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, legenda, briefing, status, responsavel, arte_url, publicar_imagem, midias, esteira, esteira_msg, esteira_em)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'aprovacao',$9,$10,$10,$11::jsonb,'aguardando_aprovacao',$12,now())`,
+        [cl.id, t.tipo, t.formato, t.data, t.editorial, t.tema, t.legenda, t.briefing, t.responsavel, t.imagem, JSON.stringify(t.midias || []), t.msg]);
+    }
+  });
+
   await aplicar('experiencias_lafleur_v1', async () => {
     const { rows: [lf] } = await c.query(`SELECT id FROM clients WHERE nome='La Fleur Collection'`);
     if (!lf) return;
