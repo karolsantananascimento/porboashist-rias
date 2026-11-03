@@ -529,7 +529,7 @@ async function seedsIncrementais(c) {
       if (rowCount) continue;
       await c.query(
         `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, legenda, briefing, status, responsavel, arte_url, publicar_imagem, midias, esteira, esteira_msg, esteira_em)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'aprovacao',$9,$10,$10,$11::jsonb,'aguardando_aprovacao',$12,now())`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'aprovacao',$9,$13,$10,$11::jsonb,'aguardando_aprovacao',$12,now())`,
         [cl.id, t.tipo, t.formato, t.data, t.editorial, t.tema, t.legenda, t.briefing, t.responsavel, t.imagem, JSON.stringify(t.midias || []), t.msg, t.canva || t.imagem]);
     }
   });
