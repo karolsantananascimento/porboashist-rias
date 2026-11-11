@@ -102,6 +102,7 @@ HABILIDADES DE DESIGNER (use todas, sem contrariar o guia de marca)
 - Acessibilidade e produção: contraste, tamanho mínimo de texto (≥ 28 px em 1080), áreas de toque/zonas seguras, texto alternativo sugerido, exportação PNG/JPG sem compressão visível, nomes de arquivo claros (cliente_formato_tema_v1).
 - Crítica e revisão: antes de entregar, avalie como diretor de arte (o que o olho vê primeiro, legibilidade em miniatura, erros de português, fidelidade ao guia) e liste o que ajustou; ao revisar peça existente, compare com o guia do cliente, aponte cada desvio (cor, fonte, logo, margem, rodapé, ortografia) e diga o que dá para corrigir no Canva e o que precisa de ação manual (ex.: troca de fonte).
 - Variações: para teste A/B, mude UMA variável por vez (título, imagem ou CTA) e identifique-as como A e B.';
+PADRÃO MESTRE (competência sua): se o guia do cliente tiver "PADRÃO MESTRE" (uma capa de referência aprovada, com medidas), ele é o modelo de TODA arte do cliente: duas zonas (texto à esquerda, um objeto-símbolo à direita), emblema no canto superior direito, título condensado em até 4 linhas com a palavra-chave em vermelho e ponto final, filete, subtítulo espaçado, base livre, fundo preto com vinheta. Briefe cada peça já nessas coordenadas e proporções, escreva o PROMPT DE IMAGEM com o prompt-base do guia trocando só o objeto-símbolo, e na revisão compare a arte com o checklist da capa, listando cada desvio.
 REVISAR ARTES EXISTENTES: para cada pauta já criada, compare a arte com o guia do cliente e entregue o relatório de desvios e as correções feitas.
 SEGUIR O PADRÃO VISUAL DAS REFERÊNCIAS (competência sua): o guia de cada cliente pode trazer referências aprovadas (links de imagens, carrosséis, moodboard, emblema) e uma "anatomia do card". Toda imagem, capa, carrossel, story e arte que você briefar ou revisar segue esse padrão: mesma anatomia (posição do logo ou contador, título gigante com UMA palavra-chave de cor e ponto final, filete, texto de apoio, caixa de destaque, rodapé "ARRASTE"), mesma paleta, mesma linguagem de imagem (objetos-símbolo, luz, vinheta, granulação) e mesmos elementos assinatura (estrela de quatro pontas, filete, cruzes). Ao receber novas referências da usuária, extraia o padrão em texto (anatomia de cima para baixo, cores, fontes, estilo de imagem, elementos fixos, logo e variações) e proponha a atualização do guia, apontando conflitos com regras anteriores como [CONFIRMAR] em vez de decidir sozinho. No briefing e no PROMPT DE IMAGEM, descreva a cena no estilo das referências e deixe a zona de texto escura e livre. Não copie uma referência quadro a quadro: mantenha o sistema e crie uma peça nova com a mesma família visual.`;
 AGENTES.mariana.instrucoes += `
@@ -262,7 +263,7 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
       [nome, cor, 'descricao' in b ? texto(b.descricao, 600) : atual.descricao, 'contexto' in b ? texto(b.contexto, 6000) : atual.contexto,
         'canva_kit_id' in b ? (texto(b.canva_kit_id, 40) || null) : atual.canva_kit_id,
         'canva_kit_nome' in b ? (texto(b.canva_kit_nome, 80) || null) : atual.canva_kit_nome, atual.id,
-        'guia_design' in b ? (texto(b.guia_design, 12000) || null) : atual.guia_design]);
+        'guia_design' in b ? (texto(b.guia_design, 30000) || null) : atual.guia_design]);
     res.json(p);
   }));
 
@@ -271,7 +272,7 @@ module.exports = function registrarProjetos(app, { pool, wrap, soAdmin }) {
     const b = req.body || {};
     const { rows: [c] } = await pool.query(
       `UPDATE clients SET canva_kit_id=$1, canva_kit_nome=$2, guia_design=$3, marca_propria=$4 WHERE id=$5 RETURNING id, canva_kit_id, canva_kit_nome, guia_design, marca_propria`,
-      [texto(b.canva_kit_id, 40) || null, texto(b.canva_kit_nome, 80) || null, texto(b.guia_design, 12000) || null, !!b.marca_propria, req.params.id]);
+      [texto(b.canva_kit_id, 40) || null, texto(b.canva_kit_nome, 80) || null, texto(b.guia_design, 30000) || null, !!b.marca_propria, req.params.id]);
     if (!c) return res.status(404).json({ erro: 'Cliente não encontrado' });
     res.json(c);
   }));
