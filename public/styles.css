@@ -441,6 +441,8 @@ label.dm-tipo { text-transform: none; letter-spacing: 0; margin: 0; cursor: poin
 .funil { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; }
 .tag.criacao { background: color-mix(in srgb, var(--story) 15%, transparent); color: var(--story); }
 .tag.trafego { background: color-mix(in srgb, var(--blog) 15%, transparent); color: var(--blog); }
+.dm-lista { margin: 8px 0 0; padding-left: 18px; }
+.dm-lista li { margin: 6px 0; }
 @media (max-width: 900px) { .dm-linha { grid-template-columns: 1fr; } .funil { grid-template-columns: 1fr; } }
 
 .esteira { margin-bottom: 10px; display: grid; gap: 6px; }

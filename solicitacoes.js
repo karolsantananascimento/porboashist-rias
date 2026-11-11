@@ -113,6 +113,41 @@ async function montarPauta(pool, { tipo, texto: demanda, cliente }) {
   }
 }
 
+// ---------- Criação de uma demanda (usada pela caixa e pelo comando livre) ----------
+// Cria a pauta (tarefa) e a solicitação ligada a ela e, se houver chave do Claude, coloca o time para executar.
+// `pauta` já pronta (vinda do comando livre) evita uma chamada de IA; `iniciar(taskId)` troca a execução imediata por uma fila.
+async function criarDemanda(pool, { cl, tipo, demanda, prazo, user, solicitacao_id, executar = true, pauta, iniciar }) {
+  pauta = pauta || await montarPauta(pool, { tipo, texto: demanda, cliente: cl });
+  const responsavel = { conteudo: 'Hugo', trafego: 'Camila', criacao: /v[ií]deo|reels|edi[cç][aã]o|corte/i.test(demanda + ' ' + (pauta.formato || '')) ? 'Davi' : 'Luiz' }[tipo];
+  const { rows: [t] } = await pool.query(
+    `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, briefing, status, responsavel, prioridade)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'pauta',$8,$9) RETURNING *`,
+    [cl.id, pauta.tipo, pauta.formato || null, prazo, pauta.editorial || null, pauta.tema, pauta.briefing, responsavel,
+      /urgente|hoje|amanh[ãa]|prioridade/i.test(demanda) ? 'alta' : 'normal']);
+  const tipoSol = tipo === 'conteudo' ? 'conteudo' : tipo === 'trafego' ? 'campanha' : (responsavel === 'Davi' ? 'video' : 'arte');
+  let sol;
+  if (solicitacao_id) {
+    // Solicitação que já existia (formulário, registro manual): passa a andamento e fica ligada à pauta
+    ({ rows: [sol] } = await pool.query(
+      `UPDATE solicitacoes SET status='andamento', task_id=$1, client_id=$2, updated_at=now() WHERE id=$3 RETURNING *`, [t.id, cl.id, solicitacao_id]));
+  }
+  if (!sol) {
+    ({ rows: [sol] } = await pool.query(
+      `INSERT INTO solicitacoes (project_id, client_id, titulo, tipo, descricao, solicitante, prazo, origem, status, task_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'caixa','andamento',$8) RETURNING *`,
+      [cl.project_id, cl.id, texto(pauta.tema, 200), tipoSol, demanda, user.nome || user.email, prazo, t.id]));
+  }
+  // O time começa a trabalhar sozinho; o resultado cai na fila de aprovação
+  let executando = false;
+  const { cfg } = require('./config');
+  if (executar && cfg('ANTHROPIC_API_KEY')) {
+    await pool.query(`UPDATE tasks SET esteira='executando', esteira_msg=$2, esteira_em=now() WHERE id=$1`, [t.id, iniciar ? 'Na fila do time…' : 'Time começando…']);
+    if (iniciar) iniciar(t.id); else require('./esteira').executar(pool, t.id, { usuario: user.email });
+    executando = true;
+  }
+  return { tarefa: { ...t, esteira: executando ? 'executando' : null }, solicitacao: sol, pauta, executando };
+}
+
 // ---------- Rotas ----------
 function registrar(app, { pool, wrap, soAdmin }) {
   // Lista e métricas por projeto
@@ -170,36 +205,8 @@ function registrar(app, { pool, wrap, soAdmin }) {
     if (!cl) return res.status(400).json({ erro: 'Escolha o cliente' });
     if (cl.projeto_tipo === 'empregos') return res.status(400).json({ erro: 'O projeto Empregos não recebe demandas por aqui' });
     const prazo = dataOk(b.prazo) ? b.prazo : null;
-
-    const pauta = await montarPauta(pool, { tipo, texto: demanda, cliente: cl });
-    const responsavel = { conteudo: 'Hugo', trafego: 'Camila', criacao: /v[ií]deo|reels|edi[cç][aã]o|corte/i.test(demanda + ' ' + (pauta.formato || '')) ? 'Davi' : 'Luiz' }[tipo];
-    const { rows: [t] } = await pool.query(
-      `INSERT INTO tasks (client_id, tipo, formato, data, editorial, tema, briefing, status, responsavel, prioridade)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'pauta',$8,$9) RETURNING *`,
-      [cl.id, pauta.tipo, pauta.formato || null, prazo, pauta.editorial || null, pauta.tema, pauta.briefing, responsavel,
-        /urgente|hoje|amanh[ãa]|prioridade/i.test(demanda) ? 'alta' : 'normal']);
-    const tipoSol = tipo === 'conteudo' ? 'conteudo' : tipo === 'trafego' ? 'campanha' : (responsavel === 'Davi' ? 'video' : 'arte');
-    let sol;
-    if (b.solicitacao_id) {
-      // Solicitação que já existia (formulário, registro manual): passa a andamento e fica ligada à pauta
-      ({ rows: [sol] } = await pool.query(
-        `UPDATE solicitacoes SET status='andamento', task_id=$1, client_id=$2, updated_at=now() WHERE id=$3 RETURNING *`, [t.id, cl.id, b.solicitacao_id]));
-    }
-    if (!sol) {
-      ({ rows: [sol] } = await pool.query(
-        `INSERT INTO solicitacoes (project_id, client_id, titulo, tipo, descricao, solicitante, prazo, origem, status, task_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'caixa','andamento',$8) RETURNING *`,
-        [cl.project_id, cl.id, texto(pauta.tema, 200), tipoSol, demanda, req.user.nome || req.user.email, prazo, t.id]));
-    }
-    // O time começa a trabalhar sozinho; o resultado cai na fila de aprovação
-    let executando = false;
-    const { cfg } = require('./config');
-    if (b.executar !== false && cfg('ANTHROPIC_API_KEY')) {
-      await pool.query(`UPDATE tasks SET esteira='executando', esteira_msg='Time começando…', esteira_em=now() WHERE id=$1`, [t.id]);
-      require('./esteira').executar(pool, t.id, { usuario: req.user.email });
-      executando = true;
-    }
-    res.json({ tarefa: { ...t, esteira: executando ? 'executando' : null }, solicitacao: sol, projeto: { id: cl.project_id, nome: cl.projeto }, cliente: { id: cl.id, nome: cl.nome }, ia: pauta.ia, executando });
+    const r = await criarDemanda(pool, { cl, tipo, demanda, prazo, user: req.user, solicitacao_id: b.solicitacao_id, executar: b.executar !== false });
+    res.json({ tarefa: r.tarefa, solicitacao: r.solicitacao, projeto: { id: cl.project_id, nome: cl.projeto }, cliente: { id: cl.id, nome: cl.nome }, ia: r.pauta.ia, executando: r.executando });
   }));
 
   // Link do formulário público do projeto
@@ -306,4 +313,4 @@ button{margin-top:18px;background:#b3202a;color:#fff;border:0;border-radius:8px;
   }));
 }
 
-module.exports = { registrar, registrarPublico, importarPautas, montarPauta };
+module.exports = { registrar, registrarPublico, importarPautas, montarPauta, criarDemanda, dataOk, texto };

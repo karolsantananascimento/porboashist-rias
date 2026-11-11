@@ -94,7 +94,10 @@ const TIPOS_DEMANDA = [
   ['conteudo', '✍️', 'Conteúdo', 'Hugo · posts, roteiros, artigos'],
   ['criacao', '🎨', 'Criação', 'Luiz e Davi · artes e vídeos'],
   ['trafego', '📈', 'Tráfego', 'Camila · campanhas e anúncios'],
+  ['livre', '🧠', 'Livre', 'Escreva do seu jeito · o time entende'],
 ];
+const PLACEHOLDER_DEMANDA = 'Ex.: Post de Natal com a promoção de 20% nas diárias, tom acolhedor, para a próxima semana';
+const PLACEHOLDER_LIVRE = 'Ex.: Faça 3 posts de Natal para a Disco e uma campanha de conversão para a Operizy, com foco em novos leads. Pode citar vários clientes e itens.';
 
 function caixaDemandas(clientes, projetos, opts = {}) {
   const grupos = projetos.filter((p) => p.tipo !== 'empregos').map((p) => {
@@ -111,7 +114,7 @@ function caixaDemandas(clientes, projetos, opts = {}) {
       <div class="dm-prazo"><label for="dmPrazo">Prazo (opcional)</label><input type="date" id="dmPrazo"></div>
     </div>
     <label for="dmTxt" style="margin-top:12px">Demanda</label>
-    <textarea id="dmTxt" rows="4" placeholder="Ex.: Post de Natal com a promoção de 20% nas diárias, tom acolhedor, para a próxima semana"></textarea>
+    <textarea id="dmTxt" rows="4" placeholder="${PLACEHOLDER_DEMANDA}"></textarea>
     <div class="acoes-res"><button class="btn primary" id="dmEnviar">Enviar demanda</button><span class="erro" id="dmErro" role="alert"></span></div>
     <div id="dmRes" aria-live="polite"></div>
   </section>`;
@@ -121,11 +124,36 @@ function ligarCaixaDemandas(v, clientes, opts = {}) {
   const btn = $('#dmEnviar', v);
   if (opts.clienteId) $('#dmCli', v).value = String(opts.clienteId);
   else if (S.cliente && clientes.some((c) => String(c.id) === String(S.cliente))) $('#dmCli', v).value = String(S.cliente);
+  const tipoAtual = () => ($$('input[name=dmTipo]', v).find((r) => r.checked) || {}).value;
+  const rotuloBtn = () => (tipoAtual() === 'livre' ? 'Enviar comando' : 'Enviar demanda');
+  const ajustarModo = () => {
+    const livre = tipoAtual() === 'livre';
+    $('#dmTxt', v).placeholder = livre ? PLACEHOLDER_LIVRE : PLACEHOLDER_DEMANDA;
+    const rot = $('label[for=dmCli]', v); if (rot) rot.textContent = livre ? 'Cliente (opcional)' : 'Cliente';
+    const op = $('#dmCli option[value=""]', v); if (op) op.textContent = livre ? 'Deixar o time identificar pelo texto…' : 'Escolha o cliente…';
+    // No comando livre, um cliente já marcado restringiria o pedido a ele: começa vazio para o time identificar pelo texto
+    if (livre && !$('#dmCli', v).disabled) $('#dmCli', v).value = '';
+    btn.textContent = rotuloBtn();
+  };
+  $$('input[name=dmTipo]', v).forEach((r) => r.addEventListener('change', ajustarModo));
   btn.onclick = async () => {
     const client_id = Number($('#dmCli', v).value);
-    const tipo = ($$('input[name=dmTipo]', v).find((r) => r.checked) || {}).value;
+    const tipo = tipoAtual();
     const texto = $('#dmTxt', v).value.trim();
     const erro = $('#dmErro', v); erro.textContent = '';
+    if (tipo === 'livre') {
+      // Comando livre: o Claude identifica clientes e itens; as pautas entram em fila e o time executa até a aprovação
+      if (!texto) return (erro.textContent = 'Escreva o comando');
+      btn.disabled = true; btn.textContent = 'O time está entendendo o pedido…';
+      try {
+        const corpo = { texto };
+        if (client_id) corpo.client_id = client_id; else if (opts.projectId) corpo.project_id = opts.projectId;
+        mostrarComando(v, await api('/api/comandos', { method: 'POST', body: corpo }));
+        $('#dmTxt', v).value = '';
+      } catch (e) { erro.textContent = e.message; }
+      btn.disabled = false; btn.textContent = rotuloBtn();
+      return;
+    }
     if (!client_id) return (erro.textContent = 'Escolha o cliente');
     if (!texto) return (erro.textContent = 'Escreva a demanda');
     btn.disabled = true; btn.textContent = 'Criando a pauta…';
@@ -143,8 +171,47 @@ function ligarCaixaDemandas(v, clientes, opts = {}) {
         acompanharEsteira(r.tarefa.id, r.cliente.id, $('#dmProgMsg', v), () => { const f = $('#filaAprov', v); if (f && f.refresh) f.refresh(); });
       }
     } catch (e) { erro.textContent = e.message; }
-    btn.disabled = false; btn.textContent = 'Enviar demanda';
+    btn.disabled = false; btn.textContent = rotuloBtn();
   };
+}
+
+// Resultado do comando livre: o que foi criado, dúvidas do time e o andamento de cada pauta
+function mostrarComando(v, r) {
+  const raiz = $('#dmRes', v);
+  const lista = (itens) => `<ul class="dm-lista">${itens.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+  raiz.innerHTML = `<div class="alerta ${r.criadas.length ? 'ok' : ''}" style="margin-top:12px">
+    <b>${r.criadas.length ? `${r.criadas.length} pauta${r.criadas.length > 1 ? 's' : ''} criada${r.criadas.length > 1 ? 's' : ''}; o time está executando` : 'Nenhuma pauta criada'}</b>${r.resumo ? ` · ${esc(r.resumo)}` : ''}
+    ${r.criadas.length ? `<ul class="dm-lista">${r.criadas.map((x) => `<li data-tid="${x.tarefa.id}"><b>${esc(x.cliente.nome)}</b> · ${esc(x.tarefa.tema)} <small class="muted">· ${esc(x.tarefa.responsavel)}${x.tarefa.data ? ' · prazo ' + esc(fmtPrazo(x.tarefa.data)) : ''}</small><div class="muted" data-st>${x.executando ? '⏳ Na fila do time…' : 'Ficou em Pauta (os agentes não estão ativos)'}</div></li>`).join('')}</ul>` : ''}
+    ${r.duvidas.length ? `<p style="margin:10px 0 0"><b>Para esclarecer:</b></p>${lista(r.duvidas.map(esc))}` : ''}
+    ${r.ignoradas.length ? `<p style="margin:10px 0 0"><b>Não criadas:</b></p>${lista(r.ignoradas.map(esc))}` : ''}
+    ${r.criadas.length ? '<p class="muted" style="margin:10px 0 0">Quando ficarem prontas, aparecem na fila de aprovação. Nada é publicado sem o seu clique.</p>' : ''}</div>`;
+  acompanharLote(r.criadas.filter((x) => x.executando).map((x) => [x.tarefa.id, x.cliente.id]), raiz, () => { const f = $('#filaAprov', v); if (f && f.refresh) f.refresh(); });
+}
+
+// Acompanha várias tarefas de uma vez (uma consulta por cliente), atualizando a linha de cada uma
+function acompanharLote(pares, raiz, quandoPronto) {
+  const pendentes = new Map(pares);
+  let tentativas = 0;
+  const volta = async () => {
+    if (!raiz.isConnected || ++tentativas > 200 || !pendentes.size) return;
+    try {
+      const porCliente = new Map();
+      for (const [tid, cid] of pendentes) { if (!porCliente.has(cid)) porCliente.set(cid, []); porCliente.get(cid).push(tid); }
+      for (const [cid, ids] of porCliente) {
+        const lista = await api('/api/esteira?client_id=' + cid);
+        for (const tid of ids) {
+          const st = raiz.querySelector(`[data-tid="${tid}"] [data-st]`);
+          if (!st) { pendentes.delete(tid); continue; }
+          const t = lista.find((x) => x.id === tid);
+          if (t && t.esteira === 'executando') st.textContent = '⏳ ' + (t.esteira_msg || 'Trabalhando…');
+          else if (t && t.esteira === 'erro') { st.textContent = '⚠️ O time não conseguiu: ' + (t.esteira_msg || ''); pendentes.delete(tid); }
+          else if (t) { st.textContent = '✅ Pronto para a sua aprovação'; pendentes.delete(tid); quandoPronto && quandoPronto(); }
+        }
+      }
+    } catch { /* tenta de novo */ }
+    if (pendentes.size) setTimeout(volta, 5000);
+  };
+  setTimeout(volta, 3000);
 }
 
 // ---------------- Início: cards de projetos + Criar ----------------
@@ -680,7 +747,7 @@ async function viewSolicitar(v) {
         <button class="btn small ghost" data-ed="${x.id}">Editar</button>
         <button class="btn small ghost danger" data-rm="${x.id}">Descartar</button></div></article>`).join('')
       : '<div class="card"><div class="empty" style="padding:16px">Nenhuma solicitação pendente. Quem tem o link do projeto pode pedir direto pelo formulário.</div></div>'}`;
-  ligarCaixaDemandas(v, S.clients, { clienteId: c ? c.id : null });
+  ligarCaixaDemandas(v, S.clients, { clienteId: c ? c.id : null, projectId: p.id });
   painelConteudo(v, c ? { client_id: c.id } : { project_id: p.id }, { cliente: c });
   $('#ctImp', v).onclick = () => abrirImportar();
   const porId = (id) => sols.find((x) => String(x.id) === String(id));

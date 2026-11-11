@@ -564,6 +564,7 @@ require('./relatorios').registrar(app, { pool, wrap });
 const solic = require('./solicitacoes');
 solic.registrar(app, { pool, wrap, soAdmin });
 solic.registrarPublico(app, { pool, wrap });
+require('./comandos').registrar(app, { pool, wrap });
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {

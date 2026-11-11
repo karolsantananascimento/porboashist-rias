@@ -15,6 +15,9 @@ const pool = new Pool({
     : false,
 });
 
+// Conexão ociosa derrubada pelo banco (reinício, pausa, manutenção) emite 'error' no pool; sem este handler o Node encerra o processo.
+pool.on('error', (e) => console.error('Conexão ociosa com o Postgres encerrada:', e.message));
+
 // Schema próprio (ex.: Supabase, para não expor as tabelas na API pública)
 const SCHEMA_NAME = process.env.DB_SCHEMA;
 if (SCHEMA_NAME) {

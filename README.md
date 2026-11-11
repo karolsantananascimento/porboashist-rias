@@ -77,5 +77,8 @@ Abra http://localhost:3000.
 - **Banco:** Postgres gratuito no Supabase (projeto `por-boas-historias`, região São Paulo), que não expira (o Supabase pausa projetos gratuitos após uma semana sem nenhum acesso; basta reativar no painel deles). As tabelas ficam no schema `pbh`, acessado por um usuário próprio (`pbh_app`), fora da API pública do Supabase.
 - **Backup:** em **Clientes → Baixar backup** você guarda uma cópia de tudo em JSON, que pode ser restaurada em **Clientes → Restaurar backup**.
 
+### Caixa de demandas: modo Livre
+Além de **Conteúdo**, **Criação** e **Tráfego**, a caixa tem o modo **🧠 Livre**: escreva o pedido do seu jeito, citando vários clientes e vários itens (ex.: "3 posts de Natal para a Disco e uma campanha para a Operizy"). O Claude identifica os clientes (só os da lista, nunca do projeto Empregos) e separa em até 8 demandas por comando, cria as pautas e o time executa em fila (2 por vez). O que faltar vira `[CONFIRMAR: ...]` no briefing e dúvidas aparecem na tela. Tudo termina **aguardando a sua aprovação**; o comando livre não publica, não envia mensagens nem altera configurações. Se um cliente estiver marcado, o pedido fica restrito a ele. Usa o mesmo limite por hora do agente (`AGENTE_LIMITE_HORA`) e a rota `POST /api/comandos`.
+
 ### Formato de pauta
 Posts do agente saem no padrão da agência: legenda completa + briefing criativo por card/lâmina/cena (texto da arte, imagem, direção de arte), com as pastas do acervo (Materiais) citadas quando existirem. Em **Gerar semana**, o botão "Copiar pautas dos posts marcados" copia tudo no formato `dia. DD/MM/AA · Formato · Tema` / Data / Legenda / Briefing criativo / Link de imagens / Obs.

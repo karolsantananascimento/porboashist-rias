@@ -562,6 +562,7 @@ Responda exatamente neste formato (títulos em português):
 
 // ---------- Webhook da Meta (fora de /api: a Meta não tem a sessão) ----------
 module.exports.chamarTexto = chamarTexto;
+module.exports.dentroDoLimite = dentroDoLimite;
 module.exports.AGENTES = AGENTES;
 module.exports.REGRAS = REGRAS;
 module.exports.guiaDe = guiaDe;
