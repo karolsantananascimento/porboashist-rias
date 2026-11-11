@@ -193,7 +193,7 @@ const ordemJson = (s) => {
 // Campos do perfil profissional (rótulo usado no texto que a Bianca lê)
 const PERFIL_CAMPOS = [
   ['nome', 'Nome'], ['headline', 'Título profissional (PT)'], ['headline_en', 'Professional headline (EN)'], ['email', 'E-mail'], ['telefone', 'Telefone / WhatsApp'],
-  ['cidade', 'Cidade'], ['linkedin', 'LinkedIn'], ['portfolio', 'Portfólio (link)'], ['resumo', 'Resumo profissional (PT)'], ['resumo_en', 'Professional summary (EN)'],
+  ['cidade', 'Cidade'], ['linkedin', 'LinkedIn'], ['portfolio', 'Portfólio (link)'], ['outros_links', 'Outros links (GitHub, Behance, Instagram, site)'], ['resumo', 'Resumo profissional (PT)'], ['resumo_en', 'Professional summary (EN)'],
   ['resultados', 'Resultados em números'], ['experiencias', 'Experiência profissional'], ['outras_experiencias', 'Outras experiências'], ['cases', 'Cases do portfólio'],
   ['competencias', 'Competências principais'], ['ferramentas', 'Ferramentas e stack'], ['soft_skills', 'Competências comportamentais'], ['formacao', 'Formação'],
   ['idiomas', 'Idiomas'], ['diferenciais', 'Diferenciais'], ['disponibilidade', 'Disponibilidade'], ['pretensao', 'Pretensão'], ['respostas_prontas', 'Respostas prontas'],
@@ -525,6 +525,29 @@ Responda exatamente neste formato (títulos em português):
       `UPDATE vagas SET analise=$1, proposta=$2, status=CASE WHEN status='nova' THEN 'salva' ELSE status END, updated_at=now() WHERE id=$3 RETURNING *`,
       [analise.trim(), (proposta || '').trim() || null, v.id]);
     res.json(novo);
+  }));
+
+  // Bianca responde as perguntas de um formulário de candidatura, vaga a vaga, só com o que consta no perfil
+  app.post('/api/vagas/:id/formulario', wrap(async (req, res) => {
+    const { rows: [v] } = await pool.query('SELECT * FROM vagas WHERE id=$1', [req.params.id]);
+    if (!v) return res.status(404).json({ erro: 'Vaga não encontrada' });
+    const perguntas = texto(req.body?.perguntas, 8000);
+    if (!val(perguntas)) return res.status(400).json({ erro: 'Cole as perguntas ou os campos do formulário (um por linha).' });
+    if (!dentroDoLimite(req.user.id)) return res.status(429).json({ erro: 'Limite de gerações por hora atingido.' });
+    const { rows: [p] } = await pool.query('SELECT dados FROM perfil_profissional WHERE id=1');
+    const perfil = perfilTexto(p?.dados || {});
+    const saida = await chamarTexto({
+      system: `Você é Bianca, caçadora de vagas da Karolina Nascimento. Responda as perguntas de um formulário de candidatura na primeira pessoa, de forma personalizada para a vaga e fiel ao PERFIL.
+REGRAS: use SOMENTE os dados do PERFIL. Nunca invente experiência, cargo, número, cliente, certificação, idioma, pretensão, documento, data ou resposta pessoal. Se o PERFIL não tem a informação (ex.: CNH, nacionalidade, data de nascimento, salário exato), responda exatamente "[PREENCHER: o que falta]". Itens em "Observações e itens a confirmar" NÃO são fatos. Responda no idioma da pergunta. Respeite limites de caracteres citados na pergunta. Perguntas abertas: específicas para a vaga, sem clichês.
+Devolva APENAS um array JSON (sem texto fora dele) com um item por pergunta, na ordem recebida: {"pergunta","resposta","confirmar"} onde "confirmar" é true quando a resposta tem [PREENCHER] ou depende de algo que ela deve conferir.`,
+      user: `PERFIL:\n${perfil}\n\nVAGA\nTítulo: ${v.titulo}\nEmpresa: ${v.empresa || '-'}\nDescrição:\n${v.descricao || '(sem descrição)'}\n\nPERGUNTAS DO FORMULÁRIO:\n${perguntas}`,
+      maxTokens: 4000,
+    });
+    const i = saida.indexOf('['), j = saida.lastIndexOf(']');
+    let itens = [];
+    try { itens = JSON.parse(saida.slice(i, j + 1)); } catch { /* resposta fora do formato */ }
+    if (!Array.isArray(itens) || !itens.length) return res.status(502).json({ erro: 'A Bianca não devolveu as respostas no formato esperado. Tente de novo.' });
+    res.json({ respostas: itens.slice(0, 60).map((x) => ({ pergunta: texto(x.pergunta, 500), resposta: texto(x.resposta, 4000), confirmar: !!x.confirmar || /\[PREENCHER/i.test(String(x.resposta || '')) })) });
   }));
 
   // Bianca busca vagas na web (precisa da ferramenta de busca habilitada na conta da API)

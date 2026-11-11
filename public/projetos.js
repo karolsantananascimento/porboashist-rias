@@ -1172,7 +1172,12 @@ function abrirVaga(x, depois) {
       ${x ? `<div class="acoes-res"><button type="button" class="btn small primary" id="vgAnalisar">${x.analise ? 'Analisar de novo' : 'Analisar e montar proposta'}</button>
         ${x.url ? `<a class="btn small" href="${esc(x.url)}" target="_blank" rel="noopener">Abrir vaga ↗</a>` : ''}
         <select id="vgStatus">${Object.entries(STATUS_VAGA).map(([k, l]) => `<option value="${k}" ${x.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div id="vgRes">${resultadoVaga(x)}</div>` : ''}
+      <div id="vgRes">${resultadoVaga(x)}</div>
+      <div class="card" style="padding:12px;margin-top:10px"><label>Preencher o formulário desta vaga</label>
+        <textarea id="vgPerg" rows="4" placeholder="Cole aqui as perguntas ou campos do formulário (um por linha). Ex.: Por que quer trabalhar aqui? / Pretensão salarial / Link do portfólio"></textarea>
+        <div class="acoes-res"><button type="button" class="btn small primary" id="vgForm">Responder com meu perfil</button></div>
+        <div id="vgFormRes"></div>
+        <small class="muted">Só usa o que está no seu perfil. O que faltar vem como [PREENCHER]. Revise e cole no site: você envia a candidatura.</small></div>` : ''}
       <p class="erro" id="vgErro" style="margin:0"></p>
     </div>
     <div class="modal-foot"><div>${x ? '<button type="button" class="btn danger" id="vgDel">Excluir</button>' : ''}</div>
@@ -1197,6 +1202,16 @@ function abrirVaga(x, depois) {
       btn.textContent = 'Analisar de novo';
     } catch (e) { $('#vgErro').textContent = e.message; btn.textContent = 'Analisar e montar proposta'; }
     btn.disabled = false;
+  };
+  $('#vgForm').onclick = async () => {
+    const btn = $('#vgForm'); btn.disabled = true; btn.textContent = 'Bianca está respondendo…'; $('#vgErro').textContent = '';
+    try {
+      const r = await api(`/api/vagas/${x.id}/formulario`, { method: 'POST', body: { perguntas: $('#vgPerg').value } });
+      $('#vgFormRes').innerHTML = r.respostas.map((q, i) => `<div style="margin-top:8px"><b>${esc(q.pergunta)}</b>${q.confirmar ? ' <span class="muted">⚠ confirmar</span>' : ''}
+        <textarea rows="3" class="resultado" data-fr="${i}">${esc(q.resposta)}</textarea><button type="button" class="btn small" data-cp="${i}">Copiar</button></div>`).join('');
+      $$('[data-cp]', d).forEach((b) => b.addEventListener('click', () => copiar($(`[data-fr="${b.dataset.cp}"]`).value)));
+    } catch (e) { $('#vgErro').textContent = e.message; }
+    btn.disabled = false; btn.textContent = 'Responder com meu perfil';
   };
   function ligarResultadoVaga() {
     const a = $('#vgCpAn'), p = $('#vgCpProp');
