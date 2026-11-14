@@ -1,9 +1,6 @@
 const { Pool, types } = require('pg');
 const fs = require('fs');
 const path = require('path');
-const seed = require('./seed/october.json');
-const trello = require('./seed/clientes-trello.json');
-const { lerExperiencias } = require('./experiencias');
 
 // Datas (DATE) voltam como texto 'AAAA-MM-DD', sem conversão de fuso.
 types.setTypeParser(1082, (v) => v);
@@ -367,98 +364,6 @@ const BLOG_CHECKLIST = [
   'Publicação e envio para indexação',
 ];
 
-const CAPTACOES = [
-  {
-    tema: 'Mais fotos e vídeos da Villa de Muro Alto',
-    itens: [
-      'Fotos de hóspedes passeando',
-      'Fotos dos restaurantes',
-      'Eventos durante o dia',
-      'Vídeos rodando pela Villa',
-      'Vídeos da recepção dos restaurantes até o interior',
-    ],
-  },
-  {
-    tema: 'Fotos de passeio de buggy pela praia de Muro Alto',
-    itens: ['Fotos do passeio de buggy pela praia de Muro Alto'],
-  },
-  {
-    tema: 'Mais fotos de hóspedes pela praia de Muro Alto',
-    itens: [
-      'Famílias brincando próximo às águas',
-      'Casais nos guarda-sóis',
-      'Mais imagens próximas na Piscina Natural',
-    ],
-  },
-];
-
-const check = (itens) => itens.map((texto) => ({ texto, feito: false }));
-
-async function insertTask(c, t) {
-  await c.query(
-    `INSERT INTO tasks (client_id,tipo,formato,data,editorial,tema,legenda,briefing,links,status,prioridade,checklist)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-    [t.client_id, t.tipo, t.formato || null, t.data || null, t.editorial || null, t.tema || null,
-      t.legenda || null, t.briefing || null, t.links || null, t.status || 'pauta',
-      t.prioridade || 'normal', JSON.stringify(t.checklist || [])]
-  );
-}
-
-async function seedIfEmpty(c) {
-  const { rows } = await c.query('SELECT count(*)::int AS n FROM clients');
-  if (rows[0].n > 0) return;
-
-  const { rows: [cl] } = await c.query(
-    `INSERT INTO clients (nome, marcas, site, whatsapp, meta_posts, meta_stories_dia, meta_blog, observacoes)
-     VALUES ($1,$2,$3,$4,12,1,4,$5) RETURNING id`,
-    ['La Fleur Collection',
-      JSON.stringify(['Samoa Beach Resort', 'Samoa Villa Resort', 'Villa de Muro Alto']),
-      'lafleurcollection.com.br',
-      '+55 81 8264-9638',
-      'Apartamentos completos em Muro Alto (Porto de Galinhas/PE) com acesso à programação dos Resorts Samoa. Rodapé padrão: 📍 Muro Alto — Porto de Galinhas/PE · Reserve: lafleurcollection.com.br · Link na bio · *Programação sujeita a alterações sem aviso prévio.']
-  );
-  const client_id = cl.id;
-
-  // Posts do feed e editoriais de stories vindos do planejamento de outubro
-  const storyEditorial = {};
-  for (const p of seed.posts) {
-    if (!p.formato) { storyEditorial[p.data] = p.editorial; continue; }
-    await insertTask(c, { client_id, tipo: 'post', ...p });
-  }
-
-  // Stories diários de outubro
-  for (let d = 1; d <= 31; d++) {
-    const data = `2026-10-${String(d).padStart(2, '0')}`;
-    await insertTask(c, {
-      client_id, tipo: 'story', formato: 'story', data,
-      editorial: storyEditorial[data] || null, tema: 'Stories do dia',
-    });
-  }
-
-  // 4 artigos de blog com SEO
-  for (const data of ['2026-10-06', '2026-10-13', '2026-10-20', '2026-10-27']) {
-    await insertTask(c, {
-      client_id, tipo: 'blog', formato: 'artigo', data,
-      tema: 'Artigo de blog (SEO) — definir pauta', checklist: check(BLOG_CHECKLIST),
-    });
-  }
-
-  // Captações prioritárias
-  for (const cap of CAPTACOES) {
-    await insertTask(c, {
-      client_id, tipo: 'captacao', formato: 'captação', tema: cap.tema,
-      prioridade: 'alta', checklist: check(cap.itens),
-    });
-  }
-
-  for (const m of seed.materials) {
-    await c.query(
-      'INSERT INTO materials (client_id,categoria,descricao,url,evitar) VALUES ($1,$2,$3,$4,$5)',
-      [client_id, m.categoria, m.descricao, m.url, !!m.evitar]
-    );
-  }
-}
-
 // ---------- Senhas (scrypt) ----------
 const crypto = require('crypto');
 
@@ -537,72 +442,6 @@ async function seedsIncrementais(c) {
     }
   });
 
-  await aplicar('experiencias_lafleur_v1', async () => {
-    const { rows: [lf] } = await c.query(`SELECT id FROM clients WHERE nome='La Fleur Collection'`);
-    if (!lf) return;
-    await c.query('UPDATE clients SET planilha_url=$1 WHERE id=$2',
-      ['https://docs.google.com/spreadsheets/d/1oRIPrVLTZEY4xlqvNIl8W9nBK0X_hxkuA0WHrgFJf6I/edit?gid=1478707839#gid=1478707839', lf.id]);
-    const csv = fs.readFileSync(path.join(__dirname, 'seed', 'experiencias-samoa.csv'), 'utf8');
-    await salvarExperiencias(c, lf.id, lerExperiencias(csv));
-  });
-
-  // Regras que a Karolina já definiu para a La Fleur; tom de voz e público ficam para a equipe preencher
-  await aplicar('contexto_lafleur_v1', async () => {
-    const { rows: [lf] } = await c.query(`SELECT id, observacoes FROM clients WHERE nome='La Fleur Collection'`);
-    if (!lf) return;
-    await c.query(
-      `INSERT INTO contexto_cliente (client_id, regras, rodape) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
-      [lf.id,
-        'Os hóspedes de cada unidade La Fleur têm direito à programação do resort onde estão hospedados (Samoa Villa ou Samoa Beach). Sempre incluir o aviso: Programação sujeita a alterações sem aviso prévio.',
-        '📍 Muro Alto — Porto de Galinhas/PE · Reserve: lafleurcollection.com.br · Link na bio · *Programação sujeita a alterações sem aviso prévio.']);
-  });
-
-  // Conhecimento da La Fleur extraído dos textos aprovados no planejamento de outubro e do cadastro do cliente.
-  // Só preenche o que ainda estiver vazio, sem sobrescrever o que a equipe já editou.
-  await aplicar('contexto_lafleur_v2', async () => {
-    const { rows: [lf] } = await c.query(`SELECT id FROM clients WHERE nome='La Fleur Collection'`);
-    if (!lf) return;
-    const padrao = {
-      tom_de_voz: 'Acolhedor e elegante, em frases curtas e claras. Fala de hospitalidade, família e tempo bem aproveitado, sem gírias e com poucos emojis (o 📍 no rodapé). Abre com uma ideia simples e humana, explica o benefício e fecha convidando a reservar. (Extraído dos textos aprovados em outubro; revise.)',
-      publico: 'Famílias com crianças, casais e grupos que querem viajar para Porto de Galinhas/PE com conforto e liberdade; também leitores interessados em investir em apartamentos em Muro Alto.',
-      pilares: 'Experiência do cliente / hospedagens\nProgramação dos Resorts Samoa\nDatas especiais\nDicas de conteúdos para hóspedes e investidores',
-      conhecimento: [
-        'La Fleur Collection oferece apartamentos completos em Muro Alto (Porto de Galinhas/PE), com acesso à programação dos Resorts Samoa.',
-        'Marcas: Samoa Beach Resort, Samoa Villa Resort e Villa de Muro Alto.',
-        'Os apartamentos têm de 2 a 3 quartos (quartos separados) e cozinha completa/equipada.',
-        'Há opções de pensão completa e meia pensão.',
-        'O hóspede de cada unidade La Fleur aproveita a programação do resort em que está hospedado (Samoa Beach ou Samoa Villa).',
-        'A programação dos resorts inclui recreação monitorada, oficinas, aulas fitness (yoga, hidro, funcional), música ao vivo e pool party.',
-        'Samuka e a Ilha dos Pequenos Exploradores aparecem na programação infantil da Semana da Criança nos Resorts Samoa.',
-        'Muro Alto é descrita nos textos do cliente como uma das praias mais bonitas da América Latina.',
-        'Reservas: lafleurcollection.com.br ou WhatsApp +55 81 8264-9638.',
-        'Detalhes de datas, horários e preços só podem ser usados quando estiverem na planilha de programação como confirmados.',
-      ].join('\n'),
-    };
-    await c.query(
-      `INSERT INTO contexto_cliente (client_id, tom_de_voz, publico, pilares, conhecimento) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (client_id) DO UPDATE SET
-         tom_de_voz = COALESCE(NULLIF(contexto_cliente.tom_de_voz,''), EXCLUDED.tom_de_voz),
-         publico = COALESCE(NULLIF(contexto_cliente.publico,''), EXCLUDED.publico),
-         pilares = COALESCE(NULLIF(contexto_cliente.pilares,''), EXCLUDED.pilares),
-         conhecimento = COALESCE(NULLIF(contexto_cliente.conhecimento,''), EXCLUDED.conhecimento)`,
-      [lf.id, padrao.tom_de_voz, padrao.publico, padrao.pilares, padrao.conhecimento]);
-  });
-
-  await aplicar('clientes_marilia_laura_v1', async () => {
-    const clientes = [
-      ['Marília', 'marilia', 'Quadro original no Trello: "Boas Histórias com Marília". Conteúdos de oftalmologia e blefaroplastia.'],
-      ['Laura', 'laura', 'Quadro original no Trello: "Boas Histórias com Laura". Conteúdos sobre NR-1, gestão de riscos psicossociais e Metodologia/Plataforma Farol Psicossocial.'],
-    ];
-    for (const [nome, chave, obs] of clientes) {
-      const { rows: [cl] } = await c.query(
-        `INSERT INTO clients (nome, marcas, meta_posts, meta_stories_dia, meta_blog, observacoes) VALUES ($1,'[]',12,0,0,$2) RETURNING id`,
-        [nome, obs]);
-      for (const t of trello[chave]) {
-        await insertTask(c, { ...t, client_id: cl.id, tipo: t.tipo || 'post' });
-      }
-    }
-  });
 }
 
 // Projetos e clientes vindos do que já estava cadastrado (aplicado uma única vez)
@@ -611,8 +450,8 @@ const PROJETOS_INICIAIS = [
     'Marca-mãe e central de criação. Conteúdo próprio da A Melhor Mídia do Brasil.',
     'Identidade visual: vermelho, preto e creme, referências de xadrez e teatro, tipografia bold. Tom de voz, público e regras: complete em Projetos > editar contexto.'],
   ['Por Boas Histórias', '#8a5a44',
-    'Agência de conteúdo: La Fleur Collection (Resorts Samoa), Marília e Laura. Tudo o que já existia no sistema está aqui.',
-    'Hospitalidade e turismo (La Fleur) e saúde/gestão (Marília e Laura). O contexto detalhado de cada cliente fica em Contratos > Contexto do agente.'],
+    'Agência de conteúdo e gestão de tarefas dos clientes da Por Boas Histórias.',
+    'O contexto detalhado de cada cliente fica em Contratos > Contexto do agente.'],
   ['Disco', '#1f8a4c',
     'Disco Criativo (conteúdo), Disco Mídia (tráfego e aquisição) e Disco Tech (SaaS), com os clientes atendidos pela squad.',
     'Posicionamento: agência de marketing, conteúdo e tecnologia. Tagline: Estratégia • Design • Conteúdo. Conteúdo informa com autoridade sobre marketing e atrai clientes com storytelling e roteiros autorais (sem dancinhas e formatos virais genéricos). Marca preto e verde, fontes Anton e Inter; nas redes sociais usa estilo CLARO (fundo off-white, título preto com a palavra-chave em verde). Cada cliente tem identidade, tom e estilo próprios.'],
@@ -649,7 +488,7 @@ async function seedProjetos(c) {
       [nome, cor, descricao, contexto, ordem++]);
     ids[nome] = p.id;
   }
-  // Tudo o que já existia no sistema (La Fleur, Marília, Laura...) passa a ser do projeto Por Boas Histórias
+  // Clientes sem projeto passam a ser do projeto Por Boas Histórias
   await c.query('UPDATE clients SET project_id=$1 WHERE project_id IS NULL', [ids['Por Boas Histórias']]);
   for (const [nome, projeto, posts, obs] of CLIENTES_INICIAIS) {
     const { rows: ja } = await c.query('SELECT id FROM clients WHERE lower(nome)=lower($1)', [nome]);
@@ -724,7 +563,6 @@ async function init() {
   try {
     await c.query('BEGIN');
     await c.query(SCHEMA);
-    await seedIfEmpty(c);
     await seedsIncrementais(c);
     const { rowCount: kg } = await c.query(`INSERT INTO seeds (chave) VALUES ('kits_gestor_v1') ON CONFLICT DO NOTHING`);
     if (kg) await seedKitsGestor(c);

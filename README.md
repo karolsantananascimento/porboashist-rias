@@ -1,6 +1,6 @@
 # A Melhor Mídia do Brasil
 
-Central de criação e gestão. A primeira tela mostra os **projetos** (A Melhor Mídia do Brasil, Por Boas Histórias, Disco, Otter, Lumiére e Marconi Car) e o painel **Criar**. Tudo o que já existia no sistema da Por Boas Histórias (La Fleur, Marília e Laura) agora está no projeto *Por Boas Histórias*.
+Central de criação e gestão. A primeira tela mostra os **projetos** (A Melhor Mídia do Brasil, Por Boas Histórias, Disco, Otter, Lumiére e Marconi Car) e o painel **Criar**.
 
 ## Projetos e equipe de agentes
 
@@ -26,28 +26,20 @@ Sistema para planejar e acompanhar as entregas de cada cliente: posts do feed, s
 - **Calendário**: visão mensal com posts, blog e stories por dia. Clique para editar ou no **+** para criar.
 - **Quadro**: kanban de produção (Pauta → Conteúdo/copy → Design/edição → Revisão interna → Aprovação do cliente → Agendado → Publicado), com arrastar e soltar.
 - **Lista**: todas as tarefas do mês com busca e filtros.
-- **Programação**: experiências e datas promocionais dos resorts (Samoa Beach, Samoa Villa, La Fleur) lidas da planilha do Google, agrupadas por mês, com botão **Criar pauta** que já leva tema e programação para o briefing. A aba **Planilha ao vivo** mostra a própria planilha embutida. O botão **Atualizar da planilha** relê a planilha quando ela está compartilhada como "qualquer pessoa com o link pode ver".
+- **Programação**: experiências e datas promocionais do cliente lidas da planilha do Google, agrupadas por mês, com botão **Criar pauta** que já leva tema e programação para o briefing. A aba **Planilha ao vivo** mostra a própria planilha embutida. O botão **Atualizar da planilha** relê a planilha quando ela está compartilhada como "qualquer pessoa com o link pode ver".
 - **Captação**: pautas de produção de fotos e vídeos com checklist por item.
 - **Materiais**: botões para as pastas e arquivos do Drive, agrupados por categoria e nomeados pelo conteúdo, com busca (sem precisar de acento), copiar link e marcação de "evitar".
 - **Clientes**: metas mensais, marcas, rodapé padrão e botão para gerar a estrutura de um mês novo (posts distribuídos, stories diários e artigos de blog).
 - **Usuários** (administradores): cada pessoa entra com o próprio e-mail. O administrador cadastra o e-mail e recebe um link de acesso (válido por 7 dias, uso único) para enviar; ao abrir, a pessoa cria a própria senha. Dá para gerar um novo link (esqueceu a senha), desativar, excluir e alternar entre Membro e Administrador.
 - **Minha conta**: troca de nome e senha.
 - **Agente de conteúdo**: dentro de cada tarefa, o botão **Gerar com IA** escreve a legenda do feed (com hashtags e direção visual), o roteiro de stories ou o artigo de blog com SEO, usando o tema e o briefing da tarefa, o **contexto do cliente** (tom de voz, público, pilares, regras e rodapé, editados em **Clientes → Contexto do agente**), os dados da planilha de programação, os materiais marcados para evitar e os últimos textos aprovados. O resultado vem com uma lista **Conferir antes de publicar** (preços, horários ou datas que faltam) e só vai para a tarefa quando alguém clica em **Usar na tarefa** e salva. É possível pedir ajustes ("mais curto", "citar o buggy") e reescrever. Em **Clientes → Sugerir pautas do mês**, o agente propõe tema, editorial e formato para os posts e artigos ainda sem pauta; nada é aplicado sem o clique.
-- **Conhecimento e competências do agente**: em **Clientes → Contexto do agente** há uma **base de conhecimento** (fatos confirmados do cliente, um por linha), além de tom de voz, público, pilares, regras e rodapé. Para a La Fleur ela já vem preenchida com o que consta nos textos aprovados em outubro (apartamentos de 2 a 3 quartos com cozinha, pensão completa e meia pensão, acesso à programação do resort onde o hóspede está, contatos de reserva); a equipe deve revisar e completar. O agente só afirma fatos que estejam nessa base, na planilha de programação ou no briefing, e lista o que falta em "Conferir antes de publicar". A tela também mostra as competências do agente (planejamento editorial semanal, copy de hospitalidade, sazonalidade, fidelidade à programação, direção visual, SEO local, stories, captação e conferência).
+- **Conhecimento e competências do agente**: em **Clientes → Contexto do agente** há uma **base de conhecimento** (fatos confirmados do cliente, um por linha), além de tom de voz, público, pilares, regras e rodapé. Preencha para cada cliente. O agente só afirma fatos que estejam nessa base, na planilha de programação ou no briefing, e lista o que falta em "Conferir antes de publicar". A tela também mostra as competências do agente (planejamento editorial semanal, copy de hospitalidade, sazonalidade, fidelidade à programação, direção visual, SEO local, stories, captação e conferência).
 - **Conteúdo da semana**: em **Clientes → Gerar semana**, o agente escreve a semana inteira (segunda a domingo) de acordo com a meta do contrato: legendas completas dos posts, roteiro de stories para cada dia e pauta com SEO do artigo de blog. Considera a planilha de programação do período, o que já foi publicado nas últimas 4 semanas, as prioridades de captação e os materiais a evitar, e aceita um pedido da equipe ("destacar a programação de Halloween"). Ao aplicar, ocupa as tarefas vazias do mês e cria só o que faltar; nada é publicado.
 - **Backup**: download e restauração de todos os dados em JSON (restauração só para administradores; usuários e senhas não entram no backup).
 
 ## Dados iniciais
 
-Na primeira execução o banco é criado com:
-
-- Cliente **La Fleur Collection** (Samoa Beach Resort, Samoa Villa Resort, Villa de Muro Alto), meta de 12 posts/mês, stories diários e 4 artigos de blog/mês.
-- Planejamento de **outubro/2026** (posts do feed e editoriais de stories).
-- 31 tarefas de stories e 4 artigos de blog com checklist de SEO.
-- 3 captações prioritárias (Villa de Muro Alto, buggy na praia, hóspedes na praia de Muro Alto).
-- 91 links de fotos e vídeos do Drive organizados por categoria.
-- Experiências de datas promocionais dos Resorts Samoa (planilha BCRAG v2).
-- Clientes **Marília** e **Laura**, com as pautas dos quadros do Trello.
+Na primeira execução o banco é criado com os projetos (A Melhor Mídia do Brasil, Por Boas Histórias, Disco, Otter, Lumiére e Marconi Car) e os clientes de cada um, sem tarefas.
 
 ## Rodar localmente
 
