@@ -509,6 +509,104 @@ function abrirAjustes(t, depois) {
   };
 }
 
+// ---------------- Campanha Meta (Camila, gestora de tráfego) ----------------
+// Rascunho a partir do plano -> revisar e conferir -> administrador sobe PAUSADA -> administrador confere no Meta e ativa.
+const OBJ_CAMP = [['OUTCOME_TRAFFIC', 'Tráfego'], ['OUTCOME_AWARENESS', 'Reconhecimento'], ['OUTCOME_LEADS', 'Leads'], ['OUTCOME_SALES', 'Vendas'], ['OUTCOME_ENGAGEMENT', 'Engajamento']];
+const DEST_CAMP = [['', 'Padrão do objetivo'], ['site', 'Site'], ['whatsapp', 'WhatsApp (só Leads)'], ['post', 'Engajamento no post'], ['messenger', 'Mensagens no Messenger'], ['instagram_direct', 'Mensagens no Instagram Direct'], ['instagram_facebook', 'Mensagens no Instagram e Facebook']];
+const CTA_CAMP = [['', 'Saiba mais (padrão)'], ['LEARN_MORE', 'Saiba mais'], ['SIGN_UP', 'Cadastre-se'], ['SHOP_NOW', 'Compre agora'], ['CONTACT_US', 'Fale conosco'], ['GET_QUOTE', 'Solicitar orçamento'], ['SUBSCRIBE', 'Inscreva-se'], ['DOWNLOAD', 'Baixar'], ['APPLY_NOW', 'Inscreva-se agora'], ['BOOK_TRAVEL', 'Reservar']];
+const STATUS_CAMP = { rascunho: 'Rascunho', criando: 'Criando no Meta…', criada_pausada: 'Criada e PAUSADA no Meta', ativando: 'Ativando…', ativada: 'ATIVA no Meta', erro: 'Erro' };
+
+async function abrirCampanha(t, depois) {
+  const d = $('#modal');
+  d.innerHTML = '<form method="dialog"><div class="modal-head"><h3>📈 Campanha Meta</h3><button class="icon" value="x" aria-label="Fechar">×</button></div><div class="modal-body"><p class="muted">Carregando…</p></div></form>';
+  d.showModal();
+  const opcoes = (lista, atual) => lista.map(([v, n]) => `<option value="${v}" ${String(atual || '') === v ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  const paraLocal = (iso) => { if (!iso) return ''; const x = new Date(iso); if (Number.isNaN(x.getTime())) return ''; return new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+  const campo = (rot, html, ajuda) => `<div><label>${rot}</label>${html}${ajuda ? `<small class="muted">${ajuda}</small>` : ''}</div>`;
+  const dois = (a, b) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${a}${b}</div>`;
+
+  const desenhar = async (aviso) => {
+    let st; try { st = await api(`/api/tasks/${t.id}/campanha`); } catch (e) { d.querySelector('.modal-body').innerHTML = `<p class="erro">${esc(e.message)}</p>`; return; }
+    const c = st.campanha; const cf = st.config; const s = c?.spec || {};
+    const editavel = c && ['rascunho', 'erro'].includes(c.status);
+    const lock = editavel ? '' : 'disabled';
+    const faltaCfg = [!cf.token && 'token do Meta Ads', !cf.conta && 'ID da conta de anúncios', !cf.pagina && 'página do Facebook conectada'].filter(Boolean);
+    const linhas = (a) => esc((a || []).join('\n'));
+    d.innerHTML = `<form method="dialog"><div class="modal-head"><h3>📈 Campanha Meta · ${esc(t.tema || '')}</h3><button class="icon" value="x" aria-label="Fechar">×</button></div>
+      <div class="modal-body">
+        ${faltaCfg.length ? `<p class="erro" style="margin:0">Antes de subir, configure em Integrações (Meta): ${faltaCfg.join(', ')}.</p>` : ''}
+        ${c ? `<div class="msg-top"><span class="pill ${c.status === 'ativada' ? 'ok' : ''}">${STATUS_CAMP[c.status] || c.status}</span><small>Teto de orçamento diário: R$ ${cf.teto_brl} por campanha · Instagram ${cf.instagram ? 'vinculado' : 'não vinculado'}${cf.pagina_nome ? ' · página ' + esc(cf.pagina_nome) : ''}</small></div>` : ''}
+        ${c && c.erro ? `<p class="erro" style="margin:0">${esc(c.erro)}</p>` : ''}
+        ${aviso ? `<p class="muted" style="margin:0" id="cpAviso">${aviso}</p>` : '<p class="muted" style="margin:0;display:none" id="cpAviso"></p>'}
+        ${!c ? `<p class="muted" style="margin:0">O rascunho transforma o plano da Camila em uma campanha para o Meta. Nada é criado no Meta até um administrador clicar em “Subir pausada”.</p>` : `
+        ${(c.pendencias || []).length ? `<div class="card" style="padding:10px 12px"><b style="font-size:13px">Pendências</b><ul style="margin:6px 0 0 18px;padding:0">${c.pendencias.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
+        ${c.ids && c.ids.campanha_id ? `<div class="card" style="padding:10px 12px"><b style="font-size:13px">No Meta</b><div class="muted" style="font-size:13px">Campanha ${esc(c.ids.campanha_id)}${c.ids.conjunto_id ? ' · conjunto ' + esc(c.ids.conjunto_id) : ''}${c.ids.anuncio_id ? ' · anúncio ' + esc(c.ids.anuncio_id) : ''}. Confira no Gerenciador de Anúncios do Meta.${(c.ids.restos_pausados || []).length ? `<br>Sobraram pausadas no Meta, de tentativas anteriores com erro (apague no Gerenciador): ${c.ids.restos_pausados.map(esc).join(', ')}.` : ''}</div></div>` : ''}
+        ${dois(campo('Nome da campanha', `<input id="cpNome" ${lock} value="${esc(s.nome || '')}">`), campo('Objetivo', `<select id="cpObj" ${lock}><option value="">Escolha…</option>${opcoes(OBJ_CAMP, s.objetivo)}</select>`))}
+        ${dois(campo('Orçamento diário (R$)', `<input id="cpOrc" type="number" min="1" step="0.01" ${lock} value="${esc(s.orcamento_diario_brl ?? '')}">`, `Máximo R$ ${cf.teto_brl} por campanha`), campo('Para onde o clique leva', `<select id="cpDest" ${lock}>${opcoes(DEST_CAMP, s.destino)}</select>`))}
+        ${campo('Texto principal do anúncio', `<textarea id="cpTexto" rows="4" ${lock}>${esc(s.texto_principal || '')}</textarea>`)}
+        ${dois(campo('Título (opcional)', `<input id="cpTit" ${lock} maxlength="60" value="${esc(s.titulo || '')}">`), campo('Descrição (opcional)', `<input id="cpDesc" ${lock} maxlength="60" value="${esc(s.descricao || '')}">`))}
+        ${dois(campo('Botão', `<select id="cpCta" ${lock}>${opcoes(CTA_CAMP, s.cta)}</select>`), campo('Link de destino (https)', `<input id="cpUrl" ${lock} value="${esc(s.url_destino || '')}" placeholder="Só quando o clique leva ao site">`))}
+        ${campo('Imagem do anúncio (link https público)', `<input id="cpImg" ${lock} value="${esc(s.imagem_url || '')}">`, 'Prefira o link estável da arte guardada pelo sistema (/media/…). Para carrossel use o campo abaixo.')}
+        ${campo('Carrossel: um link de imagem por linha (2 a 10, opcional)', `<textarea id="cpImgs" rows="2" ${lock}>${linhas(s.imagens_urls)}</textarea>`)}
+        ${campo('Onde anunciar: uma cidade ou estado por linha', `<textarea id="cpLoc" rows="3" ${lock} placeholder="Recife&#10;João Pessoa, Paraíba">${linhas(s.localizacoes)}</textarea>`, 'Sem cidade ou estado, a campanha vai para o país inteiro.')}
+        ${dois(campo('Raio ao redor das cidades (17 a 80 km)', `<input id="cpRaio" type="number" min="17" max="80" ${lock} value="${esc(s.raio_km ?? '')}" placeholder="17">`), campo('Interesses: um por linha', `<textarea id="cpInt" rows="2" ${lock}>${linhas(s.interesses)}</textarea>`))}
+        ${dois(campo('Públicos personalizados a incluir (um por linha)', `<textarea id="cpInc" rows="2" ${lock}>${linhas(s.publicos_personalizados)}</textarea>`), campo('Públicos a excluir (um por linha)', `<textarea id="cpExc" rows="2" ${lock}>${linhas(s.publicos_excluidos)}</textarea>`))}
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">${campo('Idade mínima', `<input id="cpIMin" type="number" min="13" max="65" ${lock} value="${esc(s.idade_min ?? '')}" placeholder="18">`)}${campo('Idade máxima', `<input id="cpIMax" type="number" min="13" max="65" ${lock} value="${esc(s.idade_max ?? '')}" placeholder="65">`)}${campo('Gênero', `<select id="cpGen" ${lock}>${opcoes([['', 'Todos'], ['feminino', 'Feminino'], ['masculino', 'Masculino']], s.genero === 'todos' ? '' : s.genero)}</select>`)}</div>
+        ${dois(campo('Início (opcional)', `<input id="cpIni" type="datetime-local" ${lock} value="${paraLocal(s.inicio)}">`), campo('Término (opcional)', `<input id="cpFim" type="datetime-local" ${lock} value="${paraLocal(s.termina_em)}">`))}
+        ${campo('Pixel do Meta (só Leads/Vendas no site)', `<input id="cpPix" ${lock} value="${esc(s.pixel_id || '')}" placeholder="Padrão: o pixel de Integrações">`)}
+        <div id="cpConf" class="muted" style="font-size:13px"></div>`}
+        <p class="erro" id="cpErro" style="margin:0"></p>
+      </div>
+      <div class="modal-foot"><div>${c && editavel ? '<button type="button" class="btn small" id="cpGerar">Gerar rascunho de novo</button>' : ''}</div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn" value="x">Fechar</button>
+        ${!c ? '<button type="button" class="btn primary" id="cpGerar">Gerar rascunho da campanha</button>' : ''}
+        ${editavel ? '<button type="button" class="btn" id="cpSalvar">Salvar</button><button type="button" class="btn" id="cpConferir">Conferir no Meta</button>' : ''}
+        ${editavel && st.admin ? '<button type="button" class="btn primary" id="cpSubir">Subir pausada no Meta…</button>' : ''}
+        ${editavel && !st.admin ? '<small class="muted" style="align-self:center">Só administrador sobe a campanha.</small>' : ''}
+        ${c && c.status === 'criada_pausada' && st.admin ? '<button type="button" class="btn primary" id="cpAtivar">Ativar campanha…</button>' : ''}
+        ${c && c.status === 'ativada' && st.admin ? '<button type="button" class="btn" id="cpPausar">Pausar campanha</button>' : ''}
+      </div></div></form>`;
+    const erroEl = $('#cpErro', d); const busy = (b, on, rot) => { if (!b) return; b.disabled = on; if (rot) b.textContent = rot; };
+    const v = (id) => ($(id, d) ? $(id, d).value.trim() : '');
+    const ls = (id) => v(id).split('\n').map((x) => x.trim()).filter(Boolean);
+    const data = (id) => (v(id) ? new Date(v(id)).toISOString() : '');
+    const lerSpec = () => ({ nome: v('#cpNome'), objetivo: v('#cpObj'), orcamento_diario_brl: v('#cpOrc'), destino: v('#cpDest'), texto_principal: v('#cpTexto'), titulo: v('#cpTit'), descricao: v('#cpDesc'), cta: v('#cpCta'), url_destino: v('#cpUrl'), imagem_url: v('#cpImg'), imagens_urls: ls('#cpImgs'), localizacoes: ls('#cpLoc'), raio_km: v('#cpRaio'), interesses: ls('#cpInt'), publicos_personalizados: ls('#cpInc'), publicos_excluidos: ls('#cpExc'), idade_min: v('#cpIMin'), idade_max: v('#cpIMax'), genero: v('#cpGen') || 'todos', inicio: data('#cpIni'), termina_em: data('#cpFim'), pixel_id: v('#cpPix') });
+    const salvar = () => api(`/api/campanhas/${c.id}`, { method: 'PUT', body: { spec: lerSpec() } });
+    const acao = async (b, rotBusy, fn) => { erroEl.textContent = ''; const rot = b.textContent; busy(b, true, rotBusy); try { await fn(); } catch (e) { erroEl.textContent = e.message; busy(b, false, rot); } };
+
+    if ($('#cpGerar', d)) $('#cpGerar', d).onclick = (ev) => {
+      if (c && !confirm('Gerar de novo substitui o que você editou neste rascunho. Continuar?')) return;
+      acao(ev.target, 'Gerando…', async () => { await api(`/api/tasks/${t.id}/campanha/gerar`, { method: 'POST' }); await desenhar('Rascunho gerado a partir do plano da Camila. Revise cada campo antes de subir.'); depois && depois(); });
+    };
+    if (c && $('#cpSalvar', d)) $('#cpSalvar', d).onclick = (ev) => acao(ev.target, 'Salvando…', async () => { await salvar(); await desenhar('Rascunho salvo.'); });
+    if (c && $('#cpConferir', d)) $('#cpConferir', d).onclick = (ev) => acao(ev.target, 'Conferindo…', async () => {
+      await salvar();
+      const r = await api(`/api/campanhas/${c.id}/conferir`, { method: 'POST' });
+      busy(ev.target, false, 'Conferir no Meta');
+      const el = $('#cpConf', d);
+      el.innerHTML = r.ok ? `<b style="color:var(--ok,#2a8a4a)">✓ Tudo certo para subir.</b><br>${r.resumo ? esc(r.resumo) + '<br>' : ''}${(r.avisos || []).map((a) => '• ' + esc(a)).join('<br>')}<br>Tudo será criado PAUSADO.` : '';
+      if (!r.ok) erroEl.textContent = r.erro;
+    });
+    if (c && $('#cpSubir', d)) $('#cpSubir', d).onclick = (ev) => acao(ev.target, 'Criando no Meta…', async () => {
+      const spec = lerSpec(); await salvar();
+      if (!confirm(`Criar esta campanha no Meta, PAUSADA?\n\n${spec.nome} · R$ ${spec.orcamento_diario_brl}/dia\n\nNada começa a gastar até você ativar.`)) { busy(ev.target, false, 'Subir pausada no Meta…'); return; }
+      try { await api(`/api/campanhas/${c.id}/subir`, { method: 'POST', body: { confirmado: true } }); }
+      catch (e) { await desenhar(); $('#cpErro', d).textContent = e.message; depois && depois(); return; }
+      await desenhar('Campanha criada PAUSADA no Meta. Confira no Gerenciador de Anúncios e, se estiver tudo certo, ative.'); depois && depois();
+    });
+    if (c && $('#cpAtivar', d)) $('#cpAtivar', d).onclick = (ev) => acao(ev.target, 'Ativando…', async () => {
+      if (!confirm(`ATIVAR esta campanha agora?\n\n${s.nome} · R$ ${s.orcamento_diario_brl}/dia\n\nO Meta analisa o anúncio e, depois disso, o gasto começa.`)) { busy(ev.target, false, 'Ativar campanha…'); return; }
+      try { await api(`/api/campanhas/${c.id}/ativar`, { method: 'POST', body: { confirmado: true } }); }
+      catch (e) { await desenhar(); $('#cpErro', d).textContent = e.message; return; }
+      await desenhar('Campanha ativada.'); depois && depois();
+    });
+    if (c && $('#cpPausar', d)) $('#cpPausar', d).onclick = (ev) => acao(ev.target, 'Pausando…', async () => {
+      await api(`/api/campanhas/${c.id}/pausar`, { method: 'POST' }); await desenhar('Campanha pausada.'); depois && depois();
+    });
+  };
+  desenhar();
+}
+
 async function aprovarTarefa(t, depois) {
   // Posts e stories passam pela Social media (Mariana): agendar ou publicar agora. Os demais tipos só são aprovados.
   if (['post', 'story'].includes(t.tipo)) return abrirPublicar(extrairLegenda(t.tipo === 'story' ? (t.briefing || '') : (t.legenda || '')), { taskId: t.id, clientId: t.client_id, depois, aprovar: true, imagem: t.publicar_imagem });
@@ -547,12 +645,14 @@ function filaAprovacao(el, filtro) {
           <div class="est-label">Criativo</div>
           ${t.arte_url ? `<a class="est-arte" href="${esc(t.arte_url)}" target="_blank" rel="noopener">🎨 Abrir criativo no Canva ↗</a>` : '<div class="muted" style="font-size:13px">Sem link do criativo (adicione em Revisar › Arte no Canva)</div>'}` : ''}
         <div class="acoes-res">
+          ${t.tipo === 'trafego' && ['aguardando_aprovacao', 'aprovada'].includes(t.esteira) ? `<button class="btn small primary" data-camp="${t.id}">📈 Campanha Meta…</button>` : ''}
           ${t.esteira === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">✓ Aprovar e passar para a Social media</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
           ${t.esteira === 'aprovada' ? `${['post', 'story'].includes(t.tipo) ? `<button class="btn small primary" data-pub="${t.id}">Publicar…</button>` : ''}<button class="btn small" data-conc="${t.id}">Marcar como concluída</button><button class="btn small" data-rev="${t.id}">Abrir</button>` : ''}
           ${t.esteira === 'agendada' ? `<button class="btn small primary" data-pub="${t.id}">Publicar agora…</button><button class="btn small" data-desag="${t.id}">Cancelar agendamento</button>` : ''}
           ${t.esteira === 'erro' ? `<button class="btn small primary" data-ex="${t.id}">Tentar de novo</button>` : ''}
         </div></article>`).join('') : '<div class="card"><div class="empty" style="padding:16px">Nada na esteira. Envie um comando na caixa acima.</div></div>'}`;
     const achar = (id) => lista.find((x) => String(x.id) === String(id));
+    $$('[data-camp]', el).forEach((b) => b.addEventListener('click', () => abrirCampanha(achar(b.dataset.camp), desenhar)));
     $$('[data-ap]', el).forEach((b) => b.addEventListener('click', () => aprovarTarefa(achar(b.dataset.ap), desenhar)));
     $$('[data-rev]', el).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev))));
     $$('[data-aj]', el).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));
@@ -667,6 +767,7 @@ function painelConteudo(v, filtro, ctx) {
       ${(t.midias || []).length ? `<div class="ct-midias" title="Fotos e vídeos do Drive">${t.midias.slice(0, 6).map((m) => `<a href="${esc(m.link || '#')}" target="_blank" rel="noopener" title="${esc(m.nome)}">${m.thumb ? `<img loading="lazy" alt="" src="${esc(m.thumb)}" referrerpolicy="no-referrer">` : '<span>📄</span>'}${m.video ? '<i>▶</i>' : ''}</a>`).join('')}${t.midias.length > 6 ? `<small>+${t.midias.length - 6}</small>` : ''}</div>` : ''}
       ${chips ? `<div class="ct-chips">${chips}</div>` : ''}
       <div class="acoes-res">
+        ${t.tipo === 'trafego' && ['aguardando_aprovacao', 'aprovada', 'publicada'].includes(col) ? `<button class="btn small primary" data-camp="${t.id}">📈 Campanha Meta…</button>` : ''}
         ${col === 'aguardando_aprovacao' ? `<button class="btn small primary" data-ap="${t.id}">Aprovar…</button><button class="btn small" data-rev="${t.id}">Revisar</button><button class="btn small" data-aj="${t.id}">Pedir ajustes</button>` : ''}
         ${col === 'aprovada' ? `${['post', 'story'].includes(t.tipo) ? `<button class="btn small primary" data-pub="${t.id}">Publicar…</button>` : ''}<button class="btn small" data-conc="${t.id}">Marcar como concluída</button>` : ''}
         ${col === 'agendada' ? `<button class="btn small primary" data-pub="${t.id}">Publicar agora…</button><button class="btn small" data-desag="${t.id}">Cancelar agendamento</button>` : ''}
@@ -691,6 +792,7 @@ function painelConteudo(v, filtro, ctx) {
       const itens = lista.filter((t) => estados.includes(t.esteira || 'legado'));
       return `<section class="ct-col" style="--cor:${cor}"><h4><span>${titulo}</span><b>${itens.length}</b></h4>${itens.length ? itens.map(cardCt).join('') : `<div class="ct-vazio">${vazio}</div>`}</section>`;
     }).join('');
+    $$('[data-camp]', raiz).forEach((b) => b.addEventListener('click', () => abrirCampanha(achar(b.dataset.camp), desenhar)));
     $$('[data-ap]', raiz).forEach((b) => b.addEventListener('click', () => aprovarTarefa(achar(b.dataset.ap), desenhar)));
     $$('[data-rev]', raiz).forEach((b) => b.addEventListener('click', () => abrirTarefa(achar(b.dataset.rev), { _onSalvo: desenhar })));
     $$('[data-aj]', raiz).forEach((b) => b.addEventListener('click', () => abrirAjustes(achar(b.dataset.aj), desenhar)));

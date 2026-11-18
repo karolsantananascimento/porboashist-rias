@@ -9,6 +9,11 @@ const CHAVES = {
   META_APP_ID: { grupo: 'meta', rotulo: 'Meta · ID do app', secreto: false, porCliente: true },
   META_APP_SECRET: { grupo: 'meta', rotulo: 'Meta · Chave secreta do app', secreto: true, porCliente: true },
   META_VERIFY_TOKEN: { grupo: 'meta', rotulo: 'Meta · Token de verificação do webhook (opcional)', secreto: false, porCliente: true },
+  // Meta Ads (gestor de tráfego): o login das páginas não tem permissão de anúncios, então a conta de anúncios usa um token próprio
+  META_ADS_TOKEN: { grupo: 'meta', rotulo: 'Meta Ads · Token de acesso (permissão ads_management)', secreto: true, porCliente: true },
+  META_AD_ACCOUNT_ID: { grupo: 'meta', rotulo: 'Meta Ads · ID da conta de anúncios (act_...)', secreto: false, porCliente: true },
+  META_PIXEL_ID: { grupo: 'meta', rotulo: 'Meta Ads · Pixel (opcional, para Leads/Vendas no site)', secreto: false, porCliente: true },
+  META_MAX_DAILY_BUDGET_BRL: { grupo: 'meta', rotulo: 'Meta Ads · Teto de orçamento diário por campanha, em R$ (padrão 100)', secreto: false, porCliente: true },
   LINKEDIN_CLIENT_ID: { grupo: 'linkedin', rotulo: 'LinkedIn · Client ID', secreto: false, porCliente: true },
   LINKEDIN_CLIENT_SECRET: { grupo: 'linkedin', rotulo: 'LinkedIn · Client Secret', secreto: true, porCliente: true },
   GOOGLE_CLIENT_ID: { grupo: 'google', rotulo: 'Google · ID do cliente OAuth', secreto: false, porCliente: true },

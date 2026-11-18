@@ -15,6 +15,18 @@ Central de criação e gestão. A primeira tela mostra os **projetos** (A Melhor
 
 Os agentes nunca publicam, enviam ou se candidatam sozinhos: o resultado vai para revisão e só sai com um clique seu. Cada projeto tem um **contexto** (identidade, tom, regras) editável no card do projeto. Variáveis novas: `META_VERIFY_TOKEN`, `META_APP_SECRET`, `META_PAGE_TOKEN` (ver **Integrações** no sistema).
 
+## Campanhas no Meta Ads (Camila, gestora de tráfego)
+
+A Camila monta o **plano** e, em seguida, o sistema gera um **rascunho técnico** da campanha (objetivo, orçamento diário, cidades ou estados exatos, interesses, públicos, destino, texto e criativo). O que o pedido não informar fica como pendência: nada é inventado.
+
+Fluxo (botão **📈 Campanha Meta…** nos cards de tráfego): revisar e editar → **Conferir no Meta** (só leituras) → administrador clica em **Subir pausada** (cria criativo, campanha, conjunto e anúncio, tudo PAUSADO) → administrador confere no Gerenciador de Anúncios e clica em **Ativar** (só então começa a gastar). Dá para **Pausar** de novo pela tela. Nada é excluído no Meta.
+
+Travas: só administrador sobe, ativa e pausa; confirmação em cada passo; orçamento diário máximo por campanha (padrão R$ 100, configurável); no máximo 5 ativações por dia; clique duplo não cria duas campanhas; o token vai só no cabeçalho das chamadas.
+
+Configuração (Integrações → Meta, por cliente ou padrão): `META_ADS_TOKEN` (permissão `ads_management`), `META_AD_ACCOUNT_ID` (`act_...`), `META_PIXEL_ID` (só Leads/Vendas no site) e `META_MAX_DAILY_BUDGET_BRL`. A página do Facebook e o Instagram vêm da conexão já feita em Integrações. Objetivos: Tráfego, Reconhecimento, Leads, Vendas e Engajamento; destinos: site, WhatsApp, engajamento no post e mensagens (Messenger, Instagram Direct). Criativo em imagem (link https) ou carrossel de 2 a 10 imagens; vídeo ainda não. Mensagens, WhatsApp e carrossel ainda não foram validados em conta real.
+
+Testes: `npm test` (Meta simulado) e, com um Postgres de teste, `DATABASE_URL=postgresql://usuario@localhost:5432/pbh node test/campanhas-integracao.js`.
+
 ## Gestão de conteúdo (Por Boas Histórias)
 
 Sistema para planejar e acompanhar as entregas de cada cliente: posts do feed, stories diários, artigos de blog com SEO e captações de fotos e vídeos.

@@ -68,6 +68,9 @@ async function executar(pool, taskId, { ajuste, usuario } = {}) {
       await marcar(pool, t.id, 'executando', 'Camila montando o plano da campanha…');
       const plano = await chamar('camila', t.formato || 'Campanha Meta Ads', pedido, /PLANO \(Camila\)/.test(t.briefing || '') ? t.briefing : null);
       await pool.query('UPDATE tasks SET briefing=$1 WHERE id=$2', [`${limpo}\n\n${MARCA_TIME}\n${plano}`.trim(), t.id]);
+      // Rascunho técnico da campanha a partir do plano: a pessoa revisa, e só um administrador sobe (pausada) e ativa no Meta
+      await marcar(pool, t.id, 'executando', 'Camila montando o rascunho da campanha para o Meta…');
+      await require('./campanhas').rascunhoAutomatico(pool, t.id);
     } else if (t.tipo === 'criacao') {
       const ag = t.responsavel === 'Davi' ? 'davi' : 'luiz';
       await marcar(pool, t.id, 'executando', `${AGENTES[ag].nome} trabalhando na peça…`);

@@ -42,13 +42,13 @@ function enfileirar(pool, id, usuario) {
 const DIAS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 const hojeRecife = () => { const d = new Date(Date.now() - 3 * 3600e3); return { iso: d.toISOString().slice(0, 10), dia: DIAS[d.getUTCDay()] }; };
 
-const SISTEMA = `Você é a coordenadora do time de uma agência de marketing. Recebe um pedido escrito livremente e o transforma em demandas de trabalho para o time: Hugo (conteúdo: posts, roteiros de stories, artigos de blog), Luiz e Davi (criação de artes e de vídeos) e Camila (tráfego: planos de campanha). Escreva em português do Brasil.
+const SISTEMA = `Você é a coordenadora do time de uma agência de marketing. Recebe um pedido escrito livremente e o transforma em demandas de trabalho para o time: Hugo (conteúdo: posts, roteiros de stories, artigos de blog), Luiz e Davi (criação de artes e de vídeos) e Camila (tráfego: plano e rascunho da campanha de anúncios no Meta). Escreva em português do Brasil.
 Regras:
 1. Use SOMENTE clientes da lista, sempre pelo "client_id".
 2. Se o pedido citar vários clientes ou vários itens (ex.: "3 posts", "a semana de posts"), crie uma demanda para cada item, no máximo ${MAX_DEMANDAS} no total. Se pedir mais, crie as ${MAX_DEMANDAS} primeiras e avise em "duvidas".
 3. Se o cliente não estiver claro, NÃO invente: deixe a demanda de fora e explique em "duvidas".
 4. Nunca invente fatos, preços, datas ou promessas: o que faltar vai no "briefing" como [CONFIRMAR: ...].
-5. Se o pedido não for um trabalho para o time (for uma pergunta, ou pedir para publicar, enviar mensagens, mudar configurações ou acessar contas), não crie demandas. Em "resumo", explique que o time produz textos, roteiros, briefings de arte e vídeo e planos de campanha para a APROVAÇÃO dela, e que nada é publicado ou alterado sozinho.
+5. Se o pedido não for um trabalho para o time (for uma pergunta, ou pedir para publicar, enviar mensagens, mudar configurações ou acessar contas), não crie demandas. Em "resumo", explique que o time produz textos, roteiros, briefings de arte e vídeo e planos de campanha para a APROVAÇÃO dela, e que nada é publicado ou alterado sozinho. Pedido para CRIAR ou SUBIR uma campanha de anúncios é trabalho para a Camila (tipo "trafego"): ela monta o plano e o rascunho, e a campanha só é criada (pausada) e ativada no Meta por um administrador, com um clique na tela. Coloque no "briefing" o que o pedido trouxer: objetivo, orçamento DIÁRIO, cidades ou estados exatos, perfil e interesses do público, destino (site, WhatsApp, mensagens ou engajamento no post), link, período, e o que faltar como [CONFIRMAR: ...].
 6. "prazo" no formato AAAA-MM-DD só quando o pedido trouxer data ou dia da semana (calcule a partir de HOJE); senão null.
 Responda APENAS um objeto JSON com as chaves:
 "resumo" (1 ou 2 frases do que será feito),

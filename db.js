@@ -334,6 +334,26 @@ ALTER TABLE mensagens ADD COLUMN IF NOT EXISTS client_id INT;
 ALTER TABLE publicacoes ADD COLUMN IF NOT EXISTS client_id INT;
 CREATE TABLE IF NOT EXISTS meta_paginas (page_id TEXT PRIMARY KEY, client_id INT NOT NULL);
 
+-- Campanhas de anúncios (gestor de tráfego): rascunho montado a partir do plano da Camila -> criada PAUSADA no Meta -> ativada por uma pessoa
+CREATE TABLE IF NOT EXISTS campanhas (
+  id SERIAL PRIMARY KEY,
+  task_id INT REFERENCES tasks(id) ON DELETE SET NULL,
+  client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  spec JSONB NOT NULL DEFAULT '{}',
+  pendencias JSONB NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'rascunho',     -- rascunho | criando | criada_pausada | ativando | ativada | erro
+  ids JSONB NOT NULL DEFAULT '{}',             -- campanha_id, conjunto_id, criativo_id, anuncio_id (Meta)
+  erro TEXT,
+  criado_por TEXT,
+  criada_em TIMESTAMPTZ,
+  ativada_por TEXT,
+  ativada_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS campanhas_task ON campanhas (task_id, id DESC);
+CREATE INDEX IF NOT EXISTS campanhas_cliente ON campanhas (client_id, id DESC);
+
 -- Currículos e portfólios (arquivos) para anexar em candidaturas
 CREATE TABLE IF NOT EXISTS documentos (
   id SERIAL PRIMARY KEY,

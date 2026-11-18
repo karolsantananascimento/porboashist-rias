@@ -557,6 +557,7 @@ projetos(app, { pool, wrap, soAdmin });
 projetos.webhook(app, { pool, wrap });
 require('./integracoes').registrar(app, { pool, wrap, soAdmin });
 require('./esteira').registrar(app, { pool, wrap });
+require('./campanhas').registrar(app, { pool, wrap, soAdmin });
 require('./midia').registrar(app, { pool, wrap });
 require('./google').registrar(app, { pool, wrap });
 require('./midia').registrarPublico(app, { pool, wrap });
