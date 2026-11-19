@@ -391,6 +391,23 @@ async function gerarRascunho(pool, tarefaId, usuario) {
   return c;
 }
 
+// Imagem anexada à tarefa DEPOIS do rascunho (por link, Drive ou upload): entra sozinha na campanha ainda não criada
+async function sincronizarAnexos(pool, c) {
+  if (!c || !['rascunho', 'erro'].includes(c.status) || !c.task_id) return c;
+  const spec = c.spec || {};
+  if (spec.imagem_url || (spec.imagens_urls && spec.imagens_urls.length)) return c;
+  const { rows: [t] } = await pool.query('SELECT publicar_imagem FROM tasks WHERE id=$1', [c.task_id]);
+  if (!t || !/^https:\/\//i.test(t.publicar_imagem || '')) return c;
+  spec.imagem_url = t.publicar_imagem;
+  const pend = (c.pendencias || []).filter((p) => !/imagem|arte|criativo/i.test(p)).filter((p) => !/^Falta preencher/.test(p));
+  const falta = faltando(spec);
+  if (falta.length) pend.push(`Falta preencher: ${falta.join(', ')}.`);
+  const { rows: [n] } = await pool.query(
+    `UPDATE campanhas SET spec=$1, pendencias=$2, updated_at=now() WHERE id=$3 AND status IN ('rascunho','erro') RETURNING *`,
+    [spec, JSON.stringify(pend), c.id]);
+  return n || c;
+}
+
 // Usado pela esteira logo depois do plano da Camila: cria o rascunho se ainda não existir. Nunca derruba a esteira.
 async function rascunhoAutomatico(pool, tarefaId) {
   try {
@@ -404,7 +421,7 @@ async function rascunhoAutomatico(pool, tarefaId) {
 function registrar(app, { pool, wrap, soAdmin }) {
   const idDe = (req) => { const n = Number(req.params.id); if (!Number.isInteger(n) || n <= 0) throw erro('Identificador inválido'); return n; };
   const clienteDe = (req) => { const n = Number(req.query.client_id); if (!Number.isInteger(n) || n <= 0) throw erro('Escolha o cliente'); return n; };
-  const carregar = async (id) => { const { rows: [c] } = await pool.query('SELECT * FROM campanhas WHERE id=$1', [id]); if (!c) throw erro('Campanha não encontrada', 404); return c; };
+  const carregar = async (id) => { const { rows: [c] } = await pool.query('SELECT * FROM campanhas WHERE id=$1', [id]); if (!c) throw erro('Campanha não encontrada', 404); return sincronizarAnexos(pool, c); };
   const quem = (req) => req.user.nome || req.user.email;
 
   // Passos que travam (servidor reiniciado no meio) voltam a um estado seguro depois de 10 minutos
@@ -415,7 +432,8 @@ function registrar(app, { pool, wrap, soAdmin }) {
 
   app.get('/api/tasks/:id/campanha', wrap(async (req, res) => {
     await destravar();
-    const { rows: [c] } = await pool.query('SELECT * FROM campanhas WHERE task_id=$1 ORDER BY id DESC LIMIT 1', [idDe(req)]);
+    let { rows: [c] } = await pool.query('SELECT * FROM campanhas WHERE task_id=$1 ORDER BY id DESC LIMIT 1', [idDe(req)]);
+    c = await sincronizarAnexos(pool, c);
     const { rows: [t] } = await pool.query('SELECT client_id FROM tasks WHERE id=$1', [req.params.id]);
     if (!t) throw erro('Tarefa não encontrada', 404);
     let ctx = null; try { ctx = await contexto(pool, t.client_id); } catch { /* sem configuração: a tela mostra o aviso */ }
@@ -526,7 +544,7 @@ function registrar(app, { pool, wrap, soAdmin }) {
   app.get('/api/meta/localizacoes', leitura((ctx, req) => { if (!txt(req.query.q, 80)) throw erro('Digite a cidade ou o estado'); return buscarLocal(ctx, txt(req.query.q, 80), String(req.query.pais || 'BR').toUpperCase().slice(0, 2)); }));
 }
 
-module.exports = {
+module.exports = { sincronizarAnexos,
   registrar, rascunhoAutomatico, gerarRascunho,
   // exportados para teste
   normalizar, validar, faltando, conferir, subirCampanha, ativarEstrutura, pausar, resolverGeo, resolverPublico, contexto, OBJ, ATIVACOES_POR_DIA,
