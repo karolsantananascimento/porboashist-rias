@@ -187,7 +187,7 @@ a.sa-brand { color: inherit; text-decoration: none; }
 @media (max-width: 640px) { .pix-box { grid-template-columns: 1fr; } .pix-qr { justify-self: center; } }
 
 /* ---- Planos (aba Assinatura) ---- */
-.planos-app { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.planos-app { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 14px; }
 .plano-app { position: relative; border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px; background: var(--surface); }
 .plano-app.atual { border: 2px solid var(--accent); background: linear-gradient(180deg, rgba(182, 255, 69, .07), var(--surface) 45%); }
 .plano-app h4 { margin: 0; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
@@ -199,3 +199,4 @@ a.sa-brand { color: inherit; text-decoration: none; }
 .plano-app li::before { content: "✓"; color: var(--accent); font-weight: 800; flex: none; }
 .plano-extras { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 14px; font-size: 13px; }
 .plano-extras > div { border: 1px dashed var(--line); border-radius: 12px; padding: 12px 14px; }
+.plano-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }

@@ -23,7 +23,7 @@ const ESCOPO_CLIENTE_BASE = 2_000_000;
 const escopoCliente = (cliente) => cliente.escopo;
 // Planos de venda (/gestoragent). O plano é um rótulo administrado por você; o limite de clientes ainda não é aplicado pelo sistema.
 // campanhas = campanhas novas criadas por mês (somando todos os clientes da conta). Passou disso, cada campanha extra custa PRECO_AVULSA.
-const PLANOS = { solo: { nome: 'Solo', clientes: 1, preco: 370, campanhas: 10 }, agencia: { nome: 'Agência', clientes: 3, preco: 760, campanhas: 30 }, escala: { nome: 'Escala', clientes: 5, preco: 950, campanhas: 50 } };
+const PLANOS = { gratis: { nome: 'Grátis', clientes: 1, preco: 0, campanhas: 1, ia: 3 }, solo: { nome: 'Solo', clientes: 1, preco: 370, campanhas: 10 }, agencia: { nome: 'Agência', clientes: 3, preco: 760, campanhas: 30 }, escala: { nome: 'Escala', clientes: 5, preco: 950, campanhas: 50 } };
 // O que cada plano faz (mesmo texto da página de vendas); aparece em Assinatura, dentro do sistema
 const acoesPlano = (id) => {
   const p = PLANOS[id];
@@ -35,6 +35,15 @@ const acoesPlano = (id) => {
     'Conferência antes de criar: a campanha sobe pausada e só gasta quando você ativa',
     'Ativar, pausar e acompanhar investimento, cliques, impressões e conversões dos últimos 7 dias',
     'Assistente para conectar Meta e Google e pedido de suporte para agendar a configuração',
+  ];
+  if (id === 'gratis') return [
+    'Sempre ativo, sem cartão e sem prazo de teste',
+    '1 campanha nova por mês, no Meta Ads (Facebook e Instagram) ou no Google Ads (Pesquisa)',
+    `Rascunho com inteligência artificial (até ${p.ia} por mês)`,
+    'Envio de imagens e vídeos como criativo',
+    'Conferência antes de criar: a campanha sobe pausada e só gasta quando você ativa',
+    `Precisa de mais? Campanha avulsa por R$ ${PRECO_AVULSA}, ou suba para um plano pago quando quiser`,
+    '1 cliente',
   ];
   if (id === 'solo') return [...base, '1 cliente: uma conta de anúncios em cada plataforma'];
   if (id === 'agencia') return ['Tudo do plano Solo', `${p.campanhas} campanhas novas por mês (avulsas por R$ ${PRECO_AVULSA})`, 'Até 3 clientes, cada um com chaves, criativos e campanhas separados', 'Troca de cliente em um clique', 'Indicado para gestores com uma carteira pequena de clientes'];
@@ -62,6 +71,7 @@ function situacao(c) {
   const trialAte = c.trial_ate ? new Date(c.trial_ate).getTime() : 0;
   if (c.status === 'bloqueada') return { ativa: false, codigo: 'bloqueada', texto: 'Conta bloqueada. Fale com o suporte.' };
   if (c.cortesia) return { ativa: true, codigo: 'cortesia', texto: 'Acesso liberado' };
+  if (c.plano === 'gratis' && !c.stripe_subscription_id) return { ativa: true, codigo: 'gratis', texto: 'Plano Grátis' };
   if (c.status === 'ativa' && !c.stripe_subscription_id && c.periodo_fim && new Date(c.periodo_fim).getTime() < agora) return { ativa: false, codigo: 'pix_vencido', texto: 'Sua mensalidade paga por Pix venceu. Gere um novo Pix em Assinatura para continuar.' };
   if (c.status === 'ativa') return { ativa: true, codigo: 'ativa', texto: 'Assinatura ativa' };
   if (c.status === 'trial') {
@@ -78,13 +88,14 @@ const publicoConta = (c, u, usadas = 0) => {
     id: c.id, email: u.email, nome: u.nome, empresa: c.empresa, status: c.status, situacao: s, cortesia: c.cortesia,
     trial_ate: c.trial_ate, periodo_fim: c.periodo_fim, tem_assinatura: !!c.stripe_subscription_id,
     plano: c.plano, plano_nome: PLANOS[c.plano]?.nome || c.plano, clientes_max: PLANOS[c.plano]?.clientes ?? 1, bi: !!c.bi,
-    ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: IA_LIMITE_MES },
+    ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: limiteIa(c) },
     campanhas: { limite: limiteCampanhas(c), usadas, extras: c.campanhas_extras || 0, restantes: Math.max(0, limiteCampanhas(c) - usadas) + (c.campanhas_extras || 0), preco_avulsa: PRECO_AVULSA },
   };
 };
 const clientePublico = (k) => ({ id: k.id, nome: k.nome, principal: k.principal });
 const mesAtual = () => new Date().toISOString().slice(0, 7);
 const mesCota = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7); // mês no horário de Recife
+const limiteIa = (c) => PLANOS[c.plano]?.ia ?? IA_LIMITE_MES;
 const limiteCampanhas = (c) => PLANOS[c.plano]?.campanhas ?? PLANOS.solo.campanhas;
 
 async function evento(pool, contaId, tipo, detalhe) {
@@ -184,8 +195,8 @@ async function purgarMidias(pool) {
 async function reservarIa(pool, conta) {
   const { rows } = await pool.query(
     `UPDATE saas_contas SET ia_usos = CASE WHEN ia_mes=$2 THEN ia_usos+1 ELSE 1 END, ia_mes=$2
-     WHERE id=$1 AND (ia_mes IS DISTINCT FROM $2 OR ia_usos < $3) RETURNING ia_usos`, [conta.id, mesAtual(), IA_LIMITE_MES]);
-  if (!rows[0]) throw erro(`Você usou os ${IA_LIMITE_MES} rascunhos com IA deste mês. Eles voltam no início do próximo mês; enquanto isso dá para montar campanhas manualmente.`, 429);
+     WHERE id=$1 AND (ia_mes IS DISTINCT FROM $2 OR ia_usos < $3) RETURNING ia_usos`, [conta.id, mesAtual(), limiteIa(conta)]);
+  if (!rows[0]) throw erro(`Você usou os ${limiteIa(conta)} rascunhos com IA deste mês. Eles voltam no início do próximo mês; enquanto isso dá para montar campanhas manualmente.`, 429);
 }
 const devolverIa = (pool, conta) => pool.query(
   `UPDATE saas_contas SET ia_usos = GREATEST(ia_usos-1,0) WHERE id=$1 AND ia_mes=$2`, [conta.id, mesAtual()]).catch(() => {});
@@ -243,8 +254,10 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
         `INSERT INTO users (email, nome, senha_hash, papel, trocar_senha, aceite_termos_em) VALUES ($1,$2,$3,'assinante',false,now()) RETURNING *`,
         [email, nome, hashSenha(senha)]));
       ({ rows: [conta] } = await c.query(
-        `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval, $4, $5) RETURNING *`,
-        [user.id, empresa || null, String(TRIAL_DIAS), plano, bi]));
+        plano === 'gratis'
+          ? `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'ativa', NULL, 'gratis', false) RETURNING *`
+          : `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval, $4, $5) RETURNING *`,
+        plano === 'gratis' ? [user.id, empresa || null] : [user.id, empresa || null, String(TRIAL_DIAS), plano, bi]));
       await c.query('INSERT INTO saas_clientes (conta_id, nome, escopo, principal) VALUES ($1,$2,$3,true)', [conta.id, empresa || nome || 'Meu cliente', escopoDe(conta)]);
       await c.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [conta.id, 'cadastro', 'Conta criada']);
       await c.query('COMMIT');
@@ -774,24 +787,30 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
 
   // ----- Assinatura e pagamento -----
   // ----- Pagamento por Pix (QR Code estático; a administradora confere no banco e libera) -----
-  const pixValor = (conta, tipo, qtd) => (tipo === 'mensalidade' ? (PLANOS[conta.plano]?.preco || 0) + (conta.bi ? PRECO_BI : 0) : Math.round(PRECO_AVULSA * qtd * 100) / 100);
+  const pixValor = (conta, tipo, qtd, plano) => (tipo === 'mensalidade' ? (PLANOS[plano]?.preco || 0) + (conta.bi ? PRECO_BI : 0) : Math.round(PRECO_AVULSA * qtd * 100) / 100);
   const pixPedido = (req) => {
     const tipo = String(req.body?.tipo ?? req.query.tipo ?? '');
     if (!['mensalidade', 'avulsas'].includes(tipo)) throw erro('Escolha o que vai pagar: mensalidade ou campanhas avulsas.');
     const qtd = tipo === 'avulsas' ? Math.floor(Number(req.body?.qtd ?? req.query.qtd)) : 1;
     if (tipo === 'avulsas' && !(qtd >= 1 && qtd <= 100)) throw erro('Informe de 1 a 100 campanhas avulsas.');
-    return { tipo, qtd, valor: pixValor(req.conta, tipo, qtd), txid: `MID${req.conta.id}${tipo === 'avulsas' ? 'A' : 'M'}${qtd}` };
+    let plano = req.conta.plano;
+    if (tipo === 'mensalidade') {
+      const pedido = String(req.body?.plano ?? req.query.plano ?? '') || (plano === 'gratis' ? '' : plano);
+      if (!Object.hasOwn(PLANOS, pedido) || pedido === 'gratis') throw erro('Escolha o plano pago: Solo, Agência ou Escala.');
+      plano = pedido;
+    }
+    return { tipo, qtd, plano, valor: pixValor(req.conta, tipo, qtd, plano), txid: `MID${req.conta.id}${tipo === 'avulsas' ? 'A' : 'M'}${tipo === 'avulsas' ? qtd : (plano || '').slice(0, 1).toUpperCase()}` };
   };
-  const pixPublico = (x) => ({ id: x.id, tipo: x.tipo, qtd: x.qtd, valor: Number(x.valor), status: x.status, created_at: x.created_at });
+  const pixPublico = (x) => ({ id: x.id, tipo: x.tipo, qtd: x.qtd, plano: x.plano || null, valor: Number(x.valor), status: x.status, created_at: x.created_at });
   app.get('/api/saas/pix', assinante, wrap(async (req, res) => {
     const p = pixPedido(req);
-    res.json({ ...(await gerarPix({ valor: p.valor, txid: p.txid, descricao: p.tipo === 'mensalidade' ? 'Mensalidade' : `${p.qtd} campanhas` })), tipo: p.tipo, qtd: p.qtd });
+    res.json({ ...(await gerarPix({ valor: p.valor, txid: p.txid, descricao: p.tipo === 'mensalidade' ? 'Mensalidade' : `${p.qtd} campanhas` })), tipo: p.tipo, qtd: p.qtd, plano: p.plano });
   }));
   app.post('/api/saas/pix/informar', assinante, semSuporte, wrap(async (req, res) => {
     const p = pixPedido(req);
     const { rows: [aberto] } = await pool.query(`SELECT 1 FROM saas_pix WHERE conta_id=$1 AND tipo=$2 AND status='informado' LIMIT 1`, [req.conta.id, p.tipo]);
     if (aberto) throw erro('Você já avisou este pagamento. Assim que a administradora conferir no banco, ele é liberado.', 409);
-    const { rows: [x] } = await pool.query('INSERT INTO saas_pix (conta_id, tipo, qtd, valor, txid) VALUES ($1,$2,$3,$4,$5) RETURNING *', [req.conta.id, p.tipo, p.qtd, p.valor, p.txid]);
+    const { rows: [x] } = await pool.query('INSERT INTO saas_pix (conta_id, tipo, qtd, valor, txid, plano) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [req.conta.id, p.tipo, p.qtd, p.valor, p.txid, p.tipo === 'mensalidade' ? p.plano : null]);
     await evento(pool, req.conta.id, 'pix_informado', `${p.tipo} ${p.qtd} R$ ${p.valor}`);
     res.json({ pedido: pixPublico(x) });
   }));
@@ -801,9 +820,9 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   }));
   app.get('/api/saas/admin/pix', soAdmin, wrap(async (req, res) => {
     const { rows } = await pool.query(
-      `SELECT x.*, c.empresa, c.plano, u.nome, u.email FROM saas_pix x JOIN saas_contas c ON c.id=x.conta_id JOIN users u ON u.id=c.user_id
+      `SELECT x.*, c.empresa, c.plano AS plano_atual, u.nome, u.email FROM saas_pix x JOIN saas_contas c ON c.id=x.conta_id JOIN users u ON u.id=c.user_id
        WHERE x.status='informado' OR x.updated_at > now() - interval '7 days' ORDER BY (x.status='informado') DESC, x.id DESC LIMIT 60`);
-    res.json({ abertos: rows.filter((x) => x.status === 'informado').length, pedidos: rows.map((x) => ({ ...pixPublico(x), conta_id: x.conta_id, nome: x.nome, email: x.email, empresa: x.empresa, plano: x.plano, txid: x.txid })) });
+    res.json({ abertos: rows.filter((x) => x.status === 'informado').length, pedidos: rows.map((x) => ({ ...pixPublico(x), conta_id: x.conta_id, nome: x.nome, email: x.email, empresa: x.empresa, plano_atual: x.plano_atual, txid: x.txid })) });
   }));
   app.post('/api/saas/admin/pix/:id/:acao', soAdmin, wrap(async (req, res) => {
     const acao = req.params.acao; if (!['confirmar', 'recusar'].includes(acao)) throw erro('Ação inválida', 404);
@@ -815,7 +834,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
       if (x.tipo === 'mensalidade') {
         if (c.status === 'bloqueada') throw erro('A conta está bloqueada. Desbloqueie antes de liberar.');
         if (c.stripe_subscription_id) throw erro('Esta conta paga no cartão (Stripe). Não libere mensalidade por Pix.');
-        await pool.query(`UPDATE saas_contas SET status='ativa', periodo_fim = GREATEST(COALESCE(periodo_fim, now()), now()) + interval '30 days', updated_at=now() WHERE id=$1`, [c.id]);
+        await pool.query(`UPDATE saas_contas SET status='ativa', plano=COALESCE($2, plano), periodo_fim = GREATEST(CASE WHEN plano='gratis' THEN now() ELSE COALESCE(periodo_fim, now()) END, now()) + interval '30 days', updated_at=now() WHERE id=$1`, [c.id, x.plano && Object.hasOwn(PLANOS, x.plano) && x.plano !== 'gratis' ? x.plano : null]);
       } else await pool.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras + $2, updated_at=now() WHERE id=$1', [c.id, x.qtd]);
     }
     const { rows: [n] } = await pool.query(`UPDATE saas_pix SET status=$2, updated_at=now() WHERE id=$1 AND status='informado' RETURNING *`, [x.id, acao === 'confirmar' ? 'confirmado' : 'recusado']);
@@ -826,7 +845,12 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   app.post('/api/saas/assinar', assinante, semSuporte, wrap(async (req, res) => {
     if (req.conta.status === 'bloqueada') throw erro('Conta bloqueada. Fale com o suporte.', 403);
     if (req.conta.status === 'ativa' && req.conta.stripe_subscription_id) throw erro('Você já tem uma assinatura ativa. Use "Gerenciar pagamento".');
-    res.json({ url: await billing.criarCheckout({ conta: req.conta, email: req.user.email, base: base(req) }) });
+    // quem está no Grátis (ou escolhe outro plano) informa o plano pago desejado; ele só vale depois do pagamento
+    const pedido = req.body?.plano;
+    if (pedido !== undefined && (!Object.hasOwn(PLANOS, pedido) || pedido === 'gratis')) throw erro('Escolha um plano pago: Solo, Agência ou Escala.');
+    const plano = pedido || req.conta.plano;
+    if (plano === 'gratis') throw erro('Escolha um plano pago: Solo, Agência ou Escala.');
+    res.json({ url: await billing.criarCheckout({ conta: { ...req.conta, plano }, email: req.user.email, base: base(req) }) });
   }));
 
   app.post('/api/saas/portal', assinante, semSuporte, wrap(async (req, res) => {

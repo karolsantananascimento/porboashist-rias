@@ -4,16 +4,16 @@ const $ = (s) => document.querySelector(s);
 const DESTINO = '/assinante';
 // Intenção do visitante: "assinar" leva ao pagamento logo depois de criar a conta ou entrar; "testar" só abre a conta com o teste
 const params = new URLSearchParams(location.search);
-const planoEscolhido = ['solo', 'agencia', 'escala'].includes(params.get('p')) ? params.get('p') : undefined; // vem da landing /gestoragent
+const planoEscolhido = ['solo', 'agencia', 'escala'].includes(params.get('p')) ? params.get('p') : (params.get('plano') === 'gratis' ? 'gratis' : undefined); // vem da landing /gestoragent
 const comBi = params.get('bi') === '1';
 const explicita = new URLSearchParams(location.search).get('plano'); // só 'assinar' vindo do site leva quem já tem conta ao pagamento
-let intencao = explicita === 'testar' ? 'testar' : 'assinar';
+let intencao = explicita === 'testar' ? 'testar' : (explicita === 'gratis' ? 'gratis' : 'assinar');
 const destino = () => (intencao === 'assinar' ? '/assinante?assinar=1#assinatura' : DESTINO);
 function aplicarIntencao() {
-  const a = intencao === 'assinar';
-  $('#tCadastro').textContent = a ? 'Assine agora.' : 'Comece o teste.';
-  $('#pCadastro').textContent = a ? 'Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.' : 'Crie a conta e teste sem cartão. Você assina quando quiser.';
-  $('#bCadastro').firstElementChild.textContent = a ? 'Criar conta e assinar' : 'Criar conta e testar';
+  const a = intencao === 'assinar'; const g = intencao === 'gratis';
+  $('#tCadastro').textContent = g ? 'Comece grátis.' : (a ? 'Assine agora.' : 'Comece o teste.');
+  $('#pCadastro').textContent = g ? 'Crie a conta sem cartão. O plano Grátis fica sempre ativo e inclui 1 campanha por mês, no Meta Ads ou no Google Ads.' : (a ? 'Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.' : 'Crie a conta e teste sem cartão. Você assina quando quiser.');
+  $('#bCadastro').firstElementChild.textContent = g ? 'Criar conta grátis' : (a ? 'Criar conta e assinar' : 'Criar conta e testar');
   delete $('#bCadastro').firstElementChild.dataset.t;
 }
 
@@ -25,7 +25,7 @@ function modo(m, foco = true) {
   $('#abaEntrar').setAttribute('aria-selected', String(!criar));
   $('#abaCriar').tabIndex = criar ? 0 : -1;
   $('#abaEntrar').tabIndex = criar ? -1 : 0;
-  history.replaceState(null, '', (criar ? '/cadastro' : '/cadastro?modo=entrar') + (intencao === 'testar' ? (criar ? '?plano=testar' : '&plano=testar') : ''));
+  history.replaceState(null, '', (criar ? '/cadastro' : '/cadastro?modo=entrar') + (intencao === 'testar' || intencao === 'gratis' ? (criar ? `?plano=${intencao}` : `&plano=${intencao}`) : ''));
   if (foco) ($(criar ? '#cNome' : '#lEmail')).focus();
 }
 
