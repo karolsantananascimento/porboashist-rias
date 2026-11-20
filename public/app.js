@@ -96,6 +96,7 @@ function mostrarEu() {
   $('#navApis').classList.toggle('hidden', S.me.papel !== 'admin');
   $('#navSaas').classList.toggle('hidden', S.me.papel !== 'admin');
   $('#navSite').classList.toggle('hidden', S.me.papel !== 'admin');
+  if (S.me.papel === 'admin' && window.atualizarBadgeChamados) window.atualizarBadgeChamados();
   $('#secAdmin').classList.toggle('hidden', S.me.papel !== 'admin');
   if (S.view === 'usuarios' && S.me.papel !== 'admin') S.view = 'painel';
 }

@@ -437,6 +437,22 @@ CREATE TABLE IF NOT EXISTS saas_midias (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saas_midias_cliente ON saas_midias (cliente_id, id DESC);
+CREATE TABLE IF NOT EXISTS saas_chamados (
+  id SERIAL PRIMARY KEY,
+  conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL DEFAULT 'integracao',
+  plataformas TEXT NOT NULL DEFAULT '',          -- meta,google
+  contato TEXT NOT NULL DEFAULT '',              -- WhatsApp ou telefone para combinar o horário
+  janela TEXT NOT NULL DEFAULT '',               -- dias e horários que o assinante pode
+  obs TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'aberto',         -- aberto | agendado | concluido | cancelado
+  agendado_para TIMESTAMPTZ,
+  nota_admin TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_chamados_status ON saas_chamados (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS saas_chamados_conta ON saas_chamados (conta_id, id DESC);
 ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS campanhas_extras INT NOT NULL DEFAULT 0;   -- campanhas avulsas compradas e ainda não usadas
 ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS cota_mes TEXT;                             -- AAAA-MM do plano que esta campanha consumiu
 ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS usou_extra BOOLEAN NOT NULL DEFAULT false; -- consumiu uma campanha avulsa

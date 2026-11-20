@@ -1658,8 +1658,17 @@ async function abrirPublicar(texto, opts = {}) {
 // ---------- Administração do SaaS: assinantes do Gestor de Tráfego ----------
 async function viewAssinantes(v) {
   if (S.me.papel !== 'admin') { S.view = 'inicio'; return render(); }
-  const r = await api('/api/saas/admin/assinantes');
+  const [r, ch] = await Promise.all([api('/api/saas/admin/assinantes'), api('/api/saas/admin/chamados')]);
   const l = r.assinantes;
+  const quandoCh = (d) => (d ? new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
+  const emAndamento = ch.chamados.filter((x) => ['aberto', 'agendado'].includes(x.status));
+  const recentes = ch.chamados.filter((x) => !['aberto', 'agendado'].includes(x.status)).slice(0, 5);
+  const linhaCh = (x) => `<tr><td><b>${esc(x.nome || '')}</b><br><span class="muted">${esc(x.email)}${x.empresa ? ' · ' + esc(x.empresa) : ''}</span></td>
+    <td>${x.plataformas.map((p) => (p === 'meta' ? 'Meta Ads' : 'Google Ads')).join(' + ')}</td>
+    <td>${esc(x.contato)}<br><span class="muted">${esc(x.janela)}${x.obs ? ' · ' + esc(x.obs) : ''}</span></td>
+    <td><span class="pill ${x.status === 'agendado' ? 'ok' : (x.status === 'aberto' ? 'warn' : '')}">${{ aberto: 'Novo', agendado: 'Agendado', concluido: 'Concluído', cancelado: 'Cancelado' }[x.status]}</span>${x.agendado_para ? `<br><span class="muted">${quandoCh(x.agendado_para)}</span>` : ''}</td>
+    <td>${['aberto', 'agendado'].includes(x.status) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;max-width:330px"><input type="datetime-local" style="width:200px" data-quando="${x.id}" value="${x.agendado_para ? new Date(new Date(x.agendado_para).getTime() - 3 * 3600000).toISOString().slice(0, 16) : ''}"> <button class="btn small primary" data-ch="${x.id}" data-chacao="agendar">Agendar</button>
+      <button class="btn small" data-a="${x.conta_id}" data-acao="suporte">Entrar na conta</button> <button class="btn small" data-ch="${x.id}" data-chacao="concluir">Concluir</button> <button class="btn small danger" data-ch="${x.id}" data-chacao="cancelar">Cancelar</button></div>` : ''}</td></tr>`;
   const cont = (cod) => l.filter((a) => a.situacao.codigo === cod).length;
   const rot = { ativa: ['Pagando', 'ok'], cortesia: ['Cortesia', 'ok'], trial: ['Em teste', ''], trial_expirado: ['Teste acabou', 'warn'], inadimplente: ['Inadimplente', 'warn'], cancelada: ['Cancelada', ''], bloqueada: ['Bloqueada', 'warn'] };
   const dia = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '—');
@@ -1673,6 +1682,8 @@ async function viewAssinantes(v) {
       <div class="card"><h3>Cobrança (Stripe) ${r.cobranca ? '<span class="pill ok">Ligada</span>' : '<span class="pill warn">Não configurada</span>'}</h3>
         <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code> e os preços do Stripe: <code>STRIPE_PRICE_SOLO</code>, <code>STRIPE_PRICE_AGENCIA</code>, <code>STRIPE_PRICE_ESCALA</code>, <code>STRIPE_PRICE_BI</code> (ou só <code>STRIPE_PRICE_ID</code> para preço único).</p>
         <p class="muted">Webhook no Stripe: <code class="url">${esc(location.origin)}/api/saas/webhook</code> (eventos de assinatura e fatura).</p></div></div>
+    <div class="card" style="padding:0;overflow-x:auto;margin-bottom:16px"><h3 style="padding:14px 16px 0">Chamados de integração ${ch.abertos ? `<span class="pill warn">${ch.abertos} novo${ch.abertos > 1 ? 's' : ''}</span>` : ''}</h3>
+      ${emAndamento.length || recentes.length ? `<table><thead><tr><th>Assinante</th><th>Integrar</th><th>Contato e horários</th><th>Situação</th><th></th></tr></thead><tbody>${[...emAndamento, ...recentes].map(linhaCh).join('')}</tbody></table>` : '<p class="muted" style="padding:0 16px 14px">Nenhum pedido de suporte ainda. Quando um assinante pedir ajuda para integrar, aparece aqui.</p>'}</div>
     <div class="card" style="padding:0;overflow-x:auto"><table>
       <thead><tr><th>Assinante</th><th>Plano</th><th>Situação</th><th>Teste até / Período até</th><th>Chaves</th><th>Campanhas</th><th>Última atividade</th><th></th></tr></thead>
       <tbody>${l.length ? l.map((a) => { const [t, c] = rot[a.situacao.codigo] || [a.situacao.codigo, '']; return `<tr>
@@ -1691,6 +1702,15 @@ async function viewAssinantes(v) {
   $('#cpSaas', v).onclick = () => copiar(location.origin + '/assinante');
   v.querySelectorAll('[data-plano]').forEach((s) => s.onchange = async () => { try { await api(`/api/saas/admin/assinantes/${s.dataset.plano}`, { method: 'PUT', body: { plano: s.value } }); toast('Plano atualizado'); } catch (e) { toast(e.message); viewAssinantes(v); } });
   v.querySelectorAll('[data-bi]').forEach((s) => s.onchange = async () => { try { await api(`/api/saas/admin/assinantes/${s.dataset.bi}`, { method: 'PUT', body: { bi: s.checked } }); toast('Atualizado'); } catch (e) { toast(e.message); viewAssinantes(v); } });
+  v.querySelectorAll('[data-chacao]').forEach((b) => b.onclick = async () => {
+    const id = b.dataset.ch; const ac = b.dataset.chacao; const url = `/api/saas/admin/chamados/${id}`;
+    try {
+      if (ac === 'agendar') { const q = v.querySelector(`[data-quando="${id}"]`).value; if (!q) return toast('Escolha a data e a hora.'); await api(url, { method: 'PUT', body: { agendado_para: new Date(q).toISOString() } }); }
+      else if (ac === 'concluir') await api(url, { method: 'PUT', body: { status: 'concluido' } });
+      else if (ac === 'cancelar') { if (!confirm('Cancelar este chamado?')) return; await api(url, { method: 'PUT', body: { status: 'cancelado' } }); }
+      toast('Feito'); viewAssinantes(v); atualizarBadgeChamados();
+    } catch (e) { toast(e.message); }
+  });
   v.querySelectorAll('[data-acao]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.a; const ac = b.dataset.acao; const url = `/api/saas/admin/assinantes/${id}`;
     try {
@@ -1704,6 +1724,16 @@ async function viewAssinantes(v) {
     } catch (e) { toast(e.message); }
   });
 }
+
+// Contador de chamados novos no menu "Assinantes (SaaS)"
+async function atualizarBadgeChamados() {
+  try {
+    if (S.me?.papel !== 'admin') return;
+    const r = await api('/api/saas/admin/chamados'); const a = document.querySelector('#navSaas');
+    a.querySelector('.nbadge')?.remove(); if (r.abertos) a.insertAdjacentHTML('beforeend', ` <b class="nbadge">${r.abertos}</b>`);
+  } catch { /* sem o contador */ }
+}
+window.atualizarBadgeChamados = atualizarBadgeChamados;
 
 // ---------- Site e Blog: prévia do site da MidIAut e editor de artigos ----------
 // Pensado para crescer: hoje o site vende o agente de tráfego; os próximos agentes (conteúdo, designer...) entram como novas páginas/seções.
