@@ -49,6 +49,17 @@ Sistema para planejar e acompanhar as entregas de cada cliente: posts do feed, s
 - **Conteúdo da semana**: em **Clientes → Gerar semana**, o agente escreve a semana inteira (segunda a domingo) de acordo com a meta do contrato: legendas completas dos posts, roteiro de stories para cada dia e pauta com SEO do artigo de blog. Considera a planilha de programação do período, o que já foi publicado nas últimas 4 semanas, as prioridades de captação e os materiais a evitar, e aceita um pedido da equipe ("destacar a programação de Halloween"). Ao aplicar, ocupa as tarefas vazias do mês e cria só o que faltar; nada é publicado.
 - **Backup**: download e restauração de todos os dados em JSON (restauração só para administradores; usuários e senhas não entram no backup).
 
+## SaaS Gestor de Tráfego (assinantes)
+
+Dentro do sistema há uma versão SaaS só do agente gestor de tráfego. Pessoas se cadastram em `/assinante`, ganham teste grátis, colocam as próprias chaves de API (Meta e Google Ads, com um **?** em cada campo explicando onde pegar) e rodam campanhas. Pagam por Stripe (Checkout + portal do cliente).
+
+- **Isolamento**: assinantes usam tabelas próprias (`saas_*`), chaves próprias criptografadas e nunca herdam as chaves do admin. Só acessam `/api/saas`.
+- **Segurança de gasto**: campanhas sobem pausadas; ativar exige confirmação, com limite diário e teto de orçamento. Google Ads: aumento de orçamento limitado a +20% por ação.
+- **Admin**: menu *Assinantes (SaaS)* (cortesia, +7 dias, bloquear, link de senha, excluir).
+- **Stripe**: crie um preço mensal, configure o webhook `https://SEU-HOST/api/saas/webhook` (eventos de checkout, assinatura e fatura) e ative o Customer Portal.
+- **Variáveis**: `APP_URL`, `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `SAAS_PRECO_TEXTO`, `SAAS_TERMOS_URL`, `SAAS_TRIAL_DIAS` (7), `SAAS_IA_MES` (30), `SAAS_ATIVACOES_DIA` (10), `GOOGLE_ADS_API_VERSION` (v21).
+- **Testes**: `PGBASE=postgresql://postgres@localhost:5433 node test/saas.js`.
+
 ## Dados iniciais
 
 Na primeira execução o banco é criado com os projetos (A Melhor Mídia do Brasil, Por Boas Histórias, Disco, Otter, Lumiére e Marconi Car) e os clientes de cada um, sem tarefas.

@@ -126,10 +126,17 @@ app.get('/api/sessao', wrap(async (req, res) => {
   res.json({ autenticado: !!u, usuario: u ? publico(u) : null });
 }));
 app.get('/healthz', (req, res) => res.send('ok'));
+// SaaS do gestor de tráfego: cadastro de assinantes, preço e webhook do Stripe (públicos, sem sessão)
+const saas = require('./saas');
+saas.registrarPublico(app, { pool, wrap, criarSessao });
 
 app.use('/api', wrap(async (req, res, next) => {
   const u = await usuarioDaSessao(req);
   if (!u) return res.status(401).json({ erro: 'Não autenticado' });
+  // Assinantes do SaaS só enxergam a própria área: tudo o mais na API é do sistema interno
+  if (u.papel === 'assinante' && !/^\/(saas|minha-senha|meu-perfil)(\/|$)/.test(req.path)) {
+    return res.status(403).json({ erro: 'Acesso restrito à área do assinante' });
+  }
   req.user = u;
   next();
 }));
@@ -137,6 +144,7 @@ app.use('/api', wrap(async (req, res, next) => {
 app.use('/oauth', wrap(async (req, res, next) => {
   const u = await usuarioDaSessao(req);
   if (!u) return res.redirect('/');
+  if (u.papel === 'assinante') return res.redirect('/assinante');
   req.user = u;
   next();
 }));
@@ -161,7 +169,7 @@ app.put('/api/meu-perfil', wrap(async (req, res) => {
 
 // ---------- Usuários ----------
 app.get('/api/users', wrap(async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM users ORDER BY ativo DESC, nome NULLS LAST, email');
+  const { rows } = await pool.query(`SELECT * FROM users WHERE papel <> 'assinante' ORDER BY ativo DESC, nome NULLS LAST, email`);
   res.json(rows.map(publico));
 }));
 
@@ -192,6 +200,7 @@ app.put('/api/users/:id', soAdmin, wrap(async (req, res) => {
   const id = Number(req.params.id);
   const { rows: [alvo] } = await pool.query('SELECT * FROM users WHERE id=$1', [id]);
   if (!alvo) return res.status(404).json({ erro: 'Usuário não encontrado' });
+  if (alvo.papel === 'assinante') return res.status(400).json({ erro: 'Assinantes são gerenciados em Assinantes (SaaS)' });
   const papel = req.body.papel === 'admin' ? 'admin' : req.body.papel === 'membro' ? 'membro' : alvo.papel;
   const ativo = typeof req.body.ativo === 'boolean' ? req.body.ativo : alvo.ativo;
   const perdeAdmin = alvo.papel === 'admin' && alvo.ativo && (papel !== 'admin' || !ativo);
@@ -213,6 +222,7 @@ app.delete('/api/users/:id', soAdmin, wrap(async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.id) return res.status(400).json({ erro: 'Você não pode excluir o próprio usuário' });
   const { rows: [alvo] } = await pool.query('SELECT * FROM users WHERE id=$1', [id]);
+  if (alvo && alvo.papel === 'assinante') return res.status(400).json({ erro: 'Assinantes são gerenciados em Assinantes (SaaS)' });
   if (alvo && alvo.papel === 'admin' && alvo.ativo && (await adminsAtivos(id)) === 0) return res.status(400).json({ erro: 'É preciso manter pelo menos um administrador ativo' });
   await pool.query('DELETE FROM users WHERE id=$1', [id]);
   res.json({ ok: true });
@@ -558,6 +568,7 @@ projetos.webhook(app, { pool, wrap });
 require('./integracoes').registrar(app, { pool, wrap, soAdmin });
 require('./esteira').registrar(app, { pool, wrap });
 require('./campanhas').registrar(app, { pool, wrap, soAdmin });
+saas.registrar(app, { pool, wrap, soAdmin, gerarConvite });
 require('./midia').registrar(app, { pool, wrap });
 require('./google').registrar(app, { pool, wrap });
 require('./midia').registrarPublico(app, { pool, wrap });
@@ -629,6 +640,7 @@ app.use((err, req, res, next) => {
 });
 
 // ---------- Interface ----------
+app.get(['/assinante', '/assinar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
