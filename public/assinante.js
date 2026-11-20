@@ -293,9 +293,10 @@ function pintarCota() {
     <p class="muted" style="margin:6px 0 0"><b>${k.usadas}/${k.limite}</b> campanhas do plano ${esc(S.eu.conta.plano_nome)} usadas${k.extras ? ` · <b>${k.extras}</b> avulsa${k.extras > 1 ? 's' : ''} disponível${k.extras > 1 ? 'is' : ''}` : ''}. O limite volta no início de cada mês.</p>
     ${cheio && !k.extras ? '<div class="sa-pend" style="margin-top:10px">Você usou todas as campanhas do mês. Para criar mais agora, compre campanhas avulsas.</div>' : ''}
     <div class="cota-compra"><label>Campanhas avulsas (${brl(k.preco_avulsa)} cada, não vencem)</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input id="qAvulsa" type="number" min="1" max="50" value="${cheio ? 5 : 1}" style="width:90px"><span class="muted" id="totAvulsa"></span><button class="btn ${cheio ? 'primary' : ''}" id="bAvulsa">Comprar</button></div></div>`;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input id="qAvulsa" type="number" min="1" max="50" value="${cheio ? 5 : 1}" style="width:90px"><span class="muted" id="totAvulsa"></span><button class="btn ${cheio ? 'primary' : ''}" id="bAvulsa">Comprar no cartão</button><button class="btn" id="bAvulsaPix">Pagar com Pix</button></div></div>`;
   const tot = () => { $('#totAvulsa').textContent = `Total: ${brl(Math.max(1, Number($('#qAvulsa').value) || 1) * k.preco_avulsa)}`; };
   $('#qAvulsa').addEventListener('input', tot); tot();
+  $('#bAvulsaPix').addEventListener('click', () => abrirPix('avulsas', Math.min(50, Math.max(1, Math.floor(Number($('#qAvulsa').value)) || 1))));
   $('#bAvulsa').addEventListener('click', async (ev) => {
     const b = ev.currentTarget; b.disabled = true;
     try { const r = await api('/api/saas/campanhas-avulsas', { method: 'POST', corpo: { quantidade: Number($('#qAvulsa').value) } }); location.href = r.url; }
@@ -654,6 +655,33 @@ function abrirGoogle() {
   });
 }
 
+// ---------------- Pagamento por Pix (QR Code + copia e cola) ----------------
+const cnpjTxt = (d) => String(d).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+async function abrirPix(tipo, qtd = 1) {
+  let p; try { p = await api(`/api/saas/pix?tipo=${tipo}&qtd=${qtd}`); } catch (e) { return falha(e); }
+  modal(`<div class="modal-head"><h3>Pagar com Pix</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
+    <div class="modal-body pix-box">
+      <div class="pix-qr"><img src="${p.qr}" alt="QR Code do Pix" width="240" height="240"></div>
+      <div class="pix-info">
+        <p class="pix-valor">${brl(p.valor)}</p>
+        <p class="muted">${tipo === 'mensalidade' ? `Mensalidade do plano ${esc(S.eu.conta.plano_nome)}${S.eu.conta.bi ? ' + BI' : ''}` : `${p.qtd} campanha${p.qtd > 1 ? 's' : ''} avulsa${p.qtd > 1 ? 's' : ''}`}</p>
+        <label>Pix copia e cola</label>
+        <textarea id="pixCola" rows="4" readonly>${esc(p.payload)}</textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn primary" id="pixCopiar">Copiar código</button></div>
+        <p class="muted" style="margin-top:10px">Chave Pix (CNPJ): <b>${cnpjTxt(p.chave)}</b></p>
+      </div>
+      <ol class="pix-passos"><li>No app do seu banco, escolha <b>Pix</b> e leia o QR Code ou cole o código.</li><li>Confira o valor de <b>${brl(p.valor)}</b> e pague.</li><li>Volte aqui e clique em <b>Já paguei</b>. A liberação é manual: assim que o pagamento for conferido no banco, ${tipo === 'mensalidade' ? 'sua assinatura é ativada por 30 dias' : 'as campanhas avulsas entram na sua conta'}.</li></ol>
+    </div>
+    <div class="modal-foot"><button class="btn primary" id="pixPaguei">Já paguei</button></div>`);
+  $('.sa-modal-box').classList.add('pix');
+  $('#pixCopiar').addEventListener('click', async () => { try { await navigator.clipboard.writeText(p.payload); } catch { $('#pixCola').select(); document.execCommand('copy'); } aviso('Código Pix copiado.'); });
+  $('#pixPaguei').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget; b.disabled = true;
+    try { await api('/api/saas/pix/informar', { method: 'POST', corpo: { tipo, qtd } }); fechar(); aviso('Aviso enviado! Vamos conferir o pagamento e liberar.'); if (S.aba === 'assinatura') render(); }
+    catch (e) { falha(e); b.disabled = false; }
+  });
+}
+
 // ---------------- Assinatura ----------------
 async function assinar() {
   try { const r = await api('/api/saas/assinar', { method: 'POST' }); location.href = r.url; } catch (e) { falha(e); }
@@ -662,22 +690,27 @@ async function assinar() {
 async function viewAssinatura(v) {
   await carregarEu();
   const c = S.eu.conta; const sit = c.situacao;
+  const pagaCartao = c.status === 'ativa' && c.tem_assinatura;
+  let pixPend = []; try { pixPend = (await api('/api/saas/pix/pedidos')).pedidos.filter((x) => x.status === 'informado'); } catch { /* sem a lista, só não mostra o aviso */ }
   secao(v, `<div class="view-head"><div><h2>Assinatura</h2><p>${esc(sit.texto)}</p></div></div>
     <div class="card"><h3>Mensalidade</h3>
       <p style="font-size:24px;margin:8px 0">${esc(S.eu.preco || 'Consulte o valor')}</p>
       ${sit.codigo === 'trial' ? `<p class="muted">Seu período de teste vai até ${dataBr(c.trial_ate)}.</p>` : ''}
       ${c.periodo_fim && c.tem_assinatura ? `<p class="muted">Período atual até ${dataBr(c.periodo_fim)}.</p>` : ''}
-      <p class="muted">O cartão é digitado na página segura do Stripe. Este sistema não vê nem guarda os dados do cartão.</p>
+      <p class="muted">No cartão, os dados são digitados na página segura do Stripe e este sistema não os guarda. No Pix, você paga por QR Code e a liberação é conferida manualmente.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         ${S.eu.cobranca && !(c.status === 'ativa' && c.tem_assinatura) && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bAssinar2">Assinar e cadastrar cartão</button>' : ''}
+        ${!pagaCartao && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bPix">Pagar com Pix</button>' : ''}
         ${S.eu.cobranca && c.tem_assinatura ? '<button class="btn" id="bPortal">Gerenciar pagamento (cartão, faturas, cancelar)</button>' : ''}
-        ${!S.eu.cobranca ? '<span class="muted">A cobrança ainda não foi ligada. Fale com o suporte.</span>' : ''}</div></div>
+        ${!S.eu.cobranca ? '<span class="muted">Cartão ainda não disponível. Use o Pix.</span>' : ''}</div>
+      ${pixPend.length ? `<div class="sa-pend" style="margin-top:12px">Pagamento por Pix em conferência: ${pixPend.map((x) => `${x.tipo === 'mensalidade' ? 'mensalidade' : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`} (${brl(x.valor)})`).join(' · ')}. Assim que for conferido no banco, é liberado.</div>` : ''}</div>
     <div class="card"><h3>Seus dados</h3>
       <div class="sa-linha" style="margin-top:8px"><input id="empresa" value="${esc(c.empresa || '')}" placeholder="Empresa ou marca"><button class="btn" id="bEmpresa">Salvar</button></div>
       <p class="muted" style="margin-top:12px">E-mail: ${esc(c.email)}</p></div>
     <div class="card"><h3>Excluir minha conta</h3><p class="muted">Apaga a sua conta, as campanhas guardadas aqui e todas as chaves de API. As campanhas que já existem no Meta e no Google não são apagadas por lá.</p>
       <div class="sa-linha" style="margin-top:8px"><input id="senhaExc" type="password" placeholder="Digite a sua senha para confirmar" autocomplete="current-password"><button class="btn danger" id="bExcluirConta">Excluir conta</button></div></div>`);
   const b = $('#bAssinar2'); if (b) b.addEventListener('click', assinar);
+  const bx = $('#bPix'); if (bx) bx.addEventListener('click', () => abrirPix('mensalidade'));
   const p = $('#bPortal'); if (p) p.addEventListener('click', async () => { try { const r = await api('/api/saas/portal', { method: 'POST' }); location.href = r.url; } catch (e) { falha(e); } });
   $('#bEmpresa').addEventListener('click', async () => { try { await api('/api/saas/conta', { method: 'PUT', corpo: { empresa: $('#empresa').value } }); aviso('Salvo.'); } catch (e) { falha(e); } });
   $('#bExcluirConta').addEventListener('click', async () => {

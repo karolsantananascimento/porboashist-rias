@@ -1658,7 +1658,7 @@ async function abrirPublicar(texto, opts = {}) {
 // ---------- Administração do SaaS: assinantes do Gestor de Tráfego ----------
 async function viewAssinantes(v) {
   if (S.me.papel !== 'admin') { S.view = 'inicio'; return render(); }
-  const [r, ch] = await Promise.all([api('/api/saas/admin/assinantes'), api('/api/saas/admin/chamados')]);
+  const [r, ch, px] = await Promise.all([api('/api/saas/admin/assinantes'), api('/api/saas/admin/chamados'), api('/api/saas/admin/pix')]);
   const l = r.assinantes;
   const quandoCh = (d) => (d ? new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
   const emAndamento = ch.chamados.filter((x) => ['aberto', 'agendado'].includes(x.status));
@@ -1669,8 +1669,13 @@ async function viewAssinantes(v) {
     <td><span class="pill ${x.status === 'agendado' ? 'ok' : (x.status === 'aberto' ? 'warn' : '')}">${{ aberto: 'Novo', agendado: 'Agendado', concluido: 'Concluído', cancelado: 'Cancelado' }[x.status]}</span>${x.agendado_para ? `<br><span class="muted">${quandoCh(x.agendado_para)}</span>` : ''}</td>
     <td>${['aberto', 'agendado'].includes(x.status) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;max-width:330px"><input type="datetime-local" style="width:200px" data-quando="${x.id}" value="${x.agendado_para ? new Date(new Date(x.agendado_para).getTime() - 3 * 3600000).toISOString().slice(0, 16) : ''}"> <button class="btn small primary" data-ch="${x.id}" data-chacao="agendar">Agendar</button>
       <button class="btn small" data-a="${x.conta_id}" data-acao="suporte">Entrar na conta</button> <button class="btn small" data-ch="${x.id}" data-chacao="concluir">Concluir</button> <button class="btn small danger" data-ch="${x.id}" data-chacao="cancelar">Cancelar</button></div>` : ''}</td></tr>`;
+  const brlPix = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const linhaPx = (x) => `<tr><td><b>${esc(x.nome || '')}</b><br><span class="muted">${esc(x.email)}${x.empresa ? ' · ' + esc(x.empresa) : ''}</span></td>
+    <td>${x.tipo === 'mensalidade' ? `Mensalidade (${esc(x.plano)})` : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`}<br><span class="muted">Código ${esc(x.txid)}</span></td>
+    <td><b>${brlPix(x.valor)}</b><br><span class="muted">${new Date(x.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span></td>
+    <td>${x.status === 'informado' ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small primary" data-px="${x.id}" data-pxacao="confirmar">Conferi no banco: liberar</button> <button class="btn small danger" data-px="${x.id}" data-pxacao="recusar">Recusar</button></div>` : `<span class="pill ${x.status === 'confirmado' ? 'ok' : ''}">${x.status === 'confirmado' ? 'Liberado' : 'Recusado'}</span>`}</td></tr>`;
   const cont = (cod) => l.filter((a) => a.situacao.codigo === cod).length;
-  const rot = { ativa: ['Pagando', 'ok'], cortesia: ['Cortesia', 'ok'], trial: ['Em teste', ''], trial_expirado: ['Teste acabou', 'warn'], inadimplente: ['Inadimplente', 'warn'], cancelada: ['Cancelada', ''], bloqueada: ['Bloqueada', 'warn'] };
+  const rot = { ativa: ['Pagando', 'ok'], cortesia: ['Cortesia', 'ok'], trial: ['Em teste', ''], trial_expirado: ['Teste acabou', 'warn'], pix_vencido: ['Pix venceu', 'warn'], inadimplente: ['Inadimplente', 'warn'], cancelada: ['Cancelada', ''], bloqueada: ['Bloqueada', 'warn'] };
   const dia = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '—');
   v.innerHTML = `
     <div class="view-head"><div><h2>Assinantes (SaaS)</h2><p>Quem assinou o Gestor de Tráfego. Cada assinante usa as próprias chaves e só enxerga os próprios dados.</p></div></div>
@@ -1682,6 +1687,8 @@ async function viewAssinantes(v) {
       <div class="card"><h3>Cobrança (Stripe) ${r.cobranca ? '<span class="pill ok">Ligada</span>' : '<span class="pill warn">Não configurada</span>'}</h3>
         <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code> e os preços do Stripe: <code>STRIPE_PRICE_SOLO</code>, <code>STRIPE_PRICE_AGENCIA</code>, <code>STRIPE_PRICE_ESCALA</code>, <code>STRIPE_PRICE_BI</code> (ou só <code>STRIPE_PRICE_ID</code> para preço único).</p>
         <p class="muted">Webhook no Stripe: <code class="url">${esc(location.origin)}/api/saas/webhook</code> (eventos de assinatura e fatura).</p></div></div>
+    <div class="card" style="padding:0;overflow-x:auto;margin-bottom:16px"><h3 style="padding:14px 16px 0">Pagamentos por Pix ${px.abertos ? `<span class="pill warn">${px.abertos} a conferir</span>` : ''}</h3>
+      ${px.pedidos.length ? `<table><thead><tr><th>Assinante</th><th>Pagamento</th><th>Valor</th><th></th></tr></thead><tbody>${px.pedidos.map(linhaPx).join('')}</tbody></table>` : '<p class="muted" style="padding:0 16px 14px">Nenhum aviso de pagamento por Pix ainda. Confira o extrato da chave antes de liberar.</p>'}</div>
     <div class="card" style="padding:0;overflow-x:auto;margin-bottom:16px"><h3 style="padding:14px 16px 0">Chamados de integração ${ch.abertos ? `<span class="pill warn">${ch.abertos} novo${ch.abertos > 1 ? 's' : ''}</span>` : ''}</h3>
       ${emAndamento.length || recentes.length ? `<table><thead><tr><th>Assinante</th><th>Integrar</th><th>Contato e horários</th><th>Situação</th><th></th></tr></thead><tbody>${[...emAndamento, ...recentes].map(linhaCh).join('')}</tbody></table>` : '<p class="muted" style="padding:0 16px 14px">Nenhum pedido de suporte ainda. Quando um assinante pedir ajuda para integrar, aparece aqui.</p>'}</div>
     <div class="card" style="padding:0;overflow-x:auto"><table>
@@ -1690,7 +1697,7 @@ async function viewAssinantes(v) {
         <td><b>${esc(a.nome || '')}</b><br><span class="muted">${esc(a.email)}${a.empresa ? ' · ' + esc(a.empresa) : ''}</span></td>
         <td><select data-plano="${a.id}"><option value="solo"${a.plano === 'solo' ? ' selected' : ''}>Solo · 1</option><option value="agencia"${a.plano === 'agencia' ? ' selected' : ''}>Agência · 3</option><option value="escala"${a.plano === 'escala' ? ' selected' : ''}>Escala · 5</option></select><br><span class="muted">${a.clientes}/${a.clientes_max} clientes</span><br><label class="muted"><input type="checkbox" data-bi="${a.id}"${a.bi ? ' checked' : ''}> BI + relatórios</label></td>
         <td><span class="pill ${c}">${t}</span></td>
-        <td>${a.tem_assinatura ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
+        <td>${a.tem_assinatura || (a.status === 'ativa' && a.periodo_fim) ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
         <td>${a.meta_ok ? '<span class="pill ok">Meta</span>' : '<span class="pill">Meta</span>'} ${a.google_ok ? '<span class="pill ok">Google</span>' : '<span class="pill">Google</span>'}</td>
         <td>${a.campanhas} (${a.campanhas_ativas} ativas)</td><td>${dia(a.ultima_atividade)}</td>
         <td style="white-space:nowrap"><button class="btn small primary" data-a="${a.id}" data-acao="suporte">Entrar na conta</button>
@@ -1702,6 +1709,11 @@ async function viewAssinantes(v) {
   $('#cpSaas', v).onclick = () => copiar(location.origin + '/assinante');
   v.querySelectorAll('[data-plano]').forEach((s) => s.onchange = async () => { try { await api(`/api/saas/admin/assinantes/${s.dataset.plano}`, { method: 'PUT', body: { plano: s.value } }); toast('Plano atualizado'); } catch (e) { toast(e.message); viewAssinantes(v); } });
   v.querySelectorAll('[data-bi]').forEach((s) => s.onchange = async () => { try { await api(`/api/saas/admin/assinantes/${s.dataset.bi}`, { method: 'PUT', body: { bi: s.checked } }); toast('Atualizado'); } catch (e) { toast(e.message); viewAssinantes(v); } });
+  v.querySelectorAll('[data-pxacao]').forEach((b) => b.onclick = async () => {
+    const ac = b.dataset.pxacao;
+    if (!confirm(ac === 'confirmar' ? 'Você conferiu este valor no extrato do banco? Isso libera a mensalidade ou as campanhas.' : 'Recusar este aviso de pagamento?')) return;
+    try { await api(`/api/saas/admin/pix/${b.dataset.px}/${ac}`, { method: 'POST' }); toast(ac === 'confirmar' ? 'Pagamento liberado' : 'Aviso recusado'); viewAssinantes(v); } catch (e) { toast(e.message); }
+  });
   v.querySelectorAll('[data-chacao]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.ch; const ac = b.dataset.chacao; const url = `/api/saas/admin/chamados/${id}`;
     try {

@@ -440,6 +440,19 @@ CREATE INDEX IF NOT EXISTS saas_midias_cliente ON saas_midias (cliente_id, id DE
 ALTER TABLE saas_midias ADD COLUMN IF NOT EXISTS duracao NUMERIC;
 ALTER TABLE saas_midias ADD COLUMN IF NOT EXISTS enviada_em TIMESTAMPTZ;
 ALTER TABLE saas_midias ADD COLUMN IF NOT EXISTS meta_ids JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE TABLE IF NOT EXISTS saas_pix (
+  id SERIAL PRIMARY KEY,
+  conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL,
+  qtd INT NOT NULL DEFAULT 1,
+  valor NUMERIC(10,2) NOT NULL,
+  txid TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'informado',
+  nota_admin TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_pix_conta ON saas_pix (conta_id, id DESC);
 CREATE TABLE IF NOT EXISTS saas_chamados (
   id SERIAL PRIMARY KEY,
   conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,

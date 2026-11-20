@@ -331,6 +331,41 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('a', 'POST', '/api/saas/chamados', { plataformas: ['google'], contato: '81999990000', janela: 'sexta' }); ok(r.status === 200, 'depois de concluído pode pedir de novo');
     r = await req('a', 'POST', `/api/saas/chamados/${r.corpo.chamado.id}/cancelar`); ok(r.status === 200 && r.corpo.chamado.status === 'cancelado', 'assinante cancela o próprio pedido');
     r = await req(null, 'GET', '/video/demo-midiaut.mp4'); ok(r.status === 200, 'vídeo demonstrativo é servido');
+    console.log('Pagamento por Pix');
+    r = await req(null, 'GET', '/api/saas/pix?tipo=mensalidade'); ok(r.status === 401, 'sem login não gera Pix');
+    r = await req('a', 'GET', '/api/saas/pix?tipo=outro'); ok(r.status === 400, 'tipo de pagamento inválido é recusado');
+    r = await req('a', 'GET', '/api/saas/pix?tipo=avulsas&qtd=0'); ok(r.status === 400, 'quantidade zero é recusada');
+    r = await req('a', 'GET', '/api/saas/pix?tipo=mensalidade');
+    { const pg = r.corpo; const corpo = (pg.payload || '').slice(0, -4);
+      ok(r.status === 200 && pg.valor === 370 && pg.chave === '67679923000192', 'Pix da mensalidade com o valor do plano e a chave certa');
+      ok(/^000201/.test(pg.payload) && pg.payload.includes('0014br.gov.bcb.pix0114' + '67679923000192') && pg.payload.includes('5406370.00'), 'copia e cola traz a chave e o valor 370.00');
+      const crc = (t) => { let c = 0xffff; for (const ch of t) { c ^= ch.charCodeAt(0) << 8; for (let i = 0; i < 8; i++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) & 0xffff : (c << 1) & 0xffff; } return c.toString(16).toUpperCase().padStart(4, '0'); };
+      ok(pg.payload.endsWith(crc(corpo)) && /^data:image\/png;base64,/.test(pg.qr), 'CRC do BR Code confere e o QR Code vem em PNG'); }
+    r = await req('a', 'GET', '/api/saas/pix?tipo=avulsas&qtd=3'); ok(r.corpo.valor === 45 && r.corpo.payload.includes('540545.00'), 'avulsas: 3 x R$ 15 = R$ 45');
+    r = await req('a', 'POST', '/api/saas/pix/informar', { tipo: 'avulsas', qtd: 3 }); const px1 = r.corpo.pedido;
+    ok(r.status === 200 && px1.status === 'informado' && px1.valor === 45, 'assinante avisa que pagou');
+    r = await req('a', 'POST', '/api/saas/pix/informar', { tipo: 'avulsas', qtd: 3 }); ok(r.status === 409, 'não duplica o aviso em aberto');
+    r = await req('a', 'GET', '/api/saas/admin/pix'); ok(r.status === 403, 'assinante não vê a fila da administradora');
+    r = await req('adm', 'GET', '/api/saas/admin/pix'); ok(r.corpo.abertos >= 1 && r.corpo.pedidos.some((x) => x.id === px1.id && x.email === 'ana@exemplo.com'), 'administradora vê o aviso');
+    { const { rows: [a0] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]);
+      r = await req('adm', 'POST', `/api/saas/admin/pix/${px1.id}/confirmar`); ok(r.status === 200 && r.corpo.pedido.status === 'confirmado', 'administradora libera o pagamento');
+      const { rows: [a1] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]);
+      ok(a1.campanhas_extras === a0.campanhas_extras + 3, 'as 3 campanhas avulsas entram na conta');
+      r = await req('adm', 'POST', `/api/saas/admin/pix/${px1.id}/confirmar`); ok(r.status === 409, 'não libera duas vezes');
+      await db.query('UPDATE saas_contas SET campanhas_extras=$2 WHERE id=$1', [idA, a0.campanhas_extras]); }
+    r = await req('b', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade' }); const px2 = r.corpo.pedido;
+    { const { rows: [o] } = await db.query('SELECT status, periodo_fim, trial_ate FROM saas_contas WHERE id=$1', [idB]);
+      r = await req('adm', 'POST', `/api/saas/admin/pix/${px2.id}/confirmar`); ok(r.status === 200, 'libera a mensalidade por Pix');
+      const { rows: [n] } = await db.query('SELECT status, periodo_fim FROM saas_contas WHERE id=$1', [idB]);
+      const dias = (new Date(n.periodo_fim) - Date.now()) / 86400000;
+      ok(n.status === 'ativa' && dias > 29 && dias <= 30.01, 'conta fica ativa por 30 dias');
+      r = await req('b', 'GET', '/api/saas/eu'); ok(r.corpo.conta.situacao.ativa === true, 'assinante com Pix em dia usa o sistema');
+      await db.query(`UPDATE saas_contas SET periodo_fim = now() - interval '1 day' WHERE id=$1`, [idB]);
+      r = await req('b', 'GET', '/api/saas/eu'); ok(r.corpo.conta.situacao.codigo === 'pix_vencido' && r.corpo.conta.situacao.ativa === false, 'Pix vencido bloqueia criar campanhas');
+      await db.query('UPDATE saas_contas SET status=$2, periodo_fim=$3, trial_ate=$4 WHERE id=$1', [idB, o.status, o.periodo_fim, o.trial_ate]); }
+    r = await req('b', 'POST', '/api/saas/pix/informar', { tipo: 'avulsas', qtd: 2 }); const px3 = r.corpo.pedido;
+    r = await req('adm', 'POST', `/api/saas/admin/pix/${px3.id}/recusar`); ok(r.status === 200 && r.corpo.pedido.status === 'recusado', 'administradora recusa um aviso');
+    r = await req('a', 'GET', '/api/saas/pix/pedidos'); ok(r.corpo.pedidos.length >= 1 && r.corpo.pedidos.every((x) => !('conta_id' in x)), 'assinante vê só os próprios pedidos');
     console.log('Limite de campanhas por plano e campanhas avulsas');
     {
       const { rows: [orig] } = await db.query(`SELECT status, trial_ate FROM saas_contas WHERE id=$1`, [idA]);
