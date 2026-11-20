@@ -69,7 +69,7 @@ async function usuarioDaSessao(req) {
 }
 
 const publico = (u) => ({
-  id: u.id, email: u.email, nome: u.nome, papel: u.papel, ativo: u.ativo, trocar_senha: u.trocar_senha,
+  id: u.id, email: u.email, nome: u.nome, papel: u.papel, ativo: u.ativo, trocar_senha: u.trocar_senha, absoluto: ehSuper(u),
   convite_pendente: !!u.convite_hash && new Date(u.convite_expira) > new Date(), created_at: u.created_at,
 });
 
@@ -170,6 +170,10 @@ app.use('/oauth', wrap(async (req, res, next) => {
   req.user = u;
   next();
 }));
+// Administrador absoluto: só esta conta cria, promove, rebaixa, desativa ou exclui administradores, e ninguém mexe nela
+const SUPER_ADMIN = String(process.env.SUPER_ADMIN_EMAIL || 'knasck@gmail.com').trim().toLowerCase();
+const ehSuper = (u) => !!u && String(u.email || '').toLowerCase() === SUPER_ADMIN;
+const SO_SUPER = { erro: 'Só o administrador absoluto pode gerenciar administradores.' };
 const soAdmin = (req, res, next) => (req.user.papel === 'admin' ? next() : res.status(403).json({ erro: 'Apenas administradores' }));
 
 // ---------- Minha conta ----------
@@ -199,6 +203,7 @@ app.post('/api/users', soAdmin, wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!emailValido(email)) return res.status(400).json({ erro: 'E-mail inválido' });
   const papel = req.body.papel === 'admin' ? 'admin' : 'membro';
+  if (papel === 'admin' && !ehSuper(req.user)) return res.status(403).json(SO_SUPER);
   try {
     // Senha aleatória inutilizável até a pessoa criar a dela pelo link
     const { rows: [u] } = await pool.query(
@@ -225,6 +230,8 @@ app.put('/api/users/:id', soAdmin, wrap(async (req, res) => {
   if (alvo.papel === 'assinante') return res.status(400).json({ erro: 'Assinantes são gerenciados em Assinantes (SaaS)' });
   const papel = req.body.papel === 'admin' ? 'admin' : req.body.papel === 'membro' ? 'membro' : alvo.papel;
   const ativo = typeof req.body.ativo === 'boolean' ? req.body.ativo : alvo.ativo;
+  if (ehSuper(alvo) && (papel !== 'admin' || !ativo)) return res.status(403).json({ erro: 'O administrador absoluto não pode ser rebaixado nem desativado.' });
+  if ((alvo.papel === 'admin' || papel === 'admin') && (papel !== alvo.papel || ativo !== alvo.ativo) && !ehSuper(req.user)) return res.status(403).json(SO_SUPER);
   const perdeAdmin = alvo.papel === 'admin' && alvo.ativo && (papel !== 'admin' || !ativo);
   if (perdeAdmin && (await adminsAtivos(id)) === 0) return res.status(400).json({ erro: 'É preciso manter pelo menos um administrador ativo' });
   const nome = 'nome' in req.body ? (String(req.body.nome || '').trim() || null) : alvo.nome;
@@ -245,6 +252,8 @@ app.delete('/api/users/:id', soAdmin, wrap(async (req, res) => {
   if (id === req.user.id) return res.status(400).json({ erro: 'Você não pode excluir o próprio usuário' });
   const { rows: [alvo] } = await pool.query('SELECT * FROM users WHERE id=$1', [id]);
   if (alvo && alvo.papel === 'assinante') return res.status(400).json({ erro: 'Assinantes são gerenciados em Assinantes (SaaS)' });
+  if (ehSuper(alvo)) return res.status(403).json({ erro: 'O administrador absoluto não pode ser excluído.' });
+  if (alvo && alvo.papel === 'admin' && !ehSuper(req.user)) return res.status(403).json(SO_SUPER);
   if (alvo && alvo.papel === 'admin' && alvo.ativo && (await adminsAtivos(id)) === 0) return res.status(400).json({ erro: 'É preciso manter pelo menos um administrador ativo' });
   await pool.query('DELETE FROM users WHERE id=$1', [id]);
   res.json({ ok: true });
@@ -684,6 +693,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 
 const PORT = process.env.PORT || 3000;
 init()
+  .then(() => pool.query("UPDATE users SET papel='admin', ativo=true WHERE lower(email)=$1 AND papel<>'assinante' AND (papel<>'admin' OR NOT ativo)", [SUPER_ADMIN]))
   .then(() => require('./config').carregar(pool))
   .then(() => require('./blog').semear(pool))
   .then(() => app.listen(PORT, () => { console.log(`A Melhor Mídia do Brasil rodando na porta ${PORT}`); require('./esteira').iniciarAgendador(pool); }))
