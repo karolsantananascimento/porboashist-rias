@@ -548,4 +548,6 @@ module.exports = { sincronizarAnexos,
   registrar, rascunhoAutomatico, gerarRascunho,
   // exportados para teste
   normalizar, validar, faltando, conferir, subirCampanha, ativarEstrutura, pausar, resolverGeo, resolverPublico, contexto, OBJ, ATIVACOES_POR_DIA,
+  // usados pelo módulo SaaS (assinantes), sempre com o contexto (token/conta) do próprio assinante
+  listarContas, listarCampanhas, listarPublicos, desempenho, buscarInteresses, buscarLocal, SISTEMA_RASCUNHO, TETO_PADRAO_BRL, get, erro,
 };

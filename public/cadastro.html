@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Criar conta e entrar · Agente de Tráfego · A Melhor Mídia do Brasil</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0B0B0B">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Boldonse&family=Syncopate:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assinar.css">
+  <link rel="icon" href="/brand/melhor-midia/emblema-mm.jpg">
+</head>
+<body>
+  <div class="grao" aria-hidden="true"></div>
+  <header class="topo">
+    <a class="marca" href="/assinar" aria-label="A Melhor Mídia do Brasil, voltar ao site">
+      <img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="44" height="44">
+      <span class="syn">A MELHOR MÍDIA<br>DO BRASIL</span>
+    </a>
+    <a class="voltar syn" href="/assinar">← VOLTAR AO SITE</a>
+  </header>
+  <main>
+  <div class="pg" id="inicio">
+    <section class="intro" aria-labelledby="titulo">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> AGENTE DE TRÁFEGO</p>
+      <h1 id="titulo" class="boldo">Campanhas com <em>intenção</em>.</h1>
+      <span class="filete" aria-hidden="true"></span>
+      <p class="lead">Crie a sua conta para montar campanhas no Meta e no Google com a ajuda da IA. Você confere tudo e só ativa quando quiser.</p>
+      <div class="selos">
+        <span id="preco" class="selo hidden"></span>
+        <span id="teste" class="selo claro hidden"></span>
+      </div>
+      <ul class="garantias">
+        <li>Suas chaves de API ficam criptografadas, com passo a passo para gerar cada uma.</li>
+        <li>Nada é ativado sem a sua confirmação, e há teto de orçamento por campanha.</li>
+        <li>Você usa as suas próprias contas de anúncios. Nada é excluído nas plataformas.</li>
+      </ul>
+    </section>
+
+    <section class="painel" id="cadastro" aria-label="Criar conta ou entrar">
+      <div class="cantos" aria-hidden="true"><i>+</i><i>+</i><i>+</i><i>+</i></div>
+      <div class="abas syn" role="tablist">
+        <button type="button" role="tab" id="abaCriar" aria-controls="fCadastro" aria-selected="true">CRIAR CONTA</button>
+        <button type="button" role="tab" id="abaEntrar" aria-controls="fLogin" aria-selected="false">ENTRAR</button>
+      </div>
+
+      <form id="fCadastro" role="tabpanel" aria-labelledby="abaCriar" novalidate>
+        <h2 class="boldo" id="tCadastro">Assine agora.</h2>
+        <p class="dica" id="pCadastro">Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.</p>
+        <div class="campo"><label for="cNome">Seu nome</label><input id="cNome" name="nome" required maxlength="120" autocomplete="name"></div>
+        <div class="campo"><label for="cEmpresa">Empresa ou marca <small>(opcional)</small></label><input id="cEmpresa" name="empresa" maxlength="120" autocomplete="organization"></div>
+        <div class="campo"><label for="cEmail">E-mail</label><input id="cEmail" name="email" type="email" required maxlength="200" autocomplete="username" inputmode="email"></div>
+        <div class="campo">
+          <label for="cSenha">Senha</label>
+          <div class="senha">
+            <input id="cSenha" name="senha" type="password" minlength="8" required autocomplete="new-password" aria-describedby="dicaSenha">
+            <button type="button" class="olho" data-alvo="cSenha" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button>
+          </div>
+          <p class="dica" id="dicaSenha">Mínimo de 8 caracteres.</p>
+        </div>
+        <label class="aceite" for="cAceite">
+          <input type="checkbox" id="cAceite" required>
+          <span>Li e aceito os <a id="termos" href="#" target="_blank" rel="noopener">termos de uso</a>. Autorizo o sistema a guardar, de forma criptografada, as chaves das minhas contas de anúncios para criar e acompanhar campanhas em meu nome.</span>
+        </label>
+        <button class="botao" type="submit" id="bCadastro"><span>Criar conta e assinar</span></button>
+        <p class="erro" id="cErro" role="alert" aria-live="assertive"></p>
+        <p class="troca">Já tem conta? <button type="button" class="link" data-ir="entrar">Entrar</button></p>
+      </form>
+
+      <form id="fLogin" role="tabpanel" aria-labelledby="abaEntrar" class="hidden" novalidate>
+        <h2 class="boldo">Bem-vindo de volta.</h2>
+        <div class="campo"><label for="lEmail">E-mail</label><input id="lEmail" name="email" type="email" required autocomplete="username" inputmode="email"></div>
+        <div class="campo">
+          <label for="lSenha">Senha</label>
+          <div class="senha">
+            <input id="lSenha" name="senha" type="password" required autocomplete="current-password">
+            <button type="button" class="olho" data-alvo="lSenha" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button>
+          </div>
+        </div>
+        <button class="botao" type="submit"><span>Entrar</span></button>
+        <p class="erro" id="lErro" role="alert" aria-live="assertive"></p>
+        <p class="dica">Esqueceu a senha? Peça ao suporte um link para criar uma nova.</p>
+        <p class="troca">Ainda não tem conta? <button type="button" class="link" data-ir="criar">Criar conta</button></p>
+      </form>
+    </section>
+  </div>
+  </main>
+  <footer class="rodape syn">MARKETING · ESTRATÉGIA · TECNOLOGIA · NEGÓCIOS · IA</footer>
+  <script src="/cadastro.js"></script>
+</body>
+</html>

@@ -32,3 +32,15 @@ services:
         sync: false
       - key: META_PAGE_TOKEN    # token da página, para enviar respostas aprovadas
         sync: false
+      - key: APP_URL            # endereço público do sistema (ex.: https://amelhormidiadobrasil.onrender.com)
+        sync: false
+      - key: STRIPE_SECRET_KEY  # SaaS Gestor de Tráfego: cobrança
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: SAAS_PRECO_TEXTO   # ex.: R$ 197/mês
+        sync: false
+      - key: SAAS_TERMOS_URL
+        sync: false

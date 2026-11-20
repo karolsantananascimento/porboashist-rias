@@ -25,6 +25,8 @@ Travas: só administrador sobe, ativa e pausa; confirmação em cada passo; orç
 
 Configuração (Integrações → Meta, por cliente ou padrão): `META_ADS_TOKEN` (permissão `ads_management`), `META_AD_ACCOUNT_ID` (`act_...`), `META_PIXEL_ID` (só Leads/Vendas no site) e `META_MAX_DAILY_BUDGET_BRL`. A página do Facebook e o Instagram vêm da conexão já feita em Integrações. Objetivos: Tráfego, Reconhecimento, Leads, Vendas e Engajamento; destinos: site, WhatsApp, engajamento no post e mensagens (Messenger, Instagram Direct). Criativo em imagem (link https) ou carrossel de 2 a 10 imagens; vídeo ainda não. Mensagens, WhatsApp e carrossel ainda não foram validados em conta real.
 
+**Site de vendas e cadastro:** `/assinar` (também `/agente` e `/agente-de-trafego`) é o site de vendas do Agente de Tráfego, sem formulário: funcionalidades, vídeo de demonstração (`public/video/demo-agente-trafego.mp4`) e capturas de tela (`public/img`, dados de exemplo), para quem, passos, segurança, preço e dúvidas. Os botões **Assinar agora** abrem `/cadastro?plano=assinar` (criar conta e seguir direto para o pagamento no Stripe), **Teste sem cartão** abre `/cadastro?plano=testar`, e **Entrar** abre `/entrar`. Preço, dias de teste e link dos termos vêm de `SAAS_PRECO_TEXTO`, `SAAS_TRIAL_DIAS` e `SAAS_TERMOS_URL`. A área logada fica em `/assinante` (a aba aparece no endereço, ex.: `/assinante#chaves`); quem não está logado lá vai para `/cadastro`.
+
 Testes: `npm test` (Meta simulado) e, com um Postgres de teste, `DATABASE_URL=postgresql://usuario@localhost:5432/pbh node test/campanhas-integracao.js`.
 
 ## Gestão de conteúdo (Por Boas Histórias)
@@ -48,6 +50,17 @@ Sistema para planejar e acompanhar as entregas de cada cliente: posts do feed, s
 - **Conhecimento e competências do agente**: em **Clientes → Contexto do agente** há uma **base de conhecimento** (fatos confirmados do cliente, um por linha), além de tom de voz, público, pilares, regras e rodapé. Preencha para cada cliente. O agente só afirma fatos que estejam nessa base, na planilha de programação ou no briefing, e lista o que falta em "Conferir antes de publicar". A tela também mostra as competências do agente (planejamento editorial semanal, copy de hospitalidade, sazonalidade, fidelidade à programação, direção visual, SEO local, stories, captação e conferência).
 - **Conteúdo da semana**: em **Clientes → Gerar semana**, o agente escreve a semana inteira (segunda a domingo) de acordo com a meta do contrato: legendas completas dos posts, roteiro de stories para cada dia e pauta com SEO do artigo de blog. Considera a planilha de programação do período, o que já foi publicado nas últimas 4 semanas, as prioridades de captação e os materiais a evitar, e aceita um pedido da equipe ("destacar a programação de Halloween"). Ao aplicar, ocupa as tarefas vazias do mês e cria só o que faltar; nada é publicado.
 - **Backup**: download e restauração de todos os dados em JSON (restauração só para administradores; usuários e senhas não entram no backup).
+
+## SaaS Gestor de Tráfego (assinantes)
+
+Dentro do sistema há uma versão SaaS só do agente gestor de tráfego. Pessoas se cadastram em `/assinante`, ganham teste grátis, colocam as próprias chaves de API (Meta e Google Ads, com um **?** em cada campo explicando onde pegar) e rodam campanhas. Pagam por Stripe (Checkout + portal do cliente).
+
+- **Isolamento**: assinantes usam tabelas próprias (`saas_*`), chaves próprias criptografadas e nunca herdam as chaves do admin. Só acessam `/api/saas`.
+- **Segurança de gasto**: campanhas sobem pausadas; ativar exige confirmação, com limite diário e teto de orçamento. Google Ads: aumento de orçamento limitado a +20% por ação.
+- **Admin**: menu *Assinantes (SaaS)* (cortesia, +7 dias, bloquear, link de senha, excluir).
+- **Stripe**: crie um preço mensal, configure o webhook `https://SEU-HOST/api/saas/webhook` (eventos de checkout, assinatura e fatura) e ative o Customer Portal.
+- **Variáveis**: `APP_URL`, `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `SAAS_PRECO_TEXTO`, `SAAS_TERMOS_URL`, `SAAS_TRIAL_DIAS` (7), `SAAS_IA_MES` (30), `SAAS_ATIVACOES_DIA` (10), `GOOGLE_ADS_API_VERSION` (v21).
+- **Testes**: `PGBASE=postgresql://postgres@localhost:5433 node test/saas.js`.
 
 ## Dados iniciais
 

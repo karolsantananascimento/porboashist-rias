@@ -1,0 +1,115 @@
+// Cobrança da mensalidade do SaaS pelo Stripe (Checkout hospedado + portal do cliente + webhook).
+// O cartão é digitado na página do Stripe: este sistema nunca vê nem guarda número de cartão.
+// Variáveis: STRIPE_SECRET_KEY, STRIPE_PRICE_ID (preço mensal recorrente), STRIPE_WEBHOOK_SECRET.
+
+const crypto = require('crypto');
+
+const API = process.env.STRIPE_API_URL || 'https://api.stripe.com/v1';
+const configurado = () => !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_ID);
+const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
+
+// Stripe usa corpo form-encoded com chaves aninhadas: a[b][0]=c
+function achatar(obj, prefixo = '', out = new URLSearchParams()) {
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null) continue;
+    const chave = prefixo ? `${prefixo}[${k}]` : k;
+    if (typeof v === 'object') achatar(v, chave, out); else out.append(chave, String(v));
+  }
+  return out;
+}
+
+async function stripe(caminho, corpo) {
+  if (!process.env.STRIPE_SECRET_KEY) throw erro('A cobrança ainda não está configurada. Fale com o administrador.', 503);
+  let r;
+  try {
+    r = await fetch(`${API}/${caminho}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'content-type': 'application/x-www-form-urlencoded' },
+      body: achatar(corpo), signal: AbortSignal.timeout(20000),
+    });
+  } catch { throw erro('Não consegui falar com o Stripe agora. Tente de novo.', 504); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { console.error('Erro do Stripe', r.status, d.error?.message); throw erro('O Stripe recusou o pedido. Tente de novo ou fale com o administrador.', 502); }
+  return d;
+}
+
+async function criarCheckout({ conta, email, base }) {
+  if (!process.env.STRIPE_PRICE_ID) throw erro('A cobrança ainda não está configurada. Fale com o administrador.', 503);
+  const corpo = {
+    mode: 'subscription', locale: 'pt-BR',
+    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+    success_url: `${base}/assinante?assinatura=ok`, cancel_url: `${base}/assinante?assinatura=cancelada`,
+    client_reference_id: String(conta.id), allow_promotion_codes: 'true',
+    subscription_data: { metadata: { conta_id: String(conta.id) } },
+  };
+  if (conta.stripe_customer_id) corpo.customer = conta.stripe_customer_id; else corpo.customer_email = email;
+  const s = await stripe('checkout/sessions', corpo);
+  return s.url;
+}
+
+async function criarPortal({ conta, base }) {
+  if (!conta.stripe_customer_id) throw erro('Você ainda não tem uma assinatura para gerenciar.');
+  const s = await stripe('billing_portal/sessions', { customer: conta.stripe_customer_id, return_url: `${base}/assinante` });
+  return s.url;
+}
+
+// Confere a assinatura do webhook (cabeçalho Stripe-Signature: t=...,v1=...) com tolerância de 5 minutos
+function conferirAssinatura(corpoBruto, cabecalho, segredo, agora = Date.now()) {
+  if (!segredo || !cabecalho || !corpoBruto) return false;
+  const partes = Object.fromEntries(String(cabecalho).split(',').map((p) => p.split('=')).filter((p) => p.length === 2));
+  const t = Number(partes.t);
+  if (!t || Math.abs(agora / 1000 - t) > 300) return false;
+  const esperado = crypto.createHmac('sha256', segredo).update(`${t}.${corpoBruto.toString('utf8')}`).digest('hex');
+  const recebidos = String(cabecalho).split(',').filter((p) => p.startsWith('v1=')).map((p) => p.slice(3));
+  return recebidos.some((v) => v.length === esperado.length && crypto.timingSafeEqual(Buffer.from(v), Buffer.from(esperado)));
+}
+
+// Situação da assinatura no Stripe -> situação da conta
+const STATUS = { active: 'ativa', trialing: 'ativa', past_due: 'inadimplente', unpaid: 'inadimplente', canceled: 'cancelada', incomplete_expired: 'cancelada' };
+const periodoFim = (sub) => {
+  const t = sub.current_period_end || sub.items?.data?.[0]?.current_period_end;
+  return t ? new Date(t * 1000).toISOString() : null;
+};
+
+// Aplica um evento do Stripe no banco. Devolve a conta afetada (ou null se o evento não interessa).
+async function aplicarEvento(pool, ev) {
+  const o = ev.data?.object || {};
+  const achar = async () => {
+    const meta = o.metadata?.conta_id || o.subscription_details?.metadata?.conta_id || o.client_reference_id;
+    if (meta && /^\d+$/.test(String(meta))) {
+      const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE id=$1', [Number(meta)]);
+      if (c) return c;
+    }
+    const cliente = typeof o.customer === 'string' ? o.customer : o.customer?.id;
+    if (cliente) { const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE stripe_customer_id=$1', [cliente]); return c || null; }
+    return null;
+  };
+  const conta = await achar();
+  if (!conta) return null;
+  const evento = (tipo, detalhe) => pool.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [conta.id, tipo, detalhe]);
+
+  if (ev.type === 'checkout.session.completed' && o.mode === 'subscription') {
+    await pool.query('UPDATE saas_contas SET stripe_customer_id=COALESCE($2,stripe_customer_id), stripe_subscription_id=COALESCE($3,stripe_subscription_id), updated_at=now() WHERE id=$1',
+      [conta.id, typeof o.customer === 'string' ? o.customer : null, typeof o.subscription === 'string' ? o.subscription : null]);
+    await evento('assinatura_iniciada', 'Checkout concluído');
+  } else if (['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(ev.type)) {
+    // "bloqueada" é decisão do administrador: o Stripe não reativa
+    const status = ev.type === 'customer.subscription.deleted' ? 'cancelada' : (STATUS[o.status] || null);
+    if (status) {
+      await pool.query(
+        `UPDATE saas_contas SET status = CASE WHEN status='bloqueada' THEN status ELSE $2 END, periodo_fim=COALESCE($3,periodo_fim),
+           stripe_customer_id=COALESCE($4,stripe_customer_id), stripe_subscription_id=$5, updated_at=now() WHERE id=$1`,
+        [conta.id, status, periodoFim(o), typeof o.customer === 'string' ? o.customer : null, o.id]);
+      await evento('assinatura_' + status, `Stripe: ${o.status}`);
+    }
+  } else if (ev.type === 'invoice.payment_failed') {
+    await pool.query(`UPDATE saas_contas SET status = CASE WHEN status IN ('ativa','trial') THEN 'inadimplente' ELSE status END, updated_at=now() WHERE id=$1`, [conta.id]);
+    await evento('pagamento_falhou', 'Falha na cobrança da mensalidade');
+  } else if (ev.type === 'invoice.paid') {
+    await pool.query(`UPDATE saas_contas SET status = CASE WHEN status IN ('inadimplente','trial') THEN 'ativa' ELSE status END, updated_at=now() WHERE id=$1`, [conta.id]);
+    await evento('pagamento_ok', 'Mensalidade paga');
+  } else return null;
+  return conta;
+}
+
+module.exports = { configurado, criarCheckout, criarPortal, conferirAssinatura, aplicarEvento, STATUS };

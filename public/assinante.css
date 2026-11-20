@@ -1,0 +1,82 @@
+/* Gestor de Tráfego (SaaS): complementa styles.css */
+.sa { min-height: 100vh; }
+.sa a.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+/* Entrada */
+.sa-hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; max-width: 1060px; margin: 0 auto; padding: 56px 20px; align-items: center; }
+.sa-hero h1 { font-size: 38px; line-height: 1.1; margin: 14px 0; }
+.sa-hero p.lead { font-size: 17px; color: var(--ink-2); max-width: 46ch; }
+.sa-hero ul { padding-left: 18px; color: var(--ink-2); display: grid; gap: 6px; margin: 18px 0; }
+.sa-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.sa-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 26px; box-shadow: var(--shadow); display: grid; gap: 12px; }
+.sa-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; }
+.sa-tabs button { border: 0; background: none; padding: 8px; border-radius: 8px; cursor: pointer; font-weight: 600; color: var(--ink-2); }
+.sa-tabs button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.sa-price { display: inline-block; background: var(--accent-soft); color: var(--accent); font-weight: 600; padding: 4px 12px; border-radius: 99px; font-size: 13px; }
+.sa-aceite { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); text-transform: none; letter-spacing: 0; font-weight: 400; }
+.sa-aceite input { width: auto; margin-top: 3px; }
+
+/* App */
+.sa-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.sa-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.sa-nav button { border: 0; background: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 500; color: var(--ink-2); }
+.sa-nav button.on { background: var(--accent-soft); color: var(--accent); }
+.sa-main { max-width: 1060px; margin: 0 auto; padding: 22px 20px 80px; display: grid; gap: 18px; }
+.sa-banner { padding: 12px 16px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.sa-banner.erro-b { background: var(--danger-soft); color: var(--danger); }
+.sa-me { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+.sa-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.sa-passos { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.sa-passos li { display: flex; gap: 10px; align-items: center; }
+.sa-passos .bola { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-size: 12px; flex: none; }
+.sa-passos li.feito .bola { background: var(--ok); border-color: var(--ok); color: #fff; }
+.sa-passos li.feito span { color: var(--ink-3); text-decoration: line-through; }
+
+/* Chaves */
+.sa-campo { border-top: 1px solid var(--line); padding: 14px 0; display: grid; gap: 8px; }
+.sa-campo:first-of-type { border-top: 0; }
+.sa-campo-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sa-campo-top label { margin: 0; }
+.sa-ajuda-btn { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 700; font-size: 12px; color: var(--accent); padding: 0; line-height: 1; }
+.sa-ajuda-btn:hover, .sa-ajuda-btn[aria-expanded="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sa-ajuda { background: var(--surface-2); border-radius: 10px; padding: 14px 16px; font-size: 13px; display: grid; gap: 8px; }
+.sa-ajuda h4 { margin: 0; font-size: 14px; }
+.sa-ajuda ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.sa-ajuda .sa-nota { color: var(--ink-3); font-size: 12px; background: none; padding: 0; }
+.sa-ajuda .links { display: flex; gap: 12px; flex-wrap: wrap; }
+.sa-linha { display: flex; gap: 8px; }
+.sa-linha input { flex: 1; }
+.sa-res { padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+.sa-res.ok { background: var(--ok-soft); color: var(--ok); }
+.sa-res.ruim { background: var(--danger-soft); color: var(--danger); }
+
+/* Campanhas */
+.sa-lista { display: grid; gap: 10px; }
+.sa-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; flex-wrap: wrap; }
+.sa-item:hover { border-color: var(--ink-3); }
+.sa-item small { color: var(--ink-3); display: block; }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.ruim { background: var(--danger-soft); color: var(--danger); }
+.sa-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: start center; padding: 24px 12px; overflow: auto; z-index: 40; }
+.sa-modal-box { background: var(--surface); border-radius: 16px; width: 100%; max-width: 760px; box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: calc(100vh - 48px); overflow: hidden; }
+.sa-modal-box .modal-head, .sa-modal-box .modal-foot { position: static; flex: none; }
+.sa-modal-box .modal-body { overflow: auto; flex: 1; max-height: none; }
+.sa-modal-box .modal-foot { flex-wrap: wrap; }
+.sa-pend { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+.sa-pend ul { margin: 4px 0 0; padding-left: 18px; }
+.sa-tabela { overflow-x: auto; }
+.dica { font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+
+@media (max-width: 800px) { .sa-hero { grid-template-columns: 1fr; padding-top: 28px; } .sa-hero h1 { font-size: 30px; } }
+
+/* Cabeçalho com o emblema da marca e estado de carregamento */
+.sa-brand img { border-radius: 50%; display: block; background: #0B0B0B; }
+a.sa-brand { color: inherit; text-decoration: none; }
+.sa-carregando { color: var(--ink-3); padding: 24px 0; margin: 0; }
+.sa-nav button:focus-visible, .sa-brand:focus-visible, .sa-item:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .sa-top { padding: 10px 14px; }
+  .sa-nav { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .sa-nav button { white-space: nowrap; }
+  .sa-me span:not(.pill) { display: none; }
+}

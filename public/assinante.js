@@ -1,0 +1,389 @@
+// Gestor de Tráfego (SaaS): tela do assinante. Tudo passa por /api/saas/*; chaves nunca voltam inteiras do servidor.
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const raiz = $('#raiz');
+
+const S = { eu: null, aba: 'inicio', pub: null, chaves: null, campanhas: [], testes: {}, aberta: null };
+
+async function api(caminho, opts = {}) {
+  const r = await fetch(caminho, {
+    method: opts.method || 'GET', headers: opts.corpo ? { 'content-type': 'application/json' } : {},
+    body: opts.corpo ? JSON.stringify(opts.corpo) : undefined,
+  });
+  const dados = await r.json().catch(() => ({}));
+  if (r.status === 401 && !opts.semSair) { S.eu = null; entrada(); throw Object.assign(new Error('Sessão expirada. Entre de novo.'), { tratado: true }); }
+  if (!r.ok) throw Object.assign(new Error(dados.erro || `Erro ${r.status}`), { status: r.status, codigo: dados.codigo, dados });
+  return dados;
+}
+let tt;
+function aviso(msg, ruim = false) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show'); t.style.background = ruim ? 'var(--danger)' : '';
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), ruim ? 6000 : 3000);
+}
+const falha = (e) => { if (!e.tratado) aviso(e.message, true); if (e.status === 402) carregarEu().then(() => render()).catch(() => {}); };
+const dataBr = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '');
+const brl = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// ---------------- Entrada: a página /cadastro (e /entrar) cuida de criar conta e entrar ----------------
+function entrada(modo = 'criar') { location.replace(modo === 'entrar' ? '/entrar' : '/cadastro'); }
+
+// ---------------- Estrutura do app ----------------
+async function carregarEu() { S.eu = await api('/api/saas/eu'); }
+
+async function iniciar() {
+  try { S.pub = await api('/api/saas/publico', { semSair: true }); } catch { S.pub = {}; }
+  const s = await fetch('/api/sessao').then((r) => r.json()).catch(() => ({}));
+  if (!s.autenticado) return entrada();
+  if (s.usuario.papel !== 'assinante') { location.href = '/'; return; }
+  await carregarEu();
+  const q = new URLSearchParams(location.search).get('assinatura');
+  S.aba = abaDoEndereco() || S.aba;
+  if (q) { history.replaceState(null, '', '/assinante#assinatura'); aviso(q === 'ok' ? 'Pagamento recebido! Sua assinatura será ativada em instantes.' : 'Assinatura não concluída. Você pode tentar de novo quando quiser.', q !== 'ok'); S.aba = 'assinatura'; }
+  const quer = new URLSearchParams(location.search).get('assinar') === '1';
+  if (quer) { history.replaceState(null, '', '/assinante#assinatura'); S.aba = 'assinatura'; }
+  render();
+  // Veio do botão "Assinar agora" da página de vendas: segue direto para o pagamento seguro, se a conta ainda não tem assinatura
+  if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada') assinar();
+}
+
+const ABAS = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
+// A aba fica no endereço (/assinante#chaves): recarregar, voltar e compartilhar o link mantêm o lugar
+const abaDoEndereco = () => { const h = location.hash.slice(1); return ABAS.some(([k]) => k === h) ? h : null; };
+function irPara(aba) { S.aba = aba; if (location.hash.slice(1) !== aba) history.pushState(null, '', '/assinante#' + aba); render(); window.scrollTo(0, 0); }
+window.addEventListener('popstate', () => { if (S.eu) { S.aba = abaDoEndereco() || 'inicio'; render(); } });
+
+function render() {
+  const c = S.eu.conta; const sit = c.situacao;
+  const pill = sit.codigo === 'trial' ? `<span class="pill warn">Teste: ${sit.dias_trial} dia${sit.dias_trial > 1 ? 's' : ''}</span>`
+    : sit.ativa ? `<span class="pill ok">${esc(sit.texto)}</span>` : `<span class="pill ruim">${esc(sit.codigo === 'bloqueada' ? 'Bloqueada' : 'Sem assinatura ativa')}</span>`;
+  raiz.innerHTML = `
+    <header class="sa-top">
+      <a class="sa-brand" href="/assinante#inicio" aria-label="Agente de Tráfego, início"><img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="34" height="34">Agente de Tráfego</a>
+      <nav class="sa-nav" aria-label="Seções">${ABAS.map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
+      <div class="sa-me">${pill}<span>${esc(c.nome || c.email)}</span><button class="btn ghost small" id="sair">Sair</button></div>
+    </header>
+    <main class="sa-main" id="conteudo"></main>`;
+  raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
+  $('#sair').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
+  document.title = `${ABAS.find(([k]) => k === S.aba)[1]} · Agente de Tráfego · A Melhor Mídia do Brasil`;
+  const v = $('#conteudo');
+  v.setAttribute('aria-busy', 'true');
+  v.innerHTML = '<p class="sa-carregando" role="status">Carregando…</p>';
+  if (sit.codigo === 'trial' && sit.dias_trial <= 3) {
+    v.insertAdjacentHTML('beforeend', `<div class="sa-banner"><span>Seu teste termina em ${sit.dias_trial} dia${sit.dias_trial > 1 ? 's' : ''}. Assine para não perder o acesso às campanhas.</span><button class="btn primary small" id="bAssinarT">Assinar agora</button></div>`);
+    $('#bAssinarT').addEventListener('click', assinar);
+  }
+  if (!sit.ativa) {
+    v.insertAdjacentHTML('beforeend', `<div class="sa-banner ${sit.codigo === 'bloqueada' ? 'erro-b' : ''}"><span>${esc(sit.texto)}</span>${sit.codigo !== 'bloqueada' ? '<button class="btn primary small" id="bAssinar">Assinar agora</button>' : ''}</div>`);
+    const b = $('#bAssinar'); if (b) b.addEventListener('click', assinar);
+  }
+  // Cada tela monta o conteúdo num bloco à parte; o "Carregando…" some quando ela termina
+  const aba = S.aba;
+  const tela = document.createElement('div'); tela.style.display = 'contents'; v.append(tela); // as telas usam $('#id') no documento, então o bloco já entra na página
+  ({ inicio: viewInicio, campanhas: viewCampanhas, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
+    .catch((e) => { falha(e); tela.innerHTML = '<div class="card"><p class="muted">Não consegui carregar esta tela. Tente de novo em instantes.</p><button class="btn" data-recarregar>Tentar de novo</button></div>'; })
+    .finally(() => {
+      if (!v.isConnected) return;
+      v.querySelector('.sa-carregando')?.remove(); v.removeAttribute('aria-busy');
+      tela.querySelectorAll('[data-recarregar]').forEach((b) => b.addEventListener('click', render));
+    });
+}
+
+const secao = (v, html) => v.insertAdjacentHTML('beforeend', html);
+
+// ---------------- Início ----------------
+async function viewInicio(v) {
+  await carregarChaves();
+  const campos = S.chaves.grupos.flatMap((g) => g.campos);
+  const tem = (k) => campos.find((c) => c.chave === k)?.definido;
+  const metaOk = tem('META_ADS_TOKEN') && tem('META_AD_ACCOUNT_ID') && tem('META_PAGE_ID');
+  const googleOk = ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID'].every(tem);
+  const c = S.eu.conta;
+  const passos = [
+    [metaOk || googleOk, 'Cole as chaves do Meta e/ou do Google em <a class="link" data-ir="chaves">Chaves de API</a>'],
+    [S.testes.meta?.ok || S.testes.google?.ok, 'Clique em "Testar conexão" para confirmar que as chaves funcionam'],
+    [S.campanhas.length > 0 || false, 'Crie a sua primeira campanha em <a class="link" data-ir="campanhas">Campanhas</a>'],
+    [c.situacao.codigo === 'ativa' || c.situacao.codigo === 'cortesia', 'Assine em <a class="link" data-ir="assinatura">Assinatura</a> antes de o teste acabar'],
+  ];
+  secao(v, `<div class="view-head"><div><h2>Olá, ${esc((c.nome || '').split(' ')[0] || 'tudo bem')}</h2><p>Comece por aqui. Nada vai ao ar sem a sua confirmação.</p></div></div>
+    <div class="card"><h3>Primeiros passos</h3><ul class="sa-passos">${passos.map(([f, t]) => `<li class="${f ? 'feito' : ''}"><div class="bola">${f ? '✓' : ''}</div><span>${t}</span></li>`).join('')}</ul></div>
+    <div class="sa-grid" id="desemp"></div>`);
+  v.querySelectorAll('[data-ir]').forEach((a) => { a.setAttribute('role', 'link'); a.tabIndex = 0; const ir = () => irPara(a.dataset.ir); a.addEventListener('click', ir); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); }); });
+  carregarCampanhas().then(() => { /* atualiza o passo 3 */ const li = v.querySelectorAll('.sa-passos li')[2]; if (S.campanhas.length && li) { li.classList.add('feito'); li.querySelector('.bola').textContent = '✓'; } }).catch(() => {});
+  const d = $('#desemp');
+  if (metaOk) api('/api/saas/meta/desempenho?nivel=campaign&periodo=last_7d').then((rows) => {
+    const t = rows.reduce((a, r) => ({ gasto: a.gasto + Number(r.spend || 0), cliques: a.cliques + Number(r.clicks || 0), imp: a.imp + Number(r.impressions || 0) }), { gasto: 0, cliques: 0, imp: 0 });
+    d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Meta · últimos 7 dias</h3><p style="font-size:24px;margin:8px 0 2px">${brl(t.gasto)}</p><p class="muted">${t.cliques.toLocaleString('pt-BR')} cliques · ${t.imp.toLocaleString('pt-BR')} impressões</p></div>`);
+  }).catch((e) => d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Meta</h3><p class="muted">Não consegui ler o desempenho: ${esc(e.message)}</p></div>`));
+  if (googleOk) api('/api/saas/google/campanhas?periodo=LAST_7_DAYS').then((rows) => {
+    const t = rows.reduce((a, r) => ({ gasto: a.gasto + r.gasto_brl, cliques: a.cliques + r.cliques, conv: a.conv + r.conversoes }), { gasto: 0, cliques: 0, conv: 0 });
+    d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Google Ads · últimos 7 dias</h3><p style="font-size:24px;margin:8px 0 2px">${brl(t.gasto)}</p><p class="muted">${t.cliques.toLocaleString('pt-BR')} cliques · ${t.conv.toLocaleString('pt-BR')} conversões</p></div>`);
+  }).catch((e) => d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Google Ads</h3><p class="muted">Não consegui ler o desempenho: ${esc(e.message)}</p></div>`));
+}
+
+// ---------------- Chaves de API ----------------
+async function carregarChaves() { S.chaves = await api('/api/saas/chaves'); }
+
+async function viewChaves(v) {
+  await carregarChaves();
+  secao(v, `<div class="view-head"><div><h2>Chaves de API</h2><p>Clique no <b>?</b> de cada campo para ver o passo a passo de como gerar. As chaves ficam criptografadas e não aparecem inteiras depois de salvas.</p></div></div>`);
+  for (const g of S.chaves.grupos) {
+    const t = S.testes[g.id === 'meta' ? 'meta' : 'google'];
+    secao(v, `<section class="card" data-grupo="${g.id}">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><div><h3>${esc(g.titulo)}</h3><p class="muted" style="margin:2px 0 0">${esc(g.intro)}</p></div>
+        <button class="btn" data-testar="${g.id === 'meta' ? 'meta' : 'google'}">Testar conexão</button></div>
+      <div class="sa-res ${t ? (t.ok ? 'ok' : 'ruim') : 'hidden'}" id="res-${g.id}" style="margin-top:10px">${t ? esc(textoTeste(t)) : ''}</div>
+      ${g.campos.map((c) => campoChave(c)).join('')}</section>`);
+  }
+  v.querySelectorAll('.sa-ajuda-btn').forEach((b) => b.addEventListener('click', () => {
+    const p = $(`#aj-${b.dataset.k}`); const abre = p.classList.contains('hidden'); p.classList.toggle('hidden', !abre); b.setAttribute('aria-expanded', abre);
+  }));
+  v.querySelectorAll('[data-salvar]').forEach((b) => b.addEventListener('click', async () => {
+    const k = b.dataset.salvar; const inp = $(`#in-${k}`);
+    try { await api('/api/saas/chaves', { method: 'PUT', corpo: { chave: k, valor: inp.value } }); aviso('Chave salva.'); S.testes = {}; render(); } catch (e) { falha(e); }
+  }));
+  v.querySelectorAll('[data-remover]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Remover esta chave do sistema?')) return;
+    try { await api(`/api/saas/chaves/${b.dataset.remover}`, { method: 'DELETE' }); aviso('Chave removida.'); S.testes = {}; render(); } catch (e) { falha(e); }
+  }));
+  v.querySelectorAll('[data-testar]').forEach((b) => b.addEventListener('click', async () => {
+    const qual = b.dataset.testar; b.disabled = true; b.textContent = 'Testando...';
+    try { S.testes[qual] = await api(`/api/saas/testar/${qual}`, { method: 'POST' }); } catch (e) { S.testes[qual] = { ok: false, erro: e.message }; }
+    render();
+  }));
+}
+
+function textoTeste(t) {
+  if (!t.ok) return `Não conectou: ${t.erro}`;
+  return ['Conectado', t.conta && `conta "${t.conta}"`, t.pagina && `página "${t.pagina}"`, t.moeda, t.aviso].filter(Boolean).join(' · ');
+}
+
+function campoChave(c) {
+  const a = c.ajuda;
+  return `<div class="sa-campo">
+    <div class="sa-campo-top">
+      <label for="in-${c.chave}">${esc(c.rotulo)}</label>
+      ${c.obrigatorio ? '' : '<span class="muted" style="font-size:12px">opcional</span>'}
+      <button class="sa-ajuda-btn" type="button" data-k="${c.chave}" aria-expanded="false" aria-controls="aj-${c.chave}" title="Como conseguir">?</button>
+      ${c.definido ? '<span class="pill ok">salva</span>' : '<span class="pill">vazia</span>'}
+    </div>
+    <div class="sa-ajuda hidden" id="aj-${c.chave}">
+      <h4>${esc(a.titulo)}</h4>
+      <ol>${a.passos.map((p) => `<li>${esc(p)}</li>`).join('')}</ol>
+      ${a.links?.length ? `<div class="links">${a.links.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)} ↗</a>`).join('')}</div>` : ''}
+      ${a.nota ? `<div class="sa-nota">${esc(a.nota)}</div>` : ''}
+    </div>
+    <div class="sa-linha">
+      <input id="in-${c.chave}" type="${c.secreto ? 'password' : 'text'}" autocomplete="off" spellcheck="false" placeholder="${c.definido ? esc(c.previa) + ' (cole outra para trocar)' : esc(c.exemplo || 'Cole aqui')}">
+      <button class="btn primary" data-salvar="${c.chave}">Salvar</button>
+      ${c.definido ? `<button class="btn ghost danger" data-remover="${c.chave}">Remover</button>` : ''}
+    </div></div>`;
+}
+
+// ---------------- Campanhas ----------------
+async function carregarCampanhas() { S.campanhas = await api('/api/saas/campanhas'); }
+const STATUS_ROT = { rascunho: ['Rascunho', ''], criando: ['Criando...', 'warn'], criada_pausada: ['Criada (pausada)', 'warn'], ativando: ['Ativando...', 'warn'], ativada: ['Ativa', 'ok'], erro: ['Com erro', 'ruim'] };
+const OBJ_ROT = { OUTCOME_TRAFFIC: 'Tráfego', OUTCOME_AWARENESS: 'Reconhecimento', OUTCOME_LEADS: 'Leads', OUTCOME_SALES: 'Vendas', OUTCOME_ENGAGEMENT: 'Engajamento' };
+const DEST_ROT = { site: 'Site (link)', whatsapp: 'WhatsApp', post: 'Engajamento no anúncio', messenger: 'Mensagens no Messenger', instagram_direct: 'Mensagens no Instagram Direct', instagram_facebook: 'Mensagens no Instagram e Facebook' };
+const CTAS = ['LEARN_MORE', 'SIGN_UP', 'SHOP_NOW', 'CONTACT_US', 'GET_QUOTE', 'SUBSCRIBE', 'DOWNLOAD', 'APPLY_NOW', 'BOOK_TRAVEL'];
+const CTA_ROT = { LEARN_MORE: 'Saiba mais', SIGN_UP: 'Cadastre-se', SHOP_NOW: 'Comprar', CONTACT_US: 'Fale conosco', GET_QUOTE: 'Pedir orçamento', SUBSCRIBE: 'Inscrever-se', DOWNLOAD: 'Baixar', APPLY_NOW: 'Candidate-se', BOOK_TRAVEL: 'Reservar' };
+
+async function viewCampanhas(v) {
+  await carregarCampanhas();
+  secao(v, `<div class="view-head"><div><h2>Campanhas</h2><p>Descreva o que quer anunciar e a IA monta o rascunho. Você revisa, cria pausada e só então ativa.</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="bManual">Montar manualmente</button><button class="btn" id="bGoogle">Nova campanha no Google</button></div></div>
+    <div class="card"><h3>Nova campanha com IA (Meta)</h3>
+      <p class="muted" style="margin:4px 0 10px">Conte: o que anuncia, objetivo, quanto quer gastar por dia, cidades, público e para onde levar o clique. Usos neste mês: ${S.eu.conta.ia.usados}/${S.eu.conta.ia.limite}.</p>
+      <textarea id="briefing" rows="4" placeholder="Ex.: Clínica de estética em Recife. Quero agendamentos de limpeza de pele. R$ 40 por dia, mulheres de 25 a 55 anos em Recife e Olinda, levar para https://minhaclinica.com.br/agendar"></textarea>
+      <div style="margin-top:10px"><button class="btn primary" id="bIA">Gerar rascunho com IA</button></div></div>
+    <div class="sa-lista" id="lista"></div>
+    <div class="card" id="googleBox"></div>`);
+  $('#bManual').addEventListener('click', async () => { try { const r = await api('/api/saas/campanhas', { method: 'POST', corpo: { spec: {} } }); await carregarCampanhas(); abrirEditor(r.campanha.id); } catch (e) { falha(e); } });
+  $('#bGoogle').addEventListener('click', abrirGoogle);
+  $('#bIA').addEventListener('click', async (e) => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = 'Montando o rascunho...';
+    try { const r = await api('/api/saas/campanhas/ia', { method: 'POST', corpo: { briefing: $('#briefing').value } }); await carregarEu(); await carregarCampanhas(); abrirEditor(r.campanha.id); }
+    catch (er) { falha(er); b.disabled = false; b.textContent = 'Gerar rascunho com IA'; }
+  });
+  pintarLista();
+  pintarGoogle();
+}
+
+function pintarLista() {
+  const l = $('#lista'); if (!l) return;
+  l.innerHTML = S.campanhas.length ? S.campanhas.map((c) => {
+    const [rot, cls] = STATUS_ROT[c.status] || [c.status, ''];
+    const s = c.spec || {}; const nome = s.nome || '(sem nome)';
+    const info = c.plataforma === 'google' ? 'Google · Pesquisa' : `Meta · ${OBJ_ROT[s.objetivo] || 'objetivo a definir'}${s.orcamento_diario_brl ? ' · ' + brl(s.orcamento_diario_brl) + '/dia' : ''}`;
+    return `<div class="sa-item" data-id="${c.id}" tabindex="0" role="button"><div><b>${esc(nome)}</b><small>${esc(info)} · ${dataBr(c.created_at)}</small></div><span class="pill ${cls}">${rot}</span></div>`;
+  }).join('') : '<p class="muted">Nenhuma campanha ainda. Comece descrevendo a primeira acima.</p>';
+  l.querySelectorAll('.sa-item').forEach((i) => {
+    const abrir = () => { const c = S.campanhas.find((x) => x.id === Number(i.dataset.id)); if (c.plataforma === 'google') abrirGoogleDetalhe(c); else abrirEditor(c.id); };
+    i.addEventListener('click', abrir); i.addEventListener('keydown', (e) => { if (e.key === 'Enter') abrir(); });
+  });
+}
+
+// Editor da campanha do Meta
+function abrirEditor(id) {
+  const c = S.campanhas.find((x) => x.id === id); if (!c) return;
+  const s = c.spec || {}; const editavel = ['rascunho', 'erro'].includes(c.status);
+  const dis = editavel ? '' : 'disabled';
+  const lst = (a) => (a || []).join('\n');
+  const dt = (x) => (x ? String(x).slice(0, 16) : '');
+  const opt = (obj, atual) => Object.entries(obj).map(([k, n]) => `<option value="${k}" ${atual === k ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  modal(`<div class="modal-head"><h3>${esc(s.nome || 'Nova campanha')}</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
+    <div class="modal-body">
+      ${c.pendencias?.length ? `<div class="sa-pend"><b>Falta confirmar:</b><ul>${c.pendencias.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
+      ${c.erro ? `<div class="sa-res ruim">${esc(c.erro)}</div>` : ''}
+      <div class="row"><div><label>Nome da campanha</label><input id="e_nome" value="${esc(s.nome)}" ${dis}></div>
+        <div><label>Objetivo</label><select id="e_obj" ${dis}><option value="">Escolha</option>${opt(OBJ_ROT, s.objetivo)}</select></div>
+        <div><label>Orçamento por dia (R$)</label><input id="e_orc" inputmode="decimal" value="${esc(s.orcamento_diario_brl ?? '')}" ${dis}></div></div>
+      <div><label>Texto principal do anúncio</label><textarea id="e_texto" rows="4" ${dis}>${esc(s.texto_principal)}</textarea></div>
+      <div class="row"><div><label>Título (opcional)</label><input id="e_tit" maxlength="60" value="${esc(s.titulo)}" ${dis}></div>
+        <div><label>Descrição (opcional)</label><input id="e_desc" maxlength="60" value="${esc(s.descricao)}" ${dis}></div>
+        <div><label>Botão</label><select id="e_cta" ${dis}><option value="">Padrão</option>${opt(Object.fromEntries(CTAS.map((k) => [k, CTA_ROT[k]])), s.cta)}</select></div></div>
+      <div class="row"><div><label>Para onde leva o clique</label><select id="e_dest" ${dis}><option value="">Automático</option>${opt(DEST_ROT, s.destino)}</select></div>
+        <div><label>Link de destino (https)</label><input id="e_url" value="${esc(s.url_destino)}" ${dis}></div></div>
+      <div class="row"><div><label>Imagem (link https, JPG/PNG)</label><input id="e_img" value="${esc(s.imagem_url)}" ${dis}></div>
+        <div><label>Carrossel: 2 a 10 imagens (uma por linha)</label><textarea id="e_imgs" rows="2" ${dis}>${esc(lst(s.imagens_urls))}</textarea></div></div>
+      <div class="row"><div><label>Cidades ou estados (um por linha)</label><textarea id="e_loc" rows="3" placeholder="Recife&#10;João Pessoa, Paraíba" ${dis}>${esc(lst(s.localizacoes))}</textarea><div class="dica">Cidades usam o raio abaixo; estados valem inteiros.</div></div>
+        <div><label>Interesses (um por linha)</label><textarea id="e_int" rows="3" ${dis}>${esc(lst(s.interesses))}</textarea></div></div>
+      <div class="row"><div><label>Raio das cidades (km, 17 a 80)</label><input id="e_raio" inputmode="numeric" value="${esc(s.raio_km ?? '')}" ${dis}></div>
+        <div><label>Idade mínima</label><input id="e_imin" inputmode="numeric" value="${esc(s.idade_min ?? '')}" ${dis}></div>
+        <div><label>Idade máxima</label><input id="e_imax" inputmode="numeric" value="${esc(s.idade_max ?? '')}" ${dis}></div>
+        <div><label>Gênero</label><select id="e_gen" ${dis}><option value="">Todos</option><option value="feminino" ${s.genero === 'feminino' ? 'selected' : ''}>Feminino</option><option value="masculino" ${s.genero === 'masculino' ? 'selected' : ''}>Masculino</option></select></div></div>
+      <div class="row"><div><label>Início (opcional)</label><input id="e_ini" type="datetime-local" value="${esc(dt(s.inicio))}" ${dis}></div>
+        <div><label>Término (opcional)</label><input id="e_fim" type="datetime-local" value="${esc(dt(s.termina_em))}" ${dis}></div></div>
+      <div id="resConferir"></div>
+      ${c.ids?.campanha_id ? `<p class="muted">Criada no Meta: campanha ${esc(c.ids.campanha_id)}. Confira também no Gerenciador de Anúncios.</p>` : ''}
+    </div>
+    <div class="modal-foot"><div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${editavel ? '<button class="btn" id="bSalvar">Salvar</button><button class="btn" id="bConferir">Conferir no Meta</button><button class="btn primary" id="bSubir">Criar pausada no Meta</button>' : ''}
+      ${c.status === 'criada_pausada' ? '<button class="btn primary" id="bAtivar">Ativar (começa a gastar)</button>' : ''}
+      ${c.status === 'ativada' ? '<button class="btn" id="bPausar">Pausar</button>' : ''}</div>
+      ${editavel ? '<button class="btn ghost danger" id="bExcluir">Excluir rascunho</button>' : ''}</div>`);
+  const n = (x) => (x === '' ? undefined : Number(String(x).replace(',', '.')));
+  const linhas = (x) => x.split('\n').map((t) => t.trim()).filter(Boolean);
+  const coletar = () => ({
+    nome: $('#e_nome').value, objetivo: $('#e_obj').value, orcamento_diario_brl: n($('#e_orc').value), texto_principal: $('#e_texto').value,
+    titulo: $('#e_tit').value, descricao: $('#e_desc').value, cta: $('#e_cta').value, destino: $('#e_dest').value, url_destino: $('#e_url').value,
+    imagem_url: $('#e_img').value, imagens_urls: linhas($('#e_imgs').value), localizacoes: linhas($('#e_loc').value), interesses: linhas($('#e_int').value),
+    raio_km: n($('#e_raio').value), idade_min: n($('#e_imin').value), idade_max: n($('#e_imax').value), genero: $('#e_gen').value,
+    inicio: $('#e_ini').value ? new Date($('#e_ini').value).toISOString() : '', termina_em: $('#e_fim').value ? new Date($('#e_fim').value).toISOString() : '',
+  });
+  const salvar = async () => { const r = await api(`/api/saas/campanhas/${id}`, { method: 'PUT', corpo: { spec: coletar() } }); const i = S.campanhas.findIndex((x) => x.id === id); S.campanhas[i] = r.campanha; return r.campanha; };
+  const ligar = (sel, fn) => { const b = $(sel); if (b) b.addEventListener('click', async () => { b.disabled = true; try { await fn(); } catch (e) { falha(e); } b.disabled = false; }); };
+  ligar('#bSalvar', async () => { await salvar(); aviso('Rascunho salvo.'); abrirEditor(id); });
+  ligar('#bConferir', async () => {
+    await salvar(); const r = await api(`/api/saas/campanhas/${id}/conferir`, { method: 'POST' });
+    $('#resConferir').innerHTML = r.ok ? `<div class="sa-res ok"><b>Tudo certo para criar.</b><br>${esc(r.resumo)}<ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></div>` : `<div class="sa-res ruim">${esc(r.erro)}</div>`;
+  });
+  ligar('#bSubir', async () => {
+    const sp = await salvar();
+    if (!confirm(`Criar no Meta, PAUSADA (não gasta nada ainda)?\n\n${sp.spec.nome || ''}\nOrçamento: ${brl(sp.spec.orcamento_diario_brl)} por dia`)) return;
+    try { const r = await api(`/api/saas/campanhas/${id}/subir`, { method: 'POST', corpo: { confirmado: true } }); upd(r.campanha); aviso('Campanha criada pausada no Meta.'); abrirEditor(id); }
+    catch (e) { if (e.dados?.campanha) upd(e.dados.campanha); falha(e); abrirEditor(id); }
+  });
+  ligar('#bAtivar', async () => {
+    if (!confirm(`ATIVAR agora? A campanha começa a gastar ${brl(s.orcamento_diario_brl)} por dia na sua conta de anúncios.`)) return;
+    try { const r = await api(`/api/saas/campanhas/${id}/ativar`, { method: 'POST', corpo: { confirmado: true } }); upd(r.campanha); aviso('Campanha ativada.'); abrirEditor(id); }
+    catch (e) { if (e.dados?.campanha) upd(e.dados.campanha); falha(e); abrirEditor(id); }
+  });
+  ligar('#bPausar', async () => { const r = await api(`/api/saas/campanhas/${id}/pausar`, { method: 'POST' }); upd(r.campanha); aviso('Campanha pausada.'); abrirEditor(id); });
+  ligar('#bExcluir', async () => { if (!confirm('Excluir este rascunho?')) return; await api(`/api/saas/campanhas/${id}`, { method: 'DELETE' }); fechar(); await carregarCampanhas(); pintarLista(); });
+  function upd(nc) { const i = S.campanhas.findIndex((x) => x.id === nc.id); if (i >= 0) S.campanhas[i] = nc; }
+}
+
+// Google Ads
+async function pintarGoogle() {
+  const box = $('#googleBox'); if (!box) return;
+  box.innerHTML = '<h3>Google Ads · campanhas da sua conta</h3><p class="muted">Carregando...</p>';
+  try {
+    const rows = await api('/api/saas/google/campanhas?periodo=LAST_7_DAYS');
+    box.innerHTML = `<h3>Google Ads · campanhas da sua conta (7 dias)</h3>` + (rows.length ? `<div class="sa-tabela"><table><thead><tr><th>Campanha</th><th>Status</th><th>Orçamento/dia</th><th>Gasto</th><th>Cliques</th><th>Conv.</th><th></th></tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${esc(r.nome)}</td><td><span class="pill ${r.status === 'ENABLED' ? 'ok' : ''}">${r.status === 'ENABLED' ? 'Ativa' : r.status === 'PAUSED' ? 'Pausada' : esc(r.status)}</span></td>
+      <td>${brl(r.orcamento_dia_brl)}</td><td>${brl(r.gasto_brl)}</td><td>${r.cliques}</td><td>${r.conversoes}</td>
+      <td style="white-space:nowrap">${r.status === 'ENABLED' ? `<button class="btn small" data-g="PAUSED" data-id="${esc(r.id)}">Pausar</button>` : `<button class="btn small" data-g="ENABLED" data-id="${esc(r.id)}">Ativar</button>`}
+        <button class="btn small ghost" data-orc="${esc(r.id)}" data-atual="${r.orcamento_dia_brl}">Orçamento</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nenhuma campanha encontrada nesta conta.</p>');
+    box.querySelectorAll('[data-g]').forEach((b) => b.addEventListener('click', async () => {
+      const ativar = b.dataset.g === 'ENABLED';
+      if (ativar && !confirm('ATIVAR esta campanha? Ela começa a gastar na sua conta do Google Ads.')) return;
+      try { await api(`/api/saas/google/campanhas/${b.dataset.id}/status`, { method: 'POST', corpo: { status: b.dataset.g, confirmado: true } }); aviso(ativar ? 'Campanha ativada.' : 'Campanha pausada.'); pintarGoogle(); } catch (e) { falha(e); }
+    }));
+    box.querySelectorAll('[data-orc]').forEach((b) => b.addEventListener('click', async () => {
+      const v = prompt(`Novo orçamento diário em R$ (atual: ${brl(b.dataset.atual)}). Aumentos de até 20% por vez.`); if (!v) return;
+      try { await api(`/api/saas/google/campanhas/${b.dataset.orc}/orcamento`, { method: 'POST', corpo: { valor: v.replace(',', '.'), confirmado: true } }); aviso('Orçamento atualizado.'); pintarGoogle(); } catch (e) { falha(e); }
+    }));
+  } catch (e) { box.innerHTML = `<h3>Google Ads</h3><p class="muted">${esc(e.message)}</p>`; }
+}
+
+function abrirGoogleDetalhe(c) {
+  const s = c.spec || {};
+  modal(`<div class="modal-head"><h3>${esc(s.nome)}</h3><button class="btn ghost small" data-fechar>Fechar</button></div><div class="modal-body">
+    <p>Campanha de Pesquisa criada no Google Ads (ID ${esc(c.ids?.campanha_id || '')}). Ative ou pause na tabela "Google Ads" desta página.</p>
+    <p class="muted">Orçamento: ${brl(s.orcamento_diario_brl)} por dia · ${esc(s.estrategia === 'MAXIMIZE_CLICKS' ? 'Maximizar cliques' : 'Maximizar conversões')}</p></div>`);
+}
+
+function abrirGoogle() {
+  modal(`<div class="modal-head"><h3>Nova campanha de Pesquisa no Google</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
+    <div class="modal-body">
+      <p class="muted">A campanha, o grupo de anúncios, as palavras-chave e o anúncio são criados <b>pausados</b>. Você ativa depois na tabela do Google Ads.</p>
+      <div class="row"><div><label>Nome da campanha</label><input id="g_nome"></div><div><label>Orçamento por dia (R$)</label><input id="g_orc" inputmode="decimal"></div>
+        <div><label>Estratégia de lance</label><select id="g_est"><option value="MAXIMIZE_CONVERSIONS">Maximizar conversões</option><option value="MAXIMIZE_CLICKS">Maximizar cliques</option></select></div></div>
+      <div><label>Página de destino (https)</label><input id="g_url" placeholder="https://"></div>
+      <div class="row"><div><label>Palavras-chave exatas (uma por linha)</label><textarea id="g_exa" rows="4"></textarea></div><div><label>Palavras-chave em frase (uma por linha)</label><textarea id="g_fra" rows="4"></textarea></div></div>
+      <div class="row"><div><label>Títulos: 3 a 15, até 30 caracteres cada (um por linha)</label><textarea id="g_tit" rows="5"></textarea></div><div><label>Descrições: 2 a 4, até 90 caracteres cada (uma por linha)</label><textarea id="g_des" rows="5"></textarea></div></div>
+      <div id="g_res"></div></div>
+    <div class="modal-foot"><span></span><button class="btn primary" id="g_criar">Criar pausada no Google</button></div>`);
+  $('#g_criar').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    const spec = { nome: $('#g_nome').value, orcamento_diario_brl: $('#g_orc').value.replace(',', '.'), estrategia: $('#g_est').value, url_final: $('#g_url').value, palavras_exatas: $('#g_exa').value, palavras_frase: $('#g_fra').value, titulos: $('#g_tit').value, descricoes: $('#g_des').value };
+    if (!confirm(`Criar no Google Ads, PAUSADA?\n\n${spec.nome}\nOrçamento: ${brl(spec.orcamento_diario_brl)} por dia`)) return;
+    b.disabled = true; b.textContent = 'Criando...';
+    try { await api('/api/saas/google/campanhas', { method: 'POST', corpo: { spec, confirmado: true } }); fechar(); aviso('Campanha criada pausada no Google.'); render(); }
+    catch (er) { $('#g_res').innerHTML = `<div class="sa-res ruim">${esc(er.message)}</div>`; b.disabled = false; b.textContent = 'Criar pausada no Google'; }
+  });
+}
+
+// ---------------- Assinatura ----------------
+async function assinar() {
+  try { const r = await api('/api/saas/assinar', { method: 'POST' }); location.href = r.url; } catch (e) { falha(e); }
+}
+
+async function viewAssinatura(v) {
+  await carregarEu();
+  const c = S.eu.conta; const sit = c.situacao;
+  secao(v, `<div class="view-head"><div><h2>Assinatura</h2><p>${esc(sit.texto)}</p></div></div>
+    <div class="card"><h3>Mensalidade</h3>
+      <p style="font-size:24px;margin:8px 0">${esc(S.eu.preco || 'Consulte o valor')}</p>
+      ${sit.codigo === 'trial' ? `<p class="muted">Seu período de teste vai até ${dataBr(c.trial_ate)}.</p>` : ''}
+      ${c.periodo_fim && c.tem_assinatura ? `<p class="muted">Período atual até ${dataBr(c.periodo_fim)}.</p>` : ''}
+      <p class="muted">O cartão é digitado na página segura do Stripe. Este sistema não vê nem guarda os dados do cartão.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        ${S.eu.cobranca && !(c.status === 'ativa' && c.tem_assinatura) && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bAssinar2">Assinar e cadastrar cartão</button>' : ''}
+        ${S.eu.cobranca && c.tem_assinatura ? '<button class="btn" id="bPortal">Gerenciar pagamento (cartão, faturas, cancelar)</button>' : ''}
+        ${!S.eu.cobranca ? '<span class="muted">A cobrança ainda não foi ligada. Fale com o suporte.</span>' : ''}</div></div>
+    <div class="card"><h3>Seus dados</h3>
+      <div class="sa-linha" style="margin-top:8px"><input id="empresa" value="${esc(c.empresa || '')}" placeholder="Empresa ou marca"><button class="btn" id="bEmpresa">Salvar</button></div>
+      <p class="muted" style="margin-top:12px">E-mail: ${esc(c.email)}</p></div>
+    <div class="card"><h3>Excluir minha conta</h3><p class="muted">Apaga a sua conta, as campanhas guardadas aqui e todas as chaves de API. As campanhas que já existem no Meta e no Google não são apagadas por lá.</p>
+      <div class="sa-linha" style="margin-top:8px"><input id="senhaExc" type="password" placeholder="Digite a sua senha para confirmar" autocomplete="current-password"><button class="btn danger" id="bExcluirConta">Excluir conta</button></div></div>`);
+  const b = $('#bAssinar2'); if (b) b.addEventListener('click', assinar);
+  const p = $('#bPortal'); if (p) p.addEventListener('click', async () => { try { const r = await api('/api/saas/portal', { method: 'POST' }); location.href = r.url; } catch (e) { falha(e); } });
+  $('#bEmpresa').addEventListener('click', async () => { try { await api('/api/saas/conta', { method: 'PUT', corpo: { empresa: $('#empresa').value } }); aviso('Salvo.'); } catch (e) { falha(e); } });
+  $('#bExcluirConta').addEventListener('click', async () => {
+    if (!confirm('Excluir a conta e todas as chaves? Isso não pode ser desfeito.')) return;
+    try { await api('/api/saas/conta/excluir', { method: 'POST', corpo: { senha: $('#senhaExc').value } }); S.eu = null; aviso('Conta excluída.'); entrada('entrar'); } catch (e) { falha(e); }
+  });
+}
+
+// ---------------- Modal ----------------
+function modal(html) {
+  const m = $('#modal'); m.innerHTML = `<div class="sa-modal-box">${html}</div>`; m.classList.remove('hidden');
+  m.querySelectorAll('[data-fechar]').forEach((b) => b.addEventListener('click', fechar));
+}
+function fechar() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if (S.eu && S.aba === 'campanhas') pintarLista(); }
+$('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal') fechar(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#modal').classList.contains('hidden')) fechar(); });
+
+iniciar().catch((e) => { raiz.innerHTML = `<div class="sa-main"><p class="erro">${esc(e.message)}</p></div>`; });

@@ -1654,4 +1654,49 @@ async function abrirPublicar(texto, opts = {}) {
   setTimeout(() => toast(msg), 1500);
 })();
 
-window.VIEWS_EXTRA = { solicitar: viewSolicitar, visao: viewSolicitar, recursos: (v) => viewArea(v, 'recursos'), acessos: (v) => viewArea(v, 'acessos'), relatorios: viewRelatorios, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };
+
+// ---------- Administração do SaaS: assinantes do Gestor de Tráfego ----------
+async function viewAssinantes(v) {
+  if (S.me.papel !== 'admin') { S.view = 'inicio'; return render(); }
+  const r = await api('/api/saas/admin/assinantes');
+  const l = r.assinantes;
+  const cont = (cod) => l.filter((a) => a.situacao.codigo === cod).length;
+  const rot = { ativa: ['Pagando', 'ok'], cortesia: ['Cortesia', 'ok'], trial: ['Em teste', ''], trial_expirado: ['Teste acabou', 'warn'], inadimplente: ['Inadimplente', 'warn'], cancelada: ['Cancelada', ''], bloqueada: ['Bloqueada', 'warn'] };
+  const dia = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '—');
+  v.innerHTML = `
+    <div class="view-head"><div><h2>Assinantes (SaaS)</h2><p>Quem assinou o Gestor de Tráfego. Cada assinante usa as próprias chaves e só enxerga os próprios dados.</p></div></div>
+    <div class="grid cols-2" style="margin-bottom:16px">
+      <div class="card"><h3>Página de assinatura</h3>
+        <p><code class="url">${esc(location.origin)}/assinante</code> <button class="btn small" id="cpSaas">Copiar</button></p>
+        <p class="muted">Pagando: <b>${cont('ativa')}</b> · Cortesia: <b>${cont('cortesia')}</b> · Em teste: <b>${cont('trial')}</b> · Inadimplentes: <b>${cont('inadimplente')}</b></p></div>
+      <div class="card"><h3>Cobrança (Stripe) ${r.cobranca ? '<span class="pill ok">Ligada</span>' : '<span class="pill warn">Não configurada</span>'}</h3>
+        <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PRICE_ID</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code>.</p>
+        <p class="muted">Webhook no Stripe: <code class="url">${esc(location.origin)}/api/saas/webhook</code> (eventos de assinatura e fatura).</p></div></div>
+    <div class="card" style="padding:0;overflow-x:auto"><table>
+      <thead><tr><th>Assinante</th><th>Situação</th><th>Teste até / Período até</th><th>Chaves</th><th>Campanhas</th><th>Última atividade</th><th></th></tr></thead>
+      <tbody>${l.length ? l.map((a) => { const [t, c] = rot[a.situacao.codigo] || [a.situacao.codigo, '']; return `<tr>
+        <td><b>${esc(a.nome || '')}</b><br><span class="muted">${esc(a.email)}${a.empresa ? ' · ' + esc(a.empresa) : ''}</span></td>
+        <td><span class="pill ${c}">${t}</span></td>
+        <td>${a.tem_assinatura ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
+        <td>${a.meta_ok ? '<span class="pill ok">Meta</span>' : '<span class="pill">Meta</span>'} ${a.google_ok ? '<span class="pill ok">Google</span>' : '<span class="pill">Google</span>'}</td>
+        <td>${a.campanhas} (${a.campanhas_ativas} ativas)</td><td>${dia(a.ultima_atividade)}</td>
+        <td style="white-space:nowrap"><button class="btn small" data-a="${a.id}" data-acao="dias">+7 dias</button>
+          <button class="btn small" data-a="${a.id}" data-acao="cortesia" data-v="${a.cortesia ? 0 : 1}">${a.cortesia ? 'Tirar cortesia' : 'Cortesia'}</button>
+          <button class="btn small" data-a="${a.id}" data-acao="bloqueio" data-v="${a.status === 'bloqueada' ? 0 : 1}">${a.status === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}</button>
+          <button class="btn small" data-a="${a.id}" data-acao="senha">Link de senha</button>
+          <button class="btn small danger" data-a="${a.id}" data-acao="excluir">Excluir</button></td></tr>`; }).join('') : '<tr><td colspan="7" class="muted">Nenhum assinante ainda.</td></tr>'}</tbody></table></div>`;
+  $('#cpSaas', v).onclick = () => copiar(location.origin + '/assinante');
+  v.querySelectorAll('[data-acao]').forEach((b) => b.onclick = async () => {
+    const id = b.dataset.a; const ac = b.dataset.acao; const url = `/api/saas/admin/assinantes/${id}`;
+    try {
+      if (ac === 'dias') await api(url, { method: 'PUT', body: { estender_dias: 7 } });
+      else if (ac === 'cortesia') await api(url, { method: 'PUT', body: { cortesia: b.dataset.v === '1' } });
+      else if (ac === 'bloqueio') { if (b.dataset.v === '1' && !confirm('Bloquear este assinante? Ele não poderá criar nem ativar campanhas (ainda poderá pausar).')) return; await api(url, { method: 'PUT', body: { bloqueada: b.dataset.v === '1' } }); }
+      else if (ac === 'senha') { const x = await api(url + '/link-senha', { method: 'POST' }); copiar(x.link); alert('Link copiado. Envie ao assinante para ele criar uma nova senha (vale por 7 dias, uso único):\n\n' + x.link); return; }
+      else if (ac === 'excluir') { if (!confirm('Excluir este assinante, as campanhas guardadas e todas as chaves dele? Não dá para desfazer.')) return; await api(url, { method: 'DELETE' }); }
+      toast('Feito'); viewAssinantes(v);
+    } catch (e) { toast(e.message); }
+  });
+}
+
+window.VIEWS_EXTRA = { assinantes: viewAssinantes, solicitar: viewSolicitar, visao: viewSolicitar, recursos: (v) => viewArea(v, 'recursos'), acessos: (v) => viewArea(v, 'acessos'), relatorios: viewRelatorios, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };

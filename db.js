@@ -354,6 +354,50 @@ CREATE TABLE IF NOT EXISTS campanhas (
 CREATE INDEX IF NOT EXISTS campanhas_task ON campanhas (task_id, id DESC);
 CREATE INDEX IF NOT EXISTS campanhas_cliente ON campanhas (client_id, id DESC);
 
+-- SaaS do gestor de tráfego: assinantes com conta isolada. Ficam fora de clients/tasks de propósito
+-- (backup, restauração e telas internas não tocam nelas). O escopo das chaves em "configuracoes" é 1000000 + id da conta.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS aceite_termos_em TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS saas_contas (
+  id SERIAL PRIMARY KEY,
+  user_id INT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  empresa TEXT,
+  status TEXT NOT NULL DEFAULT 'trial',        -- trial | ativa | inadimplente | cancelada | bloqueada
+  trial_ate TIMESTAMPTZ,
+  periodo_fim TIMESTAMPTZ,
+  cortesia BOOLEAN NOT NULL DEFAULT false,     -- liberada pelo administrador, sem cobrança
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  ia_mes TEXT,                                 -- AAAA-MM do contador de usos da IA
+  ia_usos INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_contas_stripe ON saas_contas (stripe_customer_id);
+CREATE TABLE IF NOT EXISTS saas_campanhas (
+  id SERIAL PRIMARY KEY,
+  conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
+  plataforma TEXT NOT NULL DEFAULT 'meta',     -- meta | google
+  spec JSONB NOT NULL DEFAULT '{}',
+  pendencias JSONB NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'rascunho',     -- rascunho | criando | criada_pausada | ativando | ativada | erro
+  ids JSONB NOT NULL DEFAULT '{}',
+  erro TEXT,
+  briefing TEXT,
+  criada_em TIMESTAMPTZ,
+  ativada_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_campanhas_conta ON saas_campanhas (conta_id, id DESC);
+CREATE TABLE IF NOT EXISTS saas_eventos (
+  id SERIAL PRIMARY KEY,
+  conta_id INT REFERENCES saas_contas(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL,
+  detalhe TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_eventos_conta ON saas_eventos (conta_id, id DESC);
+
 -- Currículos e portfólios (arquivos) para anexar em candidaturas
 CREATE TABLE IF NOT EXISTS documentos (
   id SERIAL PRIMARY KEY,
