@@ -766,6 +766,18 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       r = await req('g', 'GET', '/api/saas/eu');
       ok(r.corpo.conta.plano === 'agencia' && r.corpo.conta.situacao.ativa === true && r.corpo.conta.campanhas.limite === 30, 'depois do Pix a conta vira Agência com 30 campanhas');
     }
+    // ---- perfil de assinante da administradora ----
+    r = await req('a', 'POST', '/api/saas/admin/meu-perfil', {}); ok(r.status === 403, 'assinante não cria perfil de administradora');
+    r = await req('adm', 'GET', '/api/saas/eu'); ok(r.status === 403, 'sem perfil, a administradora não entra na área do assinante');
+    r = await req('adm', 'POST', '/api/saas/admin/meu-perfil', {});
+    ok(r.status === 200 && r.corpo.criada === true && Array.isArray(r.corpo.trazidas) && r.corpo.trazidas.includes('META_ADS_TOKEN'), 'cria o perfil de assinante da administradora');
+    r = await req('adm', 'GET', '/api/saas/eu');
+    ok(r.status === 200 && r.corpo.conta.admin === true && r.corpo.conta.plano === 'escala' && r.corpo.conta.bi === true && r.corpo.conta.situacao.ativa === true, 'perfil com acesso liberado, plano Escala e BI');
+    r = await req('adm', 'POST', '/api/saas/admin/meu-perfil', {}); ok(r.status === 200 && r.corpo.criada === false, 'repetir não duplica o perfil');
+    r = await req('adm', 'GET', '/api/saas/admin/assinantes'); const meu = r.corpo.assinantes.find((x) => x.email === 'admin@exemplo.com');
+    ok(!!meu, 'o perfil aparece na lista de assinantes');
+    r = await req('adm', 'DELETE', `/api/saas/admin/assinantes/${meu.id}`); ok(r.status === 409, 'o perfil da administradora não pode ser excluído');
+    r = await req('adm', 'GET', '/api/me'); ok(r.status !== 500, 'o login de administradora continua funcionando');
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
   }
