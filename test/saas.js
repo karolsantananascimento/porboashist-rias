@@ -757,7 +757,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(r.status === 200 && r.corpo.display === 'standalone' && r.corpo.icons.length === 3 && r.corpo.start_url.startsWith('/assinante'), 'manifesto do app');
     for (const ic of r.corpo.icons) { const x = await req(null, 'GET', ic.src); ok(x.status === 200, `ícone ${ic.src} existe`); }
     r = await req(null, 'GET', '/sw.js'); ok(r.status === 200 && /\/api\//.test(r.corpo.raw), 'service worker não guarda chamadas da API');
-    r = await req(null, 'GET', '/'); ok((r.corpo.raw.match(/data-instalar/g) || []).length === 3, 'home tem o botão Baixar app (topo, destaque e final)');
+    r = await req(null, 'GET', '/'); ok((r.corpo.raw.match(/data-instalar/g) || []).length === 4, 'home tem o botão Baixar app (topo, destaque, final e rodapé)');
     r = await req(null, 'GET', '/pwa.js'); ok(/Adicionar à Tela de Início/.test(r.corpo.raw) && /controllerchange/.test(r.corpo.raw), 'guia de instalação do iPhone e atualização automática');
     r = await req(null, 'GET', '/offline.html'); ok(r.status === 200, 'tela sem internet');
     for (const pg of ['/assinante', '/entrar', '/']) { r = await req(null, 'GET', pg); ok(/rel="manifest"/.test(r.corpo.raw || '') && /\/pwa\.js/.test(r.corpo.raw || ''), `${pg} liga o manifesto e o pwa.js`); }
