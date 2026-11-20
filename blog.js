@@ -58,9 +58,9 @@ function pagina({ titulo, descricao, canonico, corpo, tipo = 'website', capa, js
 <meta name="theme-color" content="#17191D"><link rel="icon" href="/brand/midiaut/favicon.svg">
 <meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:type" content="${tipo}"><meta property="og:url" content="${esc(canonico)}"><meta property="og:image" content="${esc(capa || new URL('/brand/midiaut/og.png', canonico).href)}">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}<style>${CSS}</style></head><body>
-<header class="top"><a class="marca" href="/midiaut"><img src="/brand/midiaut/simbolo.svg" alt="" width="34" height="30"><span>Mid<i>IA</i>ut</span></a><nav><a href="/blog" style="margin-right:18px;color:#A8AEBA;text-decoration:none">Blog</a><a class="cta" href="/cadastro?plano=testar">Testar grátis</a></nav></header>
+<header class="top"><a class="marca" href="/"><img src="/brand/midiaut/simbolo.svg" alt="" width="34" height="30"><span>Mid<i>IA</i>ut</span></a><nav><a href="/blog" style="margin-right:18px;color:#A8AEBA;text-decoration:none">Blog</a><a class="cta" href="/cadastro?plano=testar">Testar grátis</a></nav></header>
 ${corpo}
-<footer>© MidIAut · Tráfego em piloto automático. · <a href="/midiaut">Conheça a plataforma</a></footer></body></html>`;
+<footer>© MidIAut · Tráfego em piloto automático. · <a href="/">Conheça a plataforma</a></footer></body></html>`;
 }
 
 const dataBr = (d) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Recife' });
@@ -99,10 +99,10 @@ function registrarPublico(app, { pool, wrap }) {
   }));
   app.get('/sitemap.xml', wrap(async (req, res) => {
     const b = baseDe(req); const { rows } = await pool.query(`SELECT slug, updated_at FROM site_posts WHERE status='publicado' ORDER BY publicado_em DESC`);
-    const u = [['/midiaut', fs.statSync(path.join(__dirname, 'public', 'midiaut.html')).mtime], ['/blog', rows[0]?.updated_at || null], ...rows.map((p) => [`/blog/${p.slug}`, p.updated_at])];
+    const u = [['/', fs.statSync(path.join(__dirname, 'public', 'midiaut.html')).mtime], ['/blog', rows[0]?.updated_at || null], ...rows.map((p) => [`/blog/${p.slug}`, p.updated_at])];
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${u.map(([l, d]) => `<url><loc>${esc(b + l)}</loc>${d ? `<lastmod>${new Date(d).toISOString().slice(0, 10)}</lastmod>` : ''}</url>`).join('')}</urlset>`);
   }));
-  app.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nAllow: /midiaut\nAllow: /blog\nDisallow: /api/\nDisallow: /assinante\nSitemap: ${baseDe(req)}/sitemap.xml\n`));
+  app.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nAllow: /\nAllow: /blog\nDisallow: /api/\nDisallow: /assinante\nSitemap: ${baseDe(req)}/sitemap.xml\n`));
 }
 
 function registrar(app, { pool, wrap, soAdmin }) {

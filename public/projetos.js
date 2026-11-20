@@ -1772,8 +1772,8 @@ async function viewSiteBlog(v) {
 }
 
 function sitePrevia(el, caminho) {
-  const pg = caminho || S.sitePg || '/midiaut'; S.sitePg = pg; const larg = S.siteLarg || '100%';
-  const paginas = [['/midiaut', 'Página inicial'], ['/blog', 'Blog'], ['/cadastro', 'Cadastro'], ['/entrar', 'Entrar']];
+  const pg = caminho || S.sitePg || '/'; S.sitePg = pg; const larg = S.siteLarg || '100%';
+  const paginas = [['/', 'Página inicial'], ['/blog', 'Blog'], ['/cadastro', 'Cadastro'], ['/entrar', 'Entrar']];
   el.innerHTML = `<div class="sb-barra">
       <select id="sbPg">${paginas.map(([u, n]) => `<option value="${u}" ${pg === u ? 'selected' : ''}>${n}</option>`).join('')}${pg.startsWith('/blog/') ? `<option value="${esc(pg)}" selected>${esc(pg)}</option>` : ''}</select>
       <div class="sb-disp">${[['100%', 'Computador'], ['820px', 'Tablet'], ['390px', 'Celular']].map(([w, n]) => `<button class="${larg === w ? 'on' : ''}" data-w="${w}">${n}</button>`).join('')}</div>

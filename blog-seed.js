@@ -66,7 +66,7 @@ Não. A IA automatiza as etapas operacionais da criação de campanhas, mas não
 
 Existe um **plano Grátis**, sempre ativo, com 1 campanha nova por mês no Meta Ads ou no Google Ads, sem cartão de crédito. É o jeito mais simples de ver o fluxo funcionando com um caso seu. Leia mais em [IA de tráfego grátis: como gerenciar campanhas sem pagar nada](/blog/ia-de-trafego-gratis-gerenciar-campanhas).
 
-[Criar minha conta grátis](/cadastro?plano=gratis) ou [conhecer a MidIAut e os planos](/midiaut).
+[Criar minha conta grátis](/cadastro?plano=gratis) ou [conhecer a MidIAut e os planos](/).
 
 > Importante: a MidIAut usa as suas próprias contas de anúncios. O investimento em mídia é pago diretamente ao Google ou à Meta, e a assinatura corresponde ao uso do software.
 `,
@@ -141,7 +141,7 @@ Em qualquer plano você pode incluir o pacote opcional de BI e relatórios por R
 
 ## Comece agora
 
-[Criar minha conta grátis](/cadastro?plano=gratis) e subir a primeira campanha do mês. Para conhecer todos os recursos, acesse a [página da MidIAut](/midiaut).
+[Criar minha conta grátis](/cadastro?plano=gratis) e subir a primeira campanha do mês. Para conhecer todos os recursos, acesse a [página da MidIAut](/).
 `,
   },
   {
@@ -222,7 +222,7 @@ Mude **uma coisa por vez** para saber o que gerou diferença:
 
 ## Como a IA ajuda nessa rotina
 
-O tempo gasto montando campanhas é um dos maiores gargalos. Com a [MidIAut](/midiaut), você descreve a campanha em texto e a IA monta o rascunho de Meta Ads ou de Google Ads (Pesquisa) para você revisar. A campanha sobe pausada e você decide quando ativar. A análise de oferta, de público e de resultado continua sendo sua.
+O tempo gasto montando campanhas é um dos maiores gargalos. Com a [MidIAut](/), você descreve a campanha em texto e a IA monta o rascunho de Meta Ads ou de Google Ads (Pesquisa) para você revisar. A campanha sobe pausada e você decide quando ativar. A análise de oferta, de público e de resultado continua sendo sua.
 
 Quer testar sem custo? O plano Grátis permite 1 campanha nova por mês. [Criar conta grátis](/cadastro?plano=gratis).
 `,
@@ -294,7 +294,7 @@ Some o que você pagaria em um ano em cada cenário (honorários mais ferramenta
 
 ## Como testar sem risco
 
-O plano Grátis da MidIAut permite subir 1 campanha por mês sem cartão. É uma forma de comparar o fluxo com o seu processo atual antes de decidir. Veja também [IA de tráfego grátis: como gerenciar campanhas sem pagar nada](/blog/ia-de-trafego-gratis-gerenciar-campanhas) e a [página da MidIAut](/midiaut).
+O plano Grátis da MidIAut permite subir 1 campanha por mês sem cartão. É uma forma de comparar o fluxo com o seu processo atual antes de decidir. Veja também [IA de tráfego grátis: como gerenciar campanhas sem pagar nada](/blog/ia-de-trafego-gratis-gerenciar-campanhas) e a [página da MidIAut](/).
 
 [Criar minha conta grátis](/cadastro?plano=gratis)
 
@@ -376,7 +376,7 @@ Depois de ativar, olhe as métricas de **investimento, cliques, impressões, cus
 
 ## Como a MidIAut acelera esse passo a passo
 
-Na [MidIAut](/midiaut) você descreve a campanha em texto e a IA monta o rascunho com objetivo, público, cidades, orçamento e textos para o Meta Ads. Você edita, envia suas imagens ou vídeos e confirma. A campanha é criada **pausada**, e só gasta quando você ativa. Depois, você acompanha os números dos últimos 7 dias no mesmo lugar.
+Na [MidIAut](/) você descreve a campanha em texto e a IA monta o rascunho com objetivo, público, cidades, orçamento e textos para o Meta Ads. Você edita, envia suas imagens ou vídeos e confirma. A campanha é criada **pausada**, e só gasta quando você ativa. Depois, você acompanha os números dos últimos 7 dias no mesmo lugar.
 
 O plano Grátis permite 1 campanha nova por mês, sem cartão: [criar conta grátis](/cadastro?plano=gratis). Se também quer anunciar na busca, veja [como criar uma campanha de Pesquisa no Google Ads](/blog/como-criar-campanha-no-google-ads-pesquisa).
 `,
@@ -457,7 +457,7 @@ Olhe os **termos de pesquisa** regularmente: eles mostram o que as pessoas digit
 
 ## Como a MidIAut ajuda
 
-Na [MidIAut](/midiaut) você descreve a campanha em texto e a IA monta a estrutura da campanha de **Pesquisa no Google Ads**, com palavras-chave, títulos e descrições. Você revisa e edita, e a campanha é criada **pausada** até você ativar. Depois, acompanha investimento, cliques, impressões e conversões dos últimos 7 dias.
+Na [MidIAut](/) você descreve a campanha em texto e a IA monta a estrutura da campanha de **Pesquisa no Google Ads**, com palavras-chave, títulos e descrições. Você revisa e edita, e a campanha é criada **pausada** até você ativar. Depois, acompanha investimento, cliques, impressões e conversões dos últimos 7 dias.
 
 Para testar sem custo, o plano Grátis permite 1 campanha nova por mês, no Google ou no Meta: [criar conta grátis](/cadastro?plano=gratis). Se também quer anunciar nas redes sociais, veja [como criar campanha no Meta Ads](/blog/como-criar-campanha-no-meta-ads).
 `,
