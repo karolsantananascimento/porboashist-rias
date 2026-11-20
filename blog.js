@@ -145,4 +145,22 @@ function registrar(app, { pool, wrap, soAdmin }) {
   app.post('/api/site/previa', soAdmin, wrap(async (req, res) => res.json({ html: markdown(req.body?.corpo), minutos: minutos(req.body?.corpo) })));
 }
 
-module.exports = { registrar, registrarPublico, markdown, slugDe };
+// Publica os artigos iniciais (blog-seed.js) uma única vez cada; se a administradora apagar ou editar, nada é recriado.
+async function semear(pool) {
+  for (const a of require('./blog-seed')) {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      const { rowCount } = await c.query('INSERT INTO site_seeds (slug) VALUES ($1) ON CONFLICT DO NOTHING', [a.slug]);
+      if (rowCount) {
+        await c.query(
+          `INSERT INTO site_posts (titulo, slug, resumo, corpo, seo_titulo, seo_desc, status, autor, publicado_em)
+           VALUES ($1,$2,$3,$4,$5,$6,'publicado','Equipe MidIAut', now() - ($7 || ' hours')::interval) ON CONFLICT (slug) DO NOTHING`,
+          [a.titulo, a.slug, a.resumo, a.corpo.trim(), a.seo_titulo, a.seo_desc, String(a.horas || 0)]);
+      }
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); console.error('Artigo inicial não semeado:', a.slug, e.message); } finally { c.release(); }
+  }
+}
+
+module.exports = { registrar, registrarPublico, markdown, slugDe, semear };
