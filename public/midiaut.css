@@ -228,3 +228,5 @@ form > .dica { margin: 0; }
 .admin-link { color: var(--lima, #B6FF45); text-decoration: none; font-weight: 700; font-size: 14px; border: 1px solid currentColor; border-radius: 999px; padding: 8px 14px; }
 .admin-link:hover { background: rgba(182,255,69,.12); }
 @media (max-width: 560px) { .topo-links { gap: 10px; } .topo-links .voltar { display: none; } }
+button.entrar { background: none; border: 0; cursor: pointer; font-family: inherit; }
+[data-instalar][hidden] { display: none !important; }
