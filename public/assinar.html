@@ -18,38 +18,38 @@
 </head>
 <body>
   <div class="grao" aria-hidden="true"></div>
-  <main class="pg">
-    <section class="intro" aria-labelledby="titulo">
-      <div class="marca">
-        <img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="56" height="56">
-        <span class="syn">A MELHOR MÍDIA<br>DO BRASIL</span>
-      </div>
+  <header class="topo">
+    <a class="marca" href="/assinar" aria-label="A Melhor Mídia do Brasil">
+      <img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="44" height="44">
+      <span class="syn">A MELHOR MÍDIA<br>DO BRASIL</span>
+    </a>
+    <nav class="menu syn" aria-label="Seções da página">
+      <a href="#video">Vídeo</a><a href="#funcionalidades">Funcionalidades</a><a href="#como-funciona">Como funciona</a><a href="#preco-bloco">Preço</a><a href="#duvidas">Dúvidas</a>
+    </nav>
+    <button type="button" class="entrar syn" data-ir-form="entrar">ENTRAR</button>
+  </header>
 
+  <main>
+  <div class="pg" id="inicio">
+    <section class="intro" aria-labelledby="titulo">
       <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> AGENTE DE TRÁFEGO</p>
       <h1 id="titulo" class="boldo">Tráfego com <em>intenção</em>.</h1>
       <span class="filete" aria-hidden="true"></span>
       <p class="lead">Descreva o que quer anunciar. O agente monta a campanha para Facebook, Instagram e Google. Você confere, cria pausada e só ativa quando quiser.</p>
-
-      <ul class="chaves syn" aria-label="Como funciona">
-        <li>ESTRATÉGIA</li>
-        <li>CAMPANHA PAUSADA</li>
-        <li>SUA APROVAÇÃO</li>
-        <li>RESULTADOS</li>
-      </ul>
-
+      <div class="ctas">
+        <button type="button" class="botao" data-ir-form="criar"><span>Criar conta e testar</span></button>
+        <a class="botao vazado" href="#video"><span>Ver em ação</span></a>
+      </div>
       <div class="selos">
         <span id="preco" class="selo hidden"></span>
         <span id="teste" class="selo claro hidden"></span>
       </div>
-
-      <ul class="garantias">
-        <li>Suas chaves de API ficam criptografadas, com passo a passo para gerar cada uma.</li>
-        <li>Nada é ativado sem a sua confirmação, e há teto de orçamento por campanha.</li>
-        <li>Você usa as suas próprias contas de anúncios. Nada é excluído nas plataformas.</li>
+      <ul class="chaves syn" aria-label="Pilares">
+        <li>ESTRATÉGIA</li><li>CAMPANHA PAUSADA</li><li>SUA APROVAÇÃO</li><li>RESULTADOS</li>
       </ul>
     </section>
 
-    <section class="painel" aria-label="Criar conta ou entrar">
+    <section class="painel" id="cadastro" aria-label="Criar conta ou entrar">
       <div class="cantos" aria-hidden="true"><i>+</i><i>+</i><i>+</i><i>+</i></div>
       <div class="abas syn" role="tablist">
         <button type="button" role="tab" id="abaCriar" aria-controls="fCadastro" aria-selected="true">CRIAR CONTA</button>
@@ -94,6 +94,112 @@
         <p class="troca">Ainda não tem conta? <button type="button" class="link" data-ir="criar">Criar conta</button></p>
       </form>
     </section>
+  </div>
+
+  <section class="bloco" id="video" aria-labelledby="t-video">
+    <div class="miolo">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> VEJA EM AÇÃO</p>
+      <h2 id="t-video" class="boldo">Do briefing à campanha <em>em minutos</em>.</h2>
+      <div class="video-caixa">
+        <video id="demo" controls playsinline preload="metadata" poster="/video/demo-poster.jpg" aria-describedby="demo-nota">
+          <source src="/video/demo-agente-trafego.mp4" type="video/mp4">
+          Seu navegador não reproduz este vídeo. <a href="/video/demo-agente-trafego.mp4">Baixar o vídeo</a>.
+        </video>
+      </div>
+      <ol class="capitulos syn" aria-label="Capítulos do vídeo">
+        <li><button type="button" data-t="4"><b>1</b> Chaves de API</button></li>
+        <li><button type="button" data-t="10"><b>2</b> Briefing</button></li>
+        <li><button type="button" data-t="15"><b>3</b> Rascunho da IA</button></li>
+        <li><button type="button" data-t="21"><b>4</b> Conferir</button></li>
+        <li><button type="button" data-t="27"><b>5</b> Criar pausada e ativar</button></li>
+        <li><button type="button" data-t="33"><b>6</b> Desempenho</button></li>
+      </ol>
+      <p class="nota" id="demo-nota">Demonstração com a tela real do sistema e dados de exemplo (clínica fictícia). Sem som.</p>
+    </div>
+  </section>
+
+  <section class="bloco claro-bg" id="funcionalidades" aria-labelledby="t-func">
+    <div class="miolo">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> FUNCIONALIDADES</p>
+      <h2 id="t-func" class="boldo">Tudo para anunciar, <em>com você no comando</em>.</h2>
+      <div class="grade">
+        <article class="cartao"><span class="num syn">01</span><h3>Rascunho por IA</h3><p>Conte o que anuncia, o objetivo, quanto quer gastar por dia, onde e para quem. A IA monta o rascunho técnico e lista o que ainda falta confirmar. Nada é inventado.</p></article>
+        <article class="cartao"><span class="num syn">02</span><h3>Meta Ads: Facebook e Instagram</h3><p>Campanhas de Tráfego, Reconhecimento, Leads, Vendas e Engajamento, com texto, título, botão, link de destino e imagem do anúncio.</p></article>
+        <article class="cartao"><span class="num syn">03</span><h3>Google Ads: Pesquisa</h3><p>Crie campanhas de Pesquisa com palavras-chave, títulos e descrições. Pause, ative e ajuste o orçamento direto na tabela de campanhas.</p></article>
+        <article class="cartao"><span class="num syn">04</span><h3>Público sob medida</h3><p>Cidades com raio ou estados inteiros, interesses, faixa de idade e gênero. Você enxerga e edita cada campo antes de criar.</p></article>
+        <article class="cartao"><span class="num syn">05</span><h3>Conferir antes de criar</h3><p>Um botão valida a campanha no Meta só com leituras, sem criar nem gastar nada, e mostra o resumo do que será criado.</p></article>
+        <article class="cartao"><span class="num syn">06</span><h3>Desempenho na tela inicial</h3><p>Gasto, cliques, impressões e conversões dos últimos 7 dias, do Meta e do Google, logo ao entrar.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco" id="como-funciona" aria-labelledby="t-como">
+    <div class="miolo">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> COMO FUNCIONA</p>
+      <h2 id="t-como" class="boldo">Quatro passos. <em>Nenhum às cegas</em>.</h2>
+      <ol class="passos">
+        <li><b class="boldo">1</b><div><h3>Crie a conta</h3><p>Leva um minuto, sem cartão. Você já entra com o teste liberado.</p></div></li>
+        <li><b class="boldo">2</b><div><h3>Cole as suas chaves</h3><p>Em cada campo há um <b>?</b> com o passo a passo para gerar a chave do Meta e do Google.</p></div></li>
+        <li><b class="boldo">3</b><div><h3>Descreva o anúncio</h3><p>Escreva do seu jeito. A IA devolve um rascunho completo para você revisar e editar.</p></div></li>
+        <li><b class="boldo">4</b><div><h3>Crie pausada e ative</h3><p>A campanha nasce pausada. Você confere no Gerenciador de Anúncios e só então ativa.</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="bloco escuro-bg" id="controle" aria-labelledby="t-ctrl">
+    <div class="miolo">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> CONTROLE E SEGURANÇA</p>
+      <h2 id="t-ctrl" class="boldo">Estratégia não é sorte. <em>Nem susto</em>.</h2>
+      <ul class="garantias-g">
+        <li><h3>Nada vai ao ar sozinho</h3><p>Toda campanha é criada pausada. Ativar exige a sua confirmação, e há um limite de ativações por dia.</p></li>
+        <li><h3>Teto de orçamento</h3><p>Há um limite de orçamento diário por campanha, para um erro de digitação não virar um gasto grande.</p></li>
+        <li><h3>Suas contas, suas chaves</h3><p>Os anúncios rodam nas suas contas do Meta e do Google. As chaves ficam criptografadas e não voltam inteiras para a tela.</p></li>
+        <li><h3>Conta isolada</h3><p>Cada assinante enxerga apenas os próprios dados. Você pode remover uma chave ou excluir a conta quando quiser.</p></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="bloco" id="preco-bloco" aria-labelledby="t-preco">
+    <div class="miolo estreito">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> PREÇO</p>
+      <h2 id="t-preco" class="boldo">Um plano. <em>Sem fidelidade</em>.</h2>
+      <div class="plano" id="plano">
+        <p class="plano-valor boldo hidden" id="planoValor"></p>
+        <p class="plano-sub" id="planoSub">Teste antes de assinar.</p>
+        <ul>
+          <li>Campanhas no Meta Ads e no Google Ads</li>
+          <li>Rascunhos por IA, com cota mensal de usos</li>
+          <li>Desempenho dos últimos 7 dias</li>
+          <li>Cancelamento quando quiser, pelo portal de pagamento</li>
+        </ul>
+        <button type="button" class="botao" data-ir-form="criar"><span>Criar conta e testar</span></button>
+        <p class="nota">O valor dos anúncios é pago direto ao Meta e ao Google, e não passa por aqui.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco claro-bg" id="duvidas" aria-labelledby="t-duv">
+    <div class="miolo estreito">
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> DÚVIDAS</p>
+      <h2 id="t-duv" class="boldo">Perguntas <em>frequentes</em>.</h2>
+      <div class="faq">
+        <details><summary>Preciso de cartão para testar?</summary><p>Não. O período de teste começa assim que você cria a conta, sem cartão. O cartão só é pedido, na página segura do Stripe, quando você decide assinar.</p></details>
+        <details><summary>Preciso ter conta de anúncios?</summary><p>Sim. Você usa a sua conta de anúncios do Meta e/ou do Google Ads. Dentro do sistema, cada chave tem um passo a passo para gerar.</p></details>
+        <details><summary>A IA publica anúncios sozinha?</summary><p>Não. A IA só monta o rascunho. A campanha é criada pausada e só é ativada quando você clica e confirma.</p></details>
+        <details><summary>Onde pago pelos anúncios?</summary><p>Direto no Meta e no Google, com o seu meio de pagamento lá. A mensalidade do sistema é separada do investimento em anúncios.</p></details>
+        <details><summary>E se eu quiser cancelar?</summary><p>Você cancela pelo portal de pagamento, dentro da área de assinatura. Também pode excluir a conta e as chaves guardadas. As campanhas que já existem no Meta e no Google não são apagadas por lá.</p></details>
+        <details><summary>Meus dados ficam seguros?</summary><p>As chaves ficam criptografadas, não voltam inteiras para a tela e só a sua conta tem acesso a elas. Os dados do cartão ficam com o Stripe, e este sistema não os vê.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloco final" aria-labelledby="t-final">
+    <div class="miolo estreito centro">
+      <h2 id="t-final" class="boldo">Tráfego com <em>intenção</em>.</h2>
+      <p class="lead">Crie a conta, cole as chaves e monte a primeira campanha hoje.</p>
+      <button type="button" class="botao" data-ir-form="criar"><span>Criar conta e testar</span></button>
+    </div>
+  </section>
   </main>
 
   <footer class="rodape syn">MARKETING · ESTRATÉGIA · TECNOLOGIA · NEGÓCIOS · IA</footer>

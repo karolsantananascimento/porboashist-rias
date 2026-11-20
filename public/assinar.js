@@ -3,6 +3,12 @@
 const $ = (s) => document.querySelector(s);
 const DESTINO = '/assinante';
 
+function irAoForm(m) {
+  modo(m, false);
+  $('#cadastro').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+  setTimeout(() => $(m === 'entrar' ? '#lEmail' : '#cNome').focus({ preventScroll: true }), 450);
+}
+
 function modo(m, foco = true) {
   const criar = m !== 'entrar';
   $('#fCadastro').classList.toggle('hidden', !criar);
@@ -38,6 +44,14 @@ const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 $('#abaCriar').addEventListener('click', () => modo('criar'));
 $('#abaEntrar').addEventListener('click', () => modo('entrar'));
+document.querySelectorAll('[data-ir-form]').forEach((b) => b.addEventListener('click', () => irAoForm(b.dataset.irForm)));
+document.querySelectorAll('.capitulos button').forEach((b) => b.addEventListener('click', () => {
+  const v = $('#demo'); v.currentTime = Number(b.dataset.t); v.play().catch(() => {});
+}));
+(() => { // destaca o capítulo em exibição
+  const v = $('#demo'); const bs = [...document.querySelectorAll('.capitulos button')]; const ts = bs.map((b) => Number(b.dataset.t));
+  v.addEventListener('timeupdate', () => { let a = -1; ts.forEach((t, i) => { if (v.currentTime >= t) a = i; }); bs.forEach((b, i) => b.classList.toggle('on', i === a)); });
+})();
 document.querySelectorAll('[data-ir]').forEach((b) => b.addEventListener('click', () => modo(b.dataset.ir)));
 document.querySelector('.abas').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const entrar = $('#abaCriar').getAttribute('aria-selected') === 'true'; modo(entrar ? 'entrar' : 'criar'); }
@@ -93,6 +107,8 @@ $('#fLogin').addEventListener('submit', async (e) => {
   try {
     const p = await fetch('/api/saas/publico').then((r) => r.json());
     if (p.preco) { $('#preco').textContent = p.preco; $('#preco').classList.remove('hidden'); }
+    if (p.preco) { $('#planoValor').textContent = p.preco; $('#planoValor').classList.remove('hidden'); }
+    if (p.trial_dias) $('#planoSub').textContent = `${p.trial_dias} dias para testar, sem cartão.`;
     if (p.trial_dias) { $('#teste').textContent = `${p.trial_dias} dias para testar, sem cartão`; $('#teste').classList.remove('hidden'); }
     if (p.termos_url) $('#termos').href = p.termos_url; else $('#termos').replaceWith(document.createTextNode('termos de uso'));
   } catch { $('#termos').replaceWith(document.createTextNode('termos de uso')); }
