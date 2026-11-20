@@ -722,6 +722,8 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req(null, 'GET', '/midiaut'); ok(/href="\/blog"/.test(r.corpo.raw), 'a página inicial linka o blog');
     ok(/<link rel="canonical" href="http:\/\/[^"]+\/midiaut">/.test(r.corpo.raw) && /property="og:image" content="http:\/\//.test(r.corpo.raw) && !/\{\{BASE\}\}/.test(r.corpo.raw), 'página de vendas com canonical e imagem social absolutos');
     ok(/"@type":"FAQPage"/.test(r.corpo.raw) && /"@type":"Question"/.test(r.corpo.raw) && /"name":"Grátis"/.test(r.corpo.raw), 'dados estruturados: FAQ e plano Grátis');
+    r = await req(null, 'GET', '/'); ok(r.status === 200 && /Gestão de Tráfego Pago com IA/.test(r.corpo.raw), 'a raiz do site é a página de vendas');
+    r = await req(null, 'GET', '/?convite=abc'); ok(r.status === 200 && /id="conviteForm"/.test(r.corpo.raw), 'link de convite continua abrindo o painel');
     r = await req(null, 'GET', '/assinar'); ok(r.status === 301, 'endereços antigos redirecionam para /midiaut (sem conteúdo duplicado)');
     r = await req(null, 'GET', '/sitemap.xml'); ok(/<loc>[^<]+\/midiaut<\/loc><lastmod>\d{4}-\d\d-\d\d/.test(r.corpo.raw), 'sitemap traz a data da página de vendas');
     r = await req('adm', 'DELETE', `/api/site/posts/${post.id}`); ok(r.status === 200, 'exclui o artigo');
