@@ -424,6 +424,19 @@ CREATE TABLE IF NOT EXISTS site_posts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS saas_midias (
+  id SERIAL PRIMARY KEY,
+  conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
+  cliente_id INT NOT NULL REFERENCES saas_clientes(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL DEFAULT '',
+  mime TEXT NOT NULL,
+  tamanho INT NOT NULL,
+  largura INT,
+  altura INT,
+  dados BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_midias_cliente ON saas_midias (cliente_id, id DESC);
 CREATE TABLE IF NOT EXISTS saas_eventos (
   id SERIAL PRIMARY KEY,
   conta_id INT REFERENCES saas_contas(id) ON DELETE CASCADE,
