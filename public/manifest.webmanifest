@@ -1,0 +1,16 @@
+{
+  "name": "MidIAut · Tráfego em piloto automático",
+  "short_name": "MidIAut",
+  "description": "Crie e acompanhe campanhas no Meta Ads e no Google Ads com IA.",
+  "lang": "pt-BR",
+  "start_url": "/assinante?origem=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#17191D",
+  "theme_color": "#17191D",
+  "icons": [
+    { "src": "/brand/midiaut/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/midiaut/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/midiaut/icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

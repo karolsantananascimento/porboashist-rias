@@ -723,6 +723,13 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     }
     r = await req(null, 'GET', '/blog'); ok(r.status === 200 && /Como criar anúncios no Instagram/.test(r.corpo.raw), 'lista do blog mostra o artigo');
     r = await req(null, 'GET', '/sitemap.xml'); ok(/\/blog\/como-criar-anuncios-no-instagram/.test(r.corpo.raw) && /\/midiaut/.test(r.corpo.raw), 'sitemap inclui o artigo');
+    console.log('App instalável (PWA)');
+    r = await req(null, 'GET', '/manifest.webmanifest');
+    ok(r.status === 200 && r.corpo.display === 'standalone' && r.corpo.icons.length === 3 && r.corpo.start_url.startsWith('/assinante'), 'manifesto do app');
+    for (const ic of r.corpo.icons) { const x = await req(null, 'GET', ic.src); ok(x.status === 200, `ícone ${ic.src} existe`); }
+    r = await req(null, 'GET', '/sw.js'); ok(r.status === 200 && /\/api\//.test(r.corpo.raw), 'service worker não guarda chamadas da API');
+    r = await req(null, 'GET', '/offline.html'); ok(r.status === 200, 'tela sem internet');
+    for (const pg of ['/assinante', '/entrar', '/']) { r = await req(null, 'GET', pg); ok(/rel="manifest"/.test(r.corpo.raw || '') && /\/pwa\.js/.test(r.corpo.raw || ''), `${pg} liga o manifesto e o pwa.js`); }
     r = await req(null, 'GET', '/robots.txt'); ok(/Sitemap:/.test(r.corpo.raw) && /Disallow: \/api\//.test(r.corpo.raw), 'robots.txt aponta o sitemap');
     r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Outro título', resumo: 'x', corpo: 'y', slug: 'mudou' });
     ok(r.corpo.post.slug === post.slug, 'endereço publicado não muda');
