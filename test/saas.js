@@ -43,7 +43,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     env: {
       ...process.env, PORT: String(PORTA), DATABASE_URL: `${BASE}/${DB}`, NODE_ENV: 'test', MOCK_LOG: LOG,
       NODE_OPTIONS: `--require ${path.join(__dirname, 'saas-mock.js')}`,
-      ACESSOS_KEY: Buffer.alloc(32, 9).toString('base64'), SESSION_SECRET: 'segredo-de-teste', ADMIN_EMAIL: 'admin@exemplo.com', ADMIN_PASSWORD: 'senhaadmin123',
+      ACESSOS_KEY: Buffer.alloc(32, 9).toString('base64'), SESSION_SECRET: 'segredo-de-teste', ADMIN_EMAIL: 'admin@exemplo.com', SUPER_ADMIN_EMAIL: 'admin@exemplo.com', ADMIN_PASSWORD: 'senhaadmin123',
       ANTHROPIC_API_KEY: 'chave-claude-admin', META_ADS_TOKEN: TOKEN_ADMIN, META_AD_ACCOUNT_ID: 'act_999', META_PAGE_ID: '999',
       STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_PRICE_ID: 'price_x', STRIPE_WEBHOOK_SECRET: WH, SAAS_IA_MES: '3', SAAS_CADASTROS_HORA: '100', SAAS_PRECO_TEXTO: 'R$ 97/mês',
     },
@@ -107,6 +107,24 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(r.status === 400, 'não dá para promover um assinante a admin pela tela da equipe');
     r = await req('adm', 'DELETE', `/api/users/${ub.id}`);
     ok(r.status === 400, 'não dá para excluir assinante pela tela da equipe');
+    // ---- administrador absoluto ----
+    r = await req('adm', 'POST', '/api/users', { email: 'segundo@exemplo.com', nome: 'Segundo', papel: 'admin' });
+    ok(r.status === 200 && r.corpo.usuario.papel === 'admin', 'o administrador absoluto cria outro administrador');
+    const tokSeg = decodeURIComponent((/convite=([^&\s]+)/.exec(r.corpo.link) || [])[1] || ''); const idSeg = r.corpo.usuario.id;
+    r = await req('seg', 'POST', '/api/convite', { token: tokSeg, senha: 'senhasegundo123', nome: 'Segundo' }); ok(r.status === 200, 'segundo administrador define a senha');
+    r = await req('adm', 'POST', '/api/users', { email: 'membro1@exemplo.com', nome: 'Membro', papel: 'membro' });
+    const idMem = r.corpo.usuario.id; ok(r.status === 200, 'cria membro da equipe');
+    r = await req('seg', 'POST', '/api/users', { email: 'outro@exemplo.com', papel: 'admin' }); ok(r.status === 403 && /absoluto/.test(r.corpo.erro), 'outro administrador não cria administrador');
+    r = await req('seg', 'PUT', `/api/users/${idMem}`, { papel: 'admin' }); ok(r.status === 403, 'outro administrador não promove ninguém');
+    r = await req('seg', 'POST', '/api/users', { email: 'membro2@exemplo.com', papel: 'membro' }); ok(r.status === 200, 'outro administrador ainda cria membros');
+    r = await req('seg', 'PUT', `/api/users/${idMem}`, { nome: 'Membro Renomeado' }); ok(r.status === 200, 'outro administrador ainda edita membros');
+    const { rows: [sup] } = await db.query(`SELECT id FROM users WHERE email='admin@exemplo.com'`);
+    r = await req('seg', 'PUT', `/api/users/${sup.id}`, { papel: 'membro' }); ok(r.status === 403, 'ninguém rebaixa o administrador absoluto');
+    r = await req('seg', 'PUT', `/api/users/${sup.id}`, { ativo: false }); ok(r.status === 403, 'ninguém desativa o administrador absoluto');
+    r = await req('seg', 'DELETE', `/api/users/${sup.id}`); ok(r.status === 403, 'ninguém exclui o administrador absoluto');
+    r = await req('adm', 'PUT', `/api/users/${sup.id}`, { papel: 'membro' }); ok(r.status === 403, 'nem o próprio administrador absoluto se rebaixa');
+    r = await req('seg', 'DELETE', `/api/users/${idSeg}`); ok(r.status === 400, 'não exclui a si mesmo');
+    r = await req('adm', 'PUT', `/api/users/${idSeg}`, { papel: 'membro' }); ok(r.status === 200, 'o administrador absoluto rebaixa outro administrador');
     r = await req('adm', 'GET', '/api/saas/chaves');
     ok(r.status === 403, 'rotas do assinante não abrem para o administrador');
     r = await req('adm', 'GET', '/api/saas/admin/assinantes');
