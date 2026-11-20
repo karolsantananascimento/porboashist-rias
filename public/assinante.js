@@ -691,10 +691,11 @@ async function viewAssinatura(v) {
   await carregarEu();
   const c = S.eu.conta; const sit = c.situacao;
   const pagaCartao = c.status === 'ativa' && c.tem_assinatura;
+  const planos = S.eu.planos || []; const precoAtual = (planos.find((x) => x.id === c.plano)?.preco || 0) + (c.bi ? S.eu.bi_preco || 0 : 0);
   let pixPend = []; try { pixPend = (await api('/api/saas/pix/pedidos')).pedidos.filter((x) => x.status === 'informado'); } catch { /* sem a lista, só não mostra o aviso */ }
   secao(v, `<div class="view-head"><div><h2>Assinatura</h2><p>${esc(sit.texto)}</p></div></div>
     <div class="card"><h3>Mensalidade</h3>
-      <p style="font-size:24px;margin:8px 0">${esc(S.eu.preco || 'Consulte o valor')}</p>
+      <p style="font-size:24px;margin:8px 0">${esc(S.eu.preco || '') || `${brl(precoAtual)}<small class="muted" style="font-size:14px"> / mês · plano ${esc(c.plano_nome)}${c.bi ? ' + BI' : ''}</small>`}</p>
       ${sit.codigo === 'trial' ? `<p class="muted">Seu período de teste vai até ${dataBr(c.trial_ate)}.</p>` : ''}
       ${c.periodo_fim && c.tem_assinatura ? `<p class="muted">Período atual até ${dataBr(c.periodo_fim)}.</p>` : ''}
       <p class="muted">No cartão, os dados são digitados na página segura do Stripe e este sistema não os guarda. No Pix, você paga por QR Code e a liberação é conferida manualmente.</p>
@@ -704,6 +705,16 @@ async function viewAssinatura(v) {
         ${S.eu.cobranca && c.tem_assinatura ? '<button class="btn" id="bPortal">Gerenciar pagamento (cartão, faturas, cancelar)</button>' : ''}
         ${!S.eu.cobranca ? '<span class="muted">Cartão ainda não disponível. Use o Pix.</span>' : ''}</div>
       ${pixPend.length ? `<div class="sa-pend" style="margin-top:12px">Pagamento por Pix em conferência: ${pixPend.map((x) => `${x.tipo === 'mensalidade' ? 'mensalidade' : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`} (${brl(x.valor)})`).join(' · ')}. Assim que for conferido no banco, é liberado.</div>` : ''}</div>
+    <div class="card"><h3>Planos</h3>
+      <p class="muted" style="margin:4px 0 12px">Assinatura mensal, sem fidelidade. O plano muda conforme o número de clientes que você atende. Para trocar de plano, fale com o suporte.</p>
+      <div class="planos-app">${planos.map((p) => `<article class="plano-app ${p.id === c.plano ? 'atual' : ''}">
+        ${p.id === c.plano ? '<span class="plano-tag">Seu plano</span>' : ''}
+        <h4>${esc(p.nome)}</h4><p class="plano-valor">${brl(p.preco)}<small>/mês</small></p>
+        <p class="muted">${p.clientes === 1 ? '1 cliente' : `Até ${p.clientes} clientes`} · ${p.campanhas} campanhas novas por mês</p>
+        <ul>${p.acoes.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></article>`).join('')}</div>
+      <div class="plano-extras">
+        <div><b>Pacote BI + relatórios</b> <span class="muted">+ ${brl(S.eu.bi_preco || 0)}/mês</span><br><span class="muted">Adicional que pode ser incluído em qualquer plano${c.bi ? ' (já incluído no seu)' : ''}.</span></div>
+        <div><b>Campanha avulsa</b> <span class="muted">${brl(S.eu.preco_avulsa || 0)} cada</span><br><span class="muted">Para criar além do limite do mês. Não vence e pode ser paga no cartão ou no Pix.</span></div></div></div>
     <div class="card"><h3>Seus dados</h3>
       <div class="sa-linha" style="margin-top:8px"><input id="empresa" value="${esc(c.empresa || '')}" placeholder="Empresa ou marca"><button class="btn" id="bEmpresa">Salvar</button></div>
       <p class="muted" style="margin-top:12px">E-mail: ${esc(c.email)}</p></div>
