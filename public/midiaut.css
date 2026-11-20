@@ -230,3 +230,4 @@ form > .dica { margin: 0; }
 @media (max-width: 560px) { .topo-links { gap: 10px; } .topo-links .voltar { display: none; } }
 button.entrar { background: none; border: 0; cursor: pointer; font-family: inherit; }
 [data-instalar][hidden] { display: none !important; }
+html, body { overflow-x: clip; max-width: 100%; }
