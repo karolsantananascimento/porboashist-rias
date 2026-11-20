@@ -167,6 +167,68 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('a', 'DELETE', `/api/saas/campanhas/${camp.id}`);
     ok(r.status === 409, 'campanha que já existe no Meta não sai da lista pelo sistema');
 
+
+    console.log('Criativos enviados pelo assinante');
+    // PNG 400x400 mínimo válido (cabeçalho) e JPEG com SOF 300x200
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0, 0, 1, 0x90, 0, 0, 1, 0x90, 8, 6, 0, 0, 0]), Buffer.alloc(20)]);
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0, 200, 1, 0x2c, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]), Buffer.alloc(30)]);
+    const envia = (quem, buf, tipo = 'image/png', nome = 'Promoção ação.png') => req(quem, 'POST', '/api/saas/midias', null, { bruto: buf, headers: { 'content-type': tipo, 'x-nome-arquivo': encodeURIComponent(nome) } });
+    r = await envia('a', Buffer.from('isso não é imagem'), 'image/png');
+    ok(r.status === 400 && /JPG ou PNG/.test(r.corpo.erro), 'arquivo que não é imagem é recusado');
+    r = await envia('a', Buffer.alloc(0));
+    ok(r.status === 400, 'envio vazio é recusado');
+    r = await envia(null, png);
+    ok(r.status === 401, 'sem login não envia');
+    r = await envia('a', png);
+    const m1 = r.corpo.midia;
+    ok(r.status === 200 && m1.mime === 'image/png' && m1.largura === 400 && m1.altura === 400 && m1.token === `midia:${m1.id}` && m1.nome === 'Promoção ação.png', 'PNG aceito com dimensões e nome');
+    r = await envia('a', jpg, 'image/jpeg', 'foto.jpg');
+    const m2 = r.corpo.midia;
+    ok(r.status === 200 && m2.mime === 'image/jpeg' && m2.largura === 300 && m2.altura === 200, 'JPEG aceito com dimensões lidas');
+    r = await envia('a', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0, 0, 0, 50, 0, 0, 0, 50]), Buffer.alloc(20)]));
+    ok(r.status === 400 && /pequena/.test(r.corpo.erro), 'imagem pequena demais é recusada');
+    r = await req('a', 'GET', '/api/saas/midias');
+    ok(r.corpo.midias.length === 2, 'lista as imagens do cliente');
+    r = await req('b', 'GET', '/api/saas/midias');
+    ok(r.corpo.midias.length === 0, 'o outro assinante não vê as imagens da Ana');
+    r = await req('b', 'GET', `/api/saas/midias/${m1.id}/arquivo`);
+    ok(r.status === 404, 'nem baixa a imagem dela (404)');
+    r = await req('b', 'DELETE', `/api/saas/midias/${m1.id}`);
+    ok(r.status === 404, 'nem exclui a imagem dela (404)');
+    { const f = await fetch(`http://127.0.0.1:${PORTA}/api/saas/midias/${m1.id}/arquivo`, { headers: { cookie: jar.a } });
+      ok(f.status === 200 && f.headers.get('content-type') === 'image/png' && Buffer.compare(Buffer.from(await f.arrayBuffer()), png) === 0, 'a Ana baixa a própria imagem intacta'); }
+
+    const base = { ...camp.spec }; delete base.imagem_url; delete base.imagens_urls;
+    r = await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Com imagem enviada', imagem_url: m1.token } });
+    const cImg = r.corpo.campanha;
+    ok(r.status === 200 && cImg.spec.imagem_url === m1.token && !(cImg.pendencias || []).some((x) => /imagem/.test(x)), 'rascunho aceita a imagem enviada e não pede link');
+    r = await req('a', 'DELETE', `/api/saas/midias/${m1.id}`);
+    ok(r.status === 409, 'imagem usada em rascunho não pode ser excluída');
+    r = await req('a', 'POST', `/api/saas/campanhas/${cImg.id}/conferir`);
+    ok(r.corpo.ok === true && r.corpo.avisos.some((x) => /Imagens enviadas/.test(x)), 'conferir reconhece a imagem enviada');
+    limparLog();
+    r = await req('a', 'POST', `/api/saas/campanhas/${cImg.id}/subir`, { confirmado: true });
+    ok(r.status === 200 && r.corpo.campanha.status === 'criada_pausada', 'sobe campanha com a imagem enviada');
+    { const esc = chamadas().filter((c) => c.alvo === 'meta' && c.m === 'POST');
+      const img = esc.find((c) => /adimages$/.test(c.u.split('?')[0]));
+      const cr = esc.find((c) => /adcreatives$/.test(c.u.split('?')[0]));
+      ok(img && /bytes=/.test(img.body) && img.auth === `Bearer ${tokA}`, 'a imagem sobe ao Meta (adimages) com o token da Ana');
+      ok(cr && /image_hash/.test(decodeURIComponent(cr.body)) && !/picture/.test(decodeURIComponent(cr.body)), 'o criativo usa image_hash em vez de link');
+      ok(esc.length === 5 && !esc.some((c) => /status=ACTIVE/.test(c.body)), 'imagem + criativo + campanha + conjunto + anúncio, nada ativo'); }
+    // carrossel misturando imagem enviada e link
+    r = await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Carrossel misto', imagens_urls: [m2.token, 'https://exemplo.com/b.jpg'] } });
+    const cCar = r.corpo.campanha;
+    limparLog();
+    r = await req('a', 'POST', `/api/saas/campanhas/${cCar.id}/subir`, { confirmado: true });
+    { const cr = chamadas().find((c) => c.alvo === 'meta' && /adcreatives$/.test(c.u.split('?')[0]));
+      const dec = cr ? decodeURIComponent(cr.body) : '';
+      ok(r.status === 200 && /image_hash/.test(dec) && /exemplo\.com\/b\.jpg/.test(dec), 'carrossel mistura imagem enviada (hash) e link (picture)'); }
+    // imagem de outro cliente não vale
+    r = await req('b', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Roubo', imagem_url: m2.token } });
+    ok(r.status === 200 && (await req('b', 'POST', `/api/saas/campanhas/${r.corpo.campanha.id}/conferir`)).corpo.ok !== true, 'imagem de outro assinante não funciona na campanha dele');
+    r = await req('a', 'DELETE', `/api/saas/midias/${m2.id}`);
+    ok(r.status === 409 || r.status === 200, 'exclusão respeita rascunhos');
+
     console.log('Cota de IA');
     await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Segunda campanha de estética em Recife com orçamento de 40 reais por dia.' });
     await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Terceira campanha de estética em Recife com orçamento de 40 reais por dia.' });

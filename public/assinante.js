@@ -6,7 +6,7 @@ const raiz = $('#raiz');
 const S = { eu: null, aba: 'inicio', pub: null, chaves: null, campanhas: [], testes: {}, aberta: null, cliente: null };
 // Cliente selecionado (planos com vários clientes): lembrado neste navegador e enviado em todas as chamadas
 try { S.cliente = localStorage.getItem('pbh_cliente') || null; } catch { /* sem armazenamento: usa o principal */ }
-const lembrarCliente = (id) => { S.cliente = id ? String(id) : null; try { if (id) localStorage.setItem('pbh_cliente', String(id)); else localStorage.removeItem('pbh_cliente'); } catch { /* ok */ } };
+const lembrarCliente = (id) => { S.midias = null; S.cliente = id ? String(id) : null; try { if (id) localStorage.setItem('pbh_cliente', String(id)); else localStorage.removeItem('pbh_cliente'); } catch { /* ok */ } };
 
 async function api(caminho, opts = {}) {
   const r = await fetch(caminho, {
@@ -278,29 +278,49 @@ function abrirEditor(id) {
   const lst = (a) => (a || []).join('\n');
   const dt = (x) => (x ? String(x).slice(0, 16) : '');
   const opt = (obj, atual) => Object.entries(obj).map(([k, n]) => `<option value="${k}" ${atual === k ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  // imagens do anúncio: arquivos enviados ("midia:ID") e/ou links https; 1 = imagem única, 2 a 10 = carrossel
+  let imgs = (s.imagens_urls || []).length ? [...s.imagens_urls] : (s.imagem_url ? [s.imagem_url] : []);
+  const cont = (id, max, v) => `<span class="ed-cont" data-de="${id}" data-max="${max}">${String(v || '').length}/${max}</span>`;
   modal(`<div class="modal-head"><h3>${esc(s.nome || 'Nova campanha')}</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
     <div class="modal-body">
       ${c.pendencias?.length ? `<div class="sa-pend"><b>Falta confirmar:</b><ul>${c.pendencias.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
       ${c.erro ? `<div class="sa-res ruim">${esc(c.erro)}</div>` : ''}
-      <div class="row"><div><label>Nome da campanha</label><input id="e_nome" value="${esc(s.nome)}" ${dis}></div>
-        <div><label>Objetivo</label><select id="e_obj" ${dis}><option value="">Escolha</option>${opt(OBJ_ROT, s.objetivo)}</select></div>
-        <div><label>Orçamento por dia (R$)</label><input id="e_orc" inputmode="decimal" value="${esc(s.orcamento_diario_brl ?? '')}" ${dis}></div></div>
-      <div><label>Texto principal do anúncio</label><textarea id="e_texto" rows="4" ${dis}>${esc(s.texto_principal)}</textarea></div>
-      <div class="row"><div><label>Título (opcional)</label><input id="e_tit" maxlength="60" value="${esc(s.titulo)}" ${dis}></div>
-        <div><label>Descrição (opcional)</label><input id="e_desc" maxlength="60" value="${esc(s.descricao)}" ${dis}></div>
-        <div><label>Botão</label><select id="e_cta" ${dis}><option value="">Padrão</option>${opt(Object.fromEntries(CTAS.map((k) => [k, CTA_ROT[k]])), s.cta)}</select></div></div>
-      <div class="row"><div><label>Para onde leva o clique</label><select id="e_dest" ${dis}><option value="">Automático</option>${opt(DEST_ROT, s.destino)}</select></div>
-        <div><label>Link de destino (https)</label><input id="e_url" value="${esc(s.url_destino)}" ${dis}></div></div>
-      <div class="row"><div><label>Imagem (link https, JPG/PNG)</label><input id="e_img" value="${esc(s.imagem_url)}" ${dis}></div>
-        <div><label>Carrossel: 2 a 10 imagens (uma por linha)</label><textarea id="e_imgs" rows="2" ${dis}>${esc(lst(s.imagens_urls))}</textarea></div></div>
-      <div class="row"><div><label>Cidades ou estados (um por linha)</label><textarea id="e_loc" rows="3" placeholder="Recife&#10;João Pessoa, Paraíba" ${dis}>${esc(lst(s.localizacoes))}</textarea><div class="dica">Cidades usam o raio abaixo; estados valem inteiros.</div></div>
-        <div><label>Interesses (um por linha)</label><textarea id="e_int" rows="3" ${dis}>${esc(lst(s.interesses))}</textarea></div></div>
-      <div class="row"><div><label>Raio das cidades (km, 17 a 80)</label><input id="e_raio" inputmode="numeric" value="${esc(s.raio_km ?? '')}" ${dis}></div>
-        <div><label>Idade mínima</label><input id="e_imin" inputmode="numeric" value="${esc(s.idade_min ?? '')}" ${dis}></div>
-        <div><label>Idade máxima</label><input id="e_imax" inputmode="numeric" value="${esc(s.idade_max ?? '')}" ${dis}></div>
-        <div><label>Gênero</label><select id="e_gen" ${dis}><option value="">Todos</option><option value="feminino" ${s.genero === 'feminino' ? 'selected' : ''}>Feminino</option><option value="masculino" ${s.genero === 'masculino' ? 'selected' : ''}>Masculino</option></select></div></div>
-      <div class="row"><div><label>Início (opcional)</label><input id="e_ini" type="datetime-local" value="${esc(dt(s.inicio))}" ${dis}></div>
-        <div><label>Término (opcional)</label><input id="e_fim" type="datetime-local" value="${esc(dt(s.termina_em))}" ${dis}></div></div>
+      <section class="ed-sec"><h4><span>1</span> Campanha</h4>
+        <div class="row"><div><label>Nome da campanha</label><input id="e_nome" placeholder="Ex.: Clínica · Avaliação gratuita · Recife" value="${esc(s.nome)}" ${dis}></div>
+          <div><label>Objetivo</label><select id="e_obj" ${dis}><option value="">Escolha</option>${opt(OBJ_ROT, s.objetivo)}</select><div class="dica" id="dObj"></div></div>
+          <div><label>Orçamento por dia (R$)</label><input id="e_orc" inputmode="decimal" placeholder="40" value="${esc(s.orcamento_diario_brl ?? '')}" ${dis}><div class="dica" id="dOrc"></div></div></div>
+        <div class="row"><div><label>Para onde leva o clique</label><select id="e_dest" ${dis}><option value="">Automático</option>${opt(DEST_ROT, s.destino)}</select></div>
+          <div id="boxUrl"><label>Link de destino (https)</label><input id="e_url" placeholder="https://seusite.com.br/agendar" value="${esc(s.url_destino)}" ${dis}></div></div>
+      </section>
+      <section class="ed-sec"><h4><span>2</span> Criativo</h4>
+        <div class="ed-criativo">
+          <div class="ed-cform">
+            <label>Imagens do anúncio <span class="dica">JPG ou PNG, até 8 MB cada. 1 imagem = anúncio simples; 2 a 10 = carrossel.</span></label>
+            ${editavel ? `<div class="ed-drop" id="drop" tabindex="0" role="button" aria-label="Enviar imagens"><b>Arraste as imagens aqui</b> ou <u>escolha no computador</u><br><small>Formato ideal: 1080×1080 (quadrado) ou 1080×1350 (vertical)</small><input type="file" id="arq" accept="image/jpeg,image/png" multiple hidden></div>` : ''}
+            <div class="ed-bandeja" id="bandeja"></div>
+            ${editavel ? `<details class="ed-link"><summary>Ou usar a imagem de um link</summary><div class="ed-linha"><input id="e_link" placeholder="https://…/imagem.jpg"><button class="btn small" type="button" id="bLink">Adicionar</button></div></details>
+            <details class="ed-link" id="detBib"><summary>Escolher entre imagens já enviadas</summary><div class="ed-bib" id="bib"><span class="dica">Carregando…</span></div></details>` : ''}
+            <div class="row"><div><label>Texto principal ${cont('e_texto', 2000, s.texto_principal)}</label><textarea id="e_texto" rows="4" maxlength="2000" placeholder="O que a pessoa vai ler acima da imagem" ${dis}>${esc(s.texto_principal)}</textarea></div></div>
+            <div class="row"><div><label>Título ${cont('e_tit', 60, s.titulo)}</label><input id="e_tit" maxlength="60" value="${esc(s.titulo)}" ${dis}></div>
+              <div><label>Descrição ${cont('e_desc', 60, s.descricao)}</label><input id="e_desc" maxlength="60" value="${esc(s.descricao)}" ${dis}></div>
+              <div><label>Botão</label><select id="e_cta" ${dis}><option value="">Padrão (Saiba mais)</option>${opt(Object.fromEntries(CTAS.map((k) => [k, CTA_ROT[k]])), s.cta)}</select></div></div>
+          </div>
+          <aside class="ed-prev" aria-label="Prévia do anúncio"><div class="ed-prev-t">Prévia</div><div class="ed-ad"><div class="ed-ad-top"><i></i><b>Sua página</b><small>Patrocinado</small></div>
+            <p id="pvTexto"></p><div class="ed-ad-img" id="pvImg"></div><div class="ed-ad-base"><div><small id="pvDesc"></small><b id="pvTit"></b></div><span id="pvCta"></span></div></div></aside>
+        </div>
+      </section>
+      <section class="ed-sec"><h4><span>3</span> Público</h4>
+        <div class="row"><div><label>Cidades ou estados (um por linha)</label><textarea id="e_loc" rows="3" placeholder="Recife&#10;João Pessoa, Paraíba" ${dis}>${esc(lst(s.localizacoes))}</textarea><div class="dica">Cidades usam o raio abaixo; estados valem inteiros.</div></div>
+          <div><label>Interesses (um por linha)</label><textarea id="e_int" rows="3" placeholder="Estética facial&#10;Skincare" ${dis}>${esc(lst(s.interesses))}</textarea></div></div>
+        <div class="row"><div><label>Raio das cidades (km, 17 a 80)</label><input id="e_raio" inputmode="numeric" value="${esc(s.raio_km ?? '')}" ${dis}></div>
+          <div><label>Idade mínima</label><input id="e_imin" inputmode="numeric" value="${esc(s.idade_min ?? '')}" ${dis}></div>
+          <div><label>Idade máxima</label><input id="e_imax" inputmode="numeric" value="${esc(s.idade_max ?? '')}" ${dis}></div>
+          <div><label>Gênero</label><select id="e_gen" ${dis}><option value="">Todos</option><option value="feminino" ${s.genero === 'feminino' ? 'selected' : ''}>Feminino</option><option value="masculino" ${s.genero === 'masculino' ? 'selected' : ''}>Masculino</option></select></div></div>
+      </section>
+      <section class="ed-sec"><h4><span>4</span> Agenda <small>(opcional)</small></h4>
+        <div class="row"><div><label>Início</label><input id="e_ini" type="datetime-local" value="${esc(dt(s.inicio))}" ${dis}></div>
+          <div><label>Término</label><input id="e_fim" type="datetime-local" value="${esc(dt(s.termina_em))}" ${dis}></div></div>
+      </section>
       <div id="resConferir"></div>
       ${c.ids?.campanha_id ? `<p class="muted">Criada no Meta: campanha ${esc(c.ids.campanha_id)}. Confira também no Gerenciador de Anúncios.</p>` : ''}
     </div>
@@ -309,12 +329,91 @@ function abrirEditor(id) {
       ${c.status === 'criada_pausada' ? '<button class="btn primary" id="bAtivar">Ativar (começa a gastar)</button>' : ''}
       ${c.status === 'ativada' ? '<button class="btn" id="bPausar">Pausar</button>' : ''}</div>
       ${editavel ? '<button class="btn ghost danger" id="bExcluir">Excluir rascunho</button>' : ''}</div>`);
+  $('.sa-modal-box').classList.add('largo');
+
+  // ----- imagens: miniaturas, envio, ordem -----
+  const urlsBlob = {}; // token -> blob: (a rota exige o cabeçalho do cliente, então <img src> direto não serve)
+  const srcDe = async (t) => {
+    if (!/^midia:\d+$/.test(t)) return t;
+    if (urlsBlob[t]) return urlsBlob[t];
+    try { const r = await fetch(`/api/saas/midias/${t.slice(6)}/arquivo`, { headers: S.cliente ? { 'x-cliente': S.cliente } : {} }); if (!r.ok) return ''; return (urlsBlob[t] = URL.createObjectURL(await r.blob())); } catch { return ''; }
+  };
+  const pintarBandeja = async () => {
+    const b = $('#bandeja'); if (!b) return;
+    b.innerHTML = imgs.map((t, k) => `<div class="ed-mini" data-k="${k}"><img alt="Imagem ${k + 1}" data-t="${esc(t)}"><span class="ed-n">${k + 1}</span>${editavel ? `<div class="ed-mini-acoes"><button type="button" data-mv="-1" title="Mover para trás" ${k === 0 ? 'disabled' : ''}>‹</button><button type="button" data-mv="1" title="Mover para frente" ${k === imgs.length - 1 ? 'disabled' : ''}>›</button><button type="button" data-rm title="Remover do anúncio">×</button></div>` : ''}</div>`).join('')
+      + (imgs.length ? `<div class="ed-tipo">${imgs.length === 1 ? 'Anúncio com 1 imagem' : `Carrossel de ${imgs.length} imagens`}${imgs.length > 10 ? ' · máximo 10' : ''}</div>` : '<div class="dica">Nenhuma imagem ainda.</div>');
+    for (const im of b.querySelectorAll('img')) srcDe(im.dataset.t).then((u) => { if (u) im.src = u; else im.replaceWith(Object.assign(document.createElement('div'), { className: 'ed-quebrada', textContent: 'Imagem indisponível' })); });
+    b.querySelectorAll('.ed-mini').forEach((m) => {
+      const k = Number(m.dataset.k);
+      m.querySelectorAll('[data-mv]').forEach((x) => x.addEventListener('click', () => { const d = Number(x.dataset.mv); [imgs[k], imgs[k + d]] = [imgs[k + d], imgs[k]]; pintarBandeja(); }));
+      const rm = m.querySelector('[data-rm]'); if (rm) rm.addEventListener('click', () => { imgs.splice(k, 1); pintarBandeja(); });
+    });
+    pintarPrevia();
+  };
+  const adicionarImg = (t) => { if (imgs.includes(t)) return aviso('Essa imagem já está no anúncio.', true); if (imgs.length >= 10) return aviso('O carrossel aceita no máximo 10 imagens.', true); imgs.push(t); };
+  const enviar = async (arquivos) => {
+    const drop = $('#drop'); drop.classList.add('enviando');
+    for (const f of arquivos) {
+      if (!/^image\/(jpeg|png)$/.test(f.type)) { aviso(`"${f.name}": só JPG ou PNG.`, true); continue; }
+      if (f.size > 8 * 1024 * 1024) { aviso(`"${f.name}" passa de 8 MB.`, true); continue; }
+      if (imgs.length >= 10) { aviso('O carrossel aceita no máximo 10 imagens.', true); break; }
+      try {
+        const r = await fetch('/api/saas/midias', { method: 'POST', headers: { 'content-type': f.type, 'x-nome-arquivo': encodeURIComponent(f.name), ...(S.cliente ? { 'x-cliente': S.cliente } : {}) }, body: f });
+        const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erro || `Erro ${r.status}`);
+        S.midias = null; adicionarImg(d.midia.token); urlsBlob[d.midia.token] = URL.createObjectURL(f); await pintarBandeja();
+      } catch (e) { aviso(`"${f.name}": ${e.message}`, true); }
+    }
+    drop.classList.remove('enviando');
+  };
+  const drop = $('#drop');
+  if (drop) {
+    const arq = $('#arq');
+    drop.addEventListener('click', () => arq.click());
+    drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); arq.click(); } });
+    arq.addEventListener('change', () => { enviar([...arq.files]); arq.value = ''; });
+    ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('sobre'); }));
+    ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('sobre'); }));
+    drop.addEventListener('drop', (e) => enviar([...(e.dataTransfer?.files || [])]));
+    $('#bLink').addEventListener('click', () => { const v = $('#e_link').value.trim(); if (!/^https:\/\/\S+$/i.test(v)) return aviso('Cole um link que comece com https://', true); adicionarImg(v); $('#e_link').value = ''; pintarBandeja(); });
+    $('#detBib').addEventListener('toggle', async (e) => {
+      if (!e.target.open) return;
+      try {
+        if (!S.midias) S.midias = (await api('/api/saas/midias')).midias;
+        const bib = $('#bib');
+        bib.innerHTML = S.midias.length ? S.midias.map((m) => `<button type="button" class="ed-bibi" data-t="${m.token}" title="${esc(m.nome)}"><img alt="${esc(m.nome)}" data-t="${m.token}"><small>${esc(m.nome)}</small></button>`).join('') : '<span class="dica">Você ainda não enviou imagens.</span>';
+        bib.querySelectorAll('img').forEach((im) => srcDe(im.dataset.t).then((u) => { if (u) im.src = u; }));
+        bib.querySelectorAll('.ed-bibi').forEach((x) => x.addEventListener('click', () => { adicionarImg(x.dataset.t); pintarBandeja(); }));
+      } catch (er) { falha(er); }
+    });
+  }
+
+  // ----- prévia, contadores e dicas -----
+  function pintarPrevia() {
+    const v = (id) => ($(id) ? $(id).value : '');
+    $('#pvTexto').textContent = v('#e_texto') || 'O texto do anúncio aparece aqui.';
+    $('#pvTit').textContent = v('#e_tit') || ''; $('#pvDesc').textContent = v('#e_desc') || '';
+    $('#pvCta').textContent = CTA_ROT[v('#e_cta')] || (v('#e_dest') && v('#e_dest') !== 'site' ? 'Enviar mensagem' : 'Saiba mais');
+    const pi = $('#pvImg'); pi.innerHTML = '';
+    if (!imgs.length) { pi.textContent = 'Sem imagem'; return; }
+    const im = document.createElement('img'); im.alt = ''; pi.appendChild(im); srcDe(imgs[0]).then((u) => { if (u) im.src = u; });
+    if (imgs.length > 1) { const t = document.createElement('span'); t.className = 'ed-ad-car'; t.textContent = `1/${imgs.length}`; pi.appendChild(t); }
+  }
+  const dicas = () => {
+    const ob = $('#e_obj').value, ds = $('#e_dest').value, orc = Number(String($('#e_orc').value).replace(',', '.'));
+    $('#dObj').textContent = { OUTCOME_TRAFFIC: 'Leva pessoas ao seu site ou WhatsApp.', OUTCOME_LEADS: 'Gera contatos (formulário, site com pixel ou WhatsApp).', OUTCOME_SALES: 'Vendas no site: exige o pixel do Meta.', OUTCOME_ENGAGEMENT: 'Curtidas, comentários ou conversas.', OUTCOME_AWARENESS: 'Alcance e lembrança de marca.' }[ob] || '';
+    $('#dOrc').textContent = orc > 0 ? `≈ ${brl(orc * 30)} por mês` : '';
+    const site = (ds === 'site') || (!ds && ob !== 'OUTCOME_ENGAGEMENT');
+    $('#boxUrl').style.display = site ? '' : 'none';
+  };
+  const contar = () => document.querySelectorAll('.ed-cont').forEach((el) => { const i = $('#' + el.dataset.de); const t = i.value.length; el.textContent = `${t}/${el.dataset.max}`; el.classList.toggle('alerta', t >= Number(el.dataset.max) * 0.95); });
+  ['#e_texto', '#e_tit', '#e_desc', '#e_cta', '#e_dest', '#e_obj', '#e_orc'].forEach((sel) => $(sel).addEventListener('input', () => { contar(); dicas(); pintarPrevia(); }));
+  dicas(); contar(); pintarBandeja();
   const n = (x) => (x === '' ? undefined : Number(String(x).replace(',', '.')));
   const linhas = (x) => x.split('\n').map((t) => t.trim()).filter(Boolean);
   const coletar = () => ({
     nome: $('#e_nome').value, objetivo: $('#e_obj').value, orcamento_diario_brl: n($('#e_orc').value), texto_principal: $('#e_texto').value,
     titulo: $('#e_tit').value, descricao: $('#e_desc').value, cta: $('#e_cta').value, destino: $('#e_dest').value, url_destino: $('#e_url').value,
-    imagem_url: $('#e_img').value, imagens_urls: linhas($('#e_imgs').value), localizacoes: linhas($('#e_loc').value), interesses: linhas($('#e_int').value),
+    imagem_url: imgs.length === 1 ? imgs[0] : '', imagens_urls: imgs.length > 1 ? imgs : [], localizacoes: linhas($('#e_loc').value), interesses: linhas($('#e_int').value),
     raio_km: n($('#e_raio').value), idade_min: n($('#e_imin').value), idade_max: n($('#e_imax').value), genero: $('#e_gen').value,
     inicio: $('#e_ini').value ? new Date($('#e_ini').value).toISOString() : '', termina_em: $('#e_fim').value ? new Date($('#e_fim').value).toISOString() : '',
   });

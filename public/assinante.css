@@ -94,3 +94,53 @@ a.sa-brand { color: inherit; text-decoration: none; }
 /* Modo suporte (administradora dentro da conta do assinante) */
 .sa-suporte { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: #1f1f1f; color: #fff; font-size: 13px; border-bottom: 3px solid #d3121f; }
 .sa-suporte .btn { background: #fff; color: #111; }
+
+/* ---- Editor de campanha: seções, criativos (envio de imagens) e prévia ---- */
+.sa-modal-box.largo { max-width: 980px; }
+.ed-sec { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; margin: 14px 0 0; background: var(--surface); }
+.ed-sec h4 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.ed-sec h4 span { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #17191D; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.ed-sec h4 small { color: var(--ink-3); font-weight: 500; }
+.ed-cont { float: right; font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.ed-cont.alerta { color: var(--warn); }
+.ed-criativo { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 18px; align-items: start; }
+.ed-drop { border: 2px dashed var(--line); border-radius: 12px; padding: 18px 12px; text-align: center; cursor: pointer; font-size: 13px; color: var(--ink-2); transition: border-color .15s, background .15s; margin-top: 6px; }
+.ed-drop:hover, .ed-drop:focus-visible, .ed-drop.sobre { border-color: var(--accent); background: rgba(182, 255, 69, .06); outline: none; }
+.ed-drop.enviando { opacity: .6; pointer-events: none; }
+.ed-drop small { color: var(--ink-3); }
+.ed-bandeja { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; align-items: flex-start; }
+.ed-mini { position: relative; width: 96px; height: 96px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
+.ed-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ed-n { position: absolute; top: 4px; left: 4px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 6px; }
+.ed-mini-acoes { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; gap: 2px; padding: 3px; background: linear-gradient(transparent, rgba(0, 0, 0, .75)); }
+.ed-mini-acoes button { border: 0; background: rgba(255, 255, 255, .18); color: #fff; width: 26px; height: 22px; border-radius: 6px; cursor: pointer; font-size: 14px; line-height: 1; }
+.ed-mini-acoes button:hover:not(:disabled) { background: var(--accent); color: #17191D; }
+.ed-mini-acoes button:disabled { opacity: .3; cursor: default; }
+.ed-quebrada { display: flex; align-items: center; justify-content: center; height: 100%; font-size: 11px; color: var(--ink-3); text-align: center; padding: 6px; }
+.ed-tipo { align-self: center; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.ed-link { margin: 6px 0; font-size: 13px; }
+.ed-link summary { cursor: pointer; color: var(--ink-2); }
+.ed-linha { display: flex; gap: 8px; margin-top: 6px; }
+.ed-linha input { flex: 1; }
+.ed-bib { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; max-height: 180px; overflow: auto; }
+.ed-bibi { width: 84px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 0; cursor: pointer; overflow: hidden; color: var(--ink-2); }
+.ed-bibi:hover { border-color: var(--accent); }
+.ed-bibi img { width: 84px; height: 64px; object-fit: cover; display: block; }
+.ed-bibi small { display: block; font-size: 10px; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-prev { position: sticky; top: 0; }
+.ed-prev-t { font-size: 12px; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.ed-ad { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 13px; }
+.ed-ad-top { display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px; }
+.ed-ad-top i { width: 30px; height: 30px; border-radius: 50%; background: var(--line); display: block; }
+.ed-ad-top b { font-size: 13px; }
+.ed-ad-top small { color: var(--ink-3); margin-left: auto; font-size: 11px; }
+.ed-ad p { margin: 4px 12px 8px; white-space: pre-wrap; max-height: 5.6em; overflow: hidden; color: var(--ink-2); }
+.ed-ad-img { position: relative; aspect-ratio: 1 / 1; background: var(--bg); display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 12px; }
+.ed-ad-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ed-ad-car { position: absolute; right: 8px; bottom: 8px; background: rgba(0, 0, 0, .65); color: #fff; border-radius: 999px; font-size: 11px; padding: 2px 8px; }
+.ed-ad-base { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; background: var(--surface); }
+.ed-ad-base div { flex: 1; min-width: 0; }
+.ed-ad-base small { display: block; color: var(--ink-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-ad-base b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-ad-base span { background: var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+@media (max-width: 820px) { .ed-criativo { grid-template-columns: 1fr; } .ed-prev { position: static; order: -1; max-width: 300px; } }

@@ -38,6 +38,9 @@ const CTAS = ['LEARN_MORE', 'SIGN_UP', 'SHOP_NOW', 'CONTACT_US', 'GET_QUOTE', 'S
 const DESTINO_ROTULO = { site: 'site', whatsapp: 'WhatsApp', post: 'engajamento no anúncio', messenger: 'Messenger', instagram_direct: 'Instagram Direct', instagram_facebook: 'Instagram e Facebook' };
 
 const httpsUrl = (u) => /^https:\/\/[^\s]+$/i.test(String(u || ''));
+// imagem enviada pelo assinante pela tela: guardada como "midia:<id>"
+const ehMidia = (u) => /^midia:\d+$/.test(String(u || ''));
+const imagemOk = (u) => httpsUrl(u) || ehMidia(u);
 const semAcento = (x) => String(x).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 const centavos = (brl) => String(Math.round(Number(brl) * 100));
 const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -209,7 +212,7 @@ function faltando(s, ctx = null) {
   if (!s.objetivo) f.push('objetivo');
   if (!(s.orcamento_diario_brl > 0)) f.push('orçamento diário');
   if (!s.texto_principal) f.push('texto principal do anúncio');
-  if (!(s.imagens_urls || []).length && !s.imagem_url) f.push('imagem do anúncio (link https)');
+  if (!(s.imagens_urls || []).length && !s.imagem_url) f.push('imagem do anúncio (envie um arquivo ou cole um link https)');
   if (!(s.localizacoes || []).length && !(s.paises || []).length) f.push('localização do público (cidades ou estados)');
   if (s.objetivo && destinoDe(s) === 'site' && !s.url_destino) f.push('link de destino');
   if (ctx && ctx.teto && s.orcamento_diario_brl > ctx.teto) f.push(`orçamento dentro do teto de R$ ${ctx.teto}`);
@@ -227,8 +230,8 @@ function validar(s, ctx) {
   const tipo = criativoDe(s);
   if (tipo === 'carrossel') {
     if (s.imagens_urls.length < 2 || s.imagens_urls.length > 10) return 'O carrossel precisa de 2 a 10 imagens.';
-    if (!s.imagens_urls.every(httpsUrl)) return 'Todas as imagens do carrossel precisam ser links https públicos (JPG/PNG).';
-  } else if (!httpsUrl(s.imagem_url)) return 'A imagem do anúncio precisa ser um link https público (JPG/PNG).';
+    if (!s.imagens_urls.every(imagemOk)) return 'Todas as imagens do carrossel precisam ser imagens enviadas ou links https públicos (JPG/PNG).';
+  } else if (!imagemOk(s.imagem_url)) return 'A imagem do anúncio precisa ser uma imagem enviada ou um link https público (JPG/PNG).';
   const dest = destinoDe(s);
   if (!DESTINOS.includes(dest)) return `Destino inválido. Use: ${DESTINOS.join(', ')}.`;
   const whats = dest === 'whatsapp', msg = !!MSG[dest], site = dest === 'site';
@@ -259,6 +262,9 @@ async function conferir(ctx, s) {
   const pg = await get(ctx, ctx.page, { fields: 'name' });
   avisos.push(`Página: ${pg.name || ctx.page}`, ctx.ig ? 'Instagram vinculado' : 'sem Instagram vinculado (só Facebook)', `Conta de anúncios: ${ctx.conta}`);
   const pub = await resolverPublico(ctx, s); if (pub.resumo.length) avisos.push(...pub.resumo);
+  const imgsConf = criativoDe(s) === 'carrossel' ? s.imagens_urls : [s.imagem_url];
+  for (const u of imgsConf.filter(ehMidia)) if (!ctx.carregarMidia || !(await ctx.carregarMidia(u.slice(6)))) throw erro('Uma das imagens enviadas não existe mais. Envie a imagem de novo no rascunho.');
+  if (imgsConf.some(ehMidia)) avisos.push(`Imagens enviadas por você: ${imgsConf.filter(ehMidia).length} (sobem direto para o Meta)`);
   const dest = destinoDe(s);
   if (MSG[dest]) avisos.push(`Mensagens: a página${dest !== 'messenger' ? ' e o Instagram' : ''} precisam aceitar conversas (fluxo ainda não validado em conta real)`);
   if (dest === 'whatsapp') avisos.push('WhatsApp: exige o número do WhatsApp Business conectado à página (fluxo ainda não validado em conta real)');
@@ -291,16 +297,29 @@ async function subirCampanha(ctx, s) {
   const geoLoc = await etapa('localização do público', () => resolverGeo(ctx, s));
   const pub = await etapa('segmentação por interesses e públicos', () => resolverPublico(ctx, s));
   // 2) Criativo ANTES da campanha: se o Meta recusar, nada fica pela metade na conta
-  const imgs = tipo === 'carrossel' ? s.imagens_urls : [s.imagem_url];
+  const imgsOrig = tipo === 'carrossel' ? s.imagens_urls : [s.imagem_url];
+  // imagens enviadas pelo assinante sobem para a biblioteca da conta (adimages) e viram image_hash
+  const imgs = [];
+  for (const u of imgsOrig) {
+    if (!ehMidia(u)) { imgs.push({ picture: u }); continue; }
+    imgs.push(await etapa('envio da imagem', async () => {
+      const m = ctx.carregarMidia ? await ctx.carregarMidia(u.slice(6)) : null;
+      if (!m) throw new Error('uma imagem enviada não foi encontrada; envie de novo no rascunho');
+      const r = await post(ctx, `${conta}/adimages`, { bytes: m.dados.toString('base64'), name: m.nome || 'imagem' });
+      const h = Object.values(r.images || {})[0]?.hash;
+      if (!h) throw new Error('o Meta não devolveu o código da imagem');
+      return { image_hash: h };
+    }));
+  }
   const linkPag = `https://www.facebook.com/${page}`;
   const link = whats ? 'https://api.whatsapp.com/send' : msg ? MSG_LINK : dest === 'post' ? linkPag : s.url_destino;
   const cta = whats ? { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } }
     : msg ? { type: msg.cta, value: { app_destination: msg.app } }
       : { type: dest === 'post' ? 'LEARN_MORE' : (s.cta || 'LEARN_MORE'), value: { link } };
   let spec;
-  if (tipo === 'imagem' && dest === 'post') spec = { page_id: page, photo_data: { caption: s.texto_principal, url: imgs[0] } };
-  else if (tipo === 'carrossel') spec = { page_id: page, link_data: { message: s.texto_principal, link, child_attachments: imgs.map((u) => ({ link, picture: u, ...(s.titulo ? { name: s.titulo } : {}), ...(s.descricao ? { description: s.descricao } : {}) })), multi_share_optimized: true, call_to_action: cta } };
-  else { const ld = { message: s.texto_principal, link, picture: imgs[0], call_to_action: cta }; if (s.titulo) ld.name = s.titulo; if (s.descricao) ld.description = s.descricao; spec = { page_id: page, link_data: ld }; }
+  if (tipo === 'imagem' && dest === 'post') spec = { page_id: page, photo_data: { caption: s.texto_principal, ...(imgs[0].image_hash ? { image_hash: imgs[0].image_hash } : { url: imgs[0].picture }) } };
+  else if (tipo === 'carrossel') spec = { page_id: page, link_data: { message: s.texto_principal, link, child_attachments: imgs.map((im) => ({ link, ...im, ...(s.titulo ? { name: s.titulo } : {}), ...(s.descricao ? { description: s.descricao } : {}) })), multi_share_optimized: true, call_to_action: cta } };
+  else { const ld = { message: s.texto_principal, link, ...imgs[0], call_to_action: cta }; if (s.titulo) ld.name = s.titulo; if (s.descricao) ld.description = s.descricao; spec = { page_id: page, link_data: ld }; }
   const criar = (sp) => post(ctx, `${conta}/adcreatives`, { name: `${s.nome} | Criativo`, object_story_spec: JSON.stringify(sp) });
   let igUsado = !!ig;
   const cri = await etapa('criativo', async () => {

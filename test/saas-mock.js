@@ -18,6 +18,7 @@ global.fetch = async (url, init = {}) => {
     log({ alvo: 'meta', m, u, auth, body });
     if (m === 'POST') {
       const fim = u.split('/').pop();
+      if (fim === 'adimages') return j({ images: { img: { hash: 'hash' + (global.__h = (global.__h || 0) + 1), url: 'https://scontent.example/x.jpg' } } });
       if (fim === 'adcreatives') return j({ id: 'cr1' });
       if (fim === 'campaigns') return j({ id: 'camp1' });
       if (fim === 'adsets') return j({ id: 'set1' });
