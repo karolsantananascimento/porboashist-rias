@@ -42,9 +42,9 @@ async function iniciar() {
   try { S.pub = await api('/api/saas/publico', { semSair: true }); } catch { S.pub = {}; }
   const s = await fetch('/api/sessao').then((r) => r.json()).catch(() => ({}));
   if (!s.autenticado) return entrada();
-  if (s.usuario.papel !== 'assinante' && s.usuario.papel !== 'admin') { location.href = '/'; return; }
+  if (s.usuario.papel !== 'assinante' && s.usuario.papel !== 'admin') { location.href = '/sistema'; return; }
   // Administradora só entra aqui em modo suporte (botão "Entrar na conta" em Assinantes); sem isso, volta ao sistema
-  try { await carregarEu(); } catch (e) { if (s.usuario.papel === 'admin') { location.href = '/'; return; } throw e; }
+  try { await carregarEu(); } catch (e) { if (s.usuario.papel === 'admin') { location.href = '/sistema'; return; } throw e; }
   const q = new URLSearchParams(location.search).get('assinatura');
   S.aba = abaDoEndereco() || S.aba;
   const av = new URLSearchParams(location.search).get('avulsas');
@@ -79,7 +79,7 @@ function render() {
     <main class="sa-main" id="conteudo"></main>`;
   raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
   const sel = $('#selCliente'); if (sel) sel.addEventListener('change', () => trocarCliente(sel.value));
-  const ss = $('#sairSuporte'); if (ss) ss.addEventListener('click', async () => { try { await api('/api/saas/suporte/sair', { method: 'POST' }); location.href = '/'; } catch (e) { falha(e); } });
+  const ss = $('#sairSuporte'); if (ss) ss.addEventListener('click', async () => { try { await api('/api/saas/suporte/sair', { method: 'POST' }); location.href = '/sistema'; } catch (e) { falha(e); } });
   const sair = $('#sair'); if (sair) sair.addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
   document.title = `${(abas().find(([k]) => k === S.aba) || ABAS_BASE[0])[1]} · MidIAut`;
   const v = $('#conteudo');

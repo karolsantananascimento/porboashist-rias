@@ -114,6 +114,7 @@ $('#fLogin').addEventListener('submit', async (e) => {
 });
 
 (async () => {
+  if (new URLSearchParams(location.search).get('area') === 'equipe') $('#tLogin').textContent = 'Acesso da administração e da equipe.';
   aplicarIntencao();
   modo(new URLSearchParams(location.search).get('modo') === 'entrar' || location.pathname === '/entrar' ? 'entrar' : 'criar', false);
   // Preço, dias de teste e termos vêm do servidor (variáveis SAAS_PRECO_TEXTO, SAAS_TRIAL_DIAS, SAAS_TERMOS_URL)
