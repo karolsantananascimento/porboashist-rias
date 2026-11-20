@@ -47,7 +47,7 @@ h1, h2, h3, p { margin: 0; }
 .voltar { color: var(--texto-2); text-decoration: none; font-weight: 600; font-size: 14px; }
 .voltar:hover { color: var(--branco); }
 @media (max-width: 900px) { .menu { display: none; } }
-@media (max-width: 560px) { .entrar { display: none; } .wm { font-size: 22px; } }
+@media (max-width: 560px) { .entrar { display: none; } .entrar.baixar-app { display: inline-block; background: #e11d48; color: #fff; font-size: 13px; padding: 9px 12px; } .wm { font-size: 22px; } }
 
 /* Herói */
 main { position: relative; }
