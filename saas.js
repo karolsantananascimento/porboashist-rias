@@ -241,6 +241,54 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     `SELECT count(*)::int n FROM saas_eventos WHERE conta_id=$1 AND tipo='campanha_ativada'
        AND created_at >= date_trunc('day', now() AT TIME ZONE 'America/Recife') AT TIME ZONE 'America/Recife'`, [contaId])).rows[0].n;
 
+
+  // ----- Chamados de suporte para integração (o assinante pede, a administradora agenda) -----
+  const chamadoPublico = (c) => ({ id: c.id, tipo: c.tipo, plataformas: c.plataformas ? c.plataformas.split(',') : [], contato: c.contato, janela: c.janela, obs: c.obs, status: c.status, agendado_para: c.agendado_para, created_at: c.created_at });
+  app.get('/api/saas/chamados', assinante, wrap(async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM saas_chamados WHERE conta_id=$1 ORDER BY id DESC LIMIT 10', [req.conta.id]);
+    res.json({ chamados: rows.map(chamadoPublico) });
+  }));
+  app.post('/api/saas/chamados', assinante, semSuporte, wrap(async (req, res) => {
+    const b = req.body || {};
+    const plataformas = [...new Set((Array.isArray(b.plataformas) ? b.plataformas : []).filter((x) => ['meta', 'google'].includes(x)))];
+    const contato = String(b.contato || '').trim().slice(0, 80); const janela = String(b.janela || '').trim().slice(0, 300); const obs = String(b.obs || '').trim().slice(0, 1000);
+    if (!plataformas.length) throw erro('Escolha o que quer integrar: Meta Ads, Google Ads ou os dois.');
+    if (contato.replace(/\D/g, '').length < 8) throw erro('Informe um WhatsApp ou telefone com DDD para combinarmos o horário.');
+    if (janela.length < 3) throw erro('Diga quais dias e horários ficam bons para você.');
+    const { rows: [aberto] } = await pool.query(`SELECT 1 FROM saas_chamados WHERE conta_id=$1 AND status IN ('aberto','agendado') LIMIT 1`, [req.conta.id]);
+    if (aberto) throw erro('Você já tem um pedido de suporte em andamento. Aguarde o retorno ou cancele o atual para abrir outro.', 409);
+    const { rows: [c] } = await pool.query('INSERT INTO saas_chamados (conta_id, plataformas, contato, janela, obs) VALUES ($1,$2,$3,$4,$5) RETURNING *', [req.conta.id, plataformas.join(','), contato, janela, obs]);
+    await evento(pool, req.conta.id, 'chamado_integracao', plataformas.join(','));
+    res.json({ chamado: chamadoPublico(c) });
+  }));
+  app.post('/api/saas/chamados/:id/cancelar', assinante, semSuporte, wrap(async (req, res) => {
+    const { rows: [c] } = await pool.query(`UPDATE saas_chamados SET status='cancelado', updated_at=now() WHERE id=$1 AND conta_id=$2 AND status IN ('aberto','agendado') RETURNING *`, [Number(req.params.id) || 0, req.conta.id]);
+    if (!c) throw erro('Pedido não encontrado ou já encerrado.', 404);
+    res.json({ chamado: chamadoPublico(c) });
+  }));
+  // Administradora: lista e atende
+  app.get('/api/saas/admin/chamados', soAdmin, wrap(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT h.*, c.empresa, c.plano, u.nome, u.email FROM saas_chamados h JOIN saas_contas c ON c.id=h.conta_id JOIN users u ON u.id=c.user_id
+       ORDER BY (h.status='aberto') DESC, (h.status='agendado') DESC, h.agendado_para NULLS LAST, h.id DESC LIMIT 100`);
+    res.json({ abertos: rows.filter((x) => x.status === 'aberto').length, chamados: rows.map((x) => ({ ...chamadoPublico(x), conta_id: x.conta_id, nome: x.nome, email: x.email, empresa: x.empresa, plano: x.plano, nota_admin: x.nota_admin })) });
+  }));
+  app.put('/api/saas/admin/chamados/:id', soAdmin, wrap(async (req, res) => {
+    const b = req.body || {}; const id = Number(req.params.id) || 0;
+    const { rows: [c] } = await pool.query('SELECT * FROM saas_chamados WHERE id=$1', [id]); if (!c) throw erro('Chamado não encontrado.', 404);
+    let status = c.status; let quando = c.agendado_para;
+    if (b.agendado_para) {
+      const d = new Date(b.agendado_para); if (Number.isNaN(d.getTime())) throw erro('Data e hora inválidas.');
+      quando = d.toISOString(); status = 'agendado';
+    }
+    if (b.status !== undefined) { if (!['aberto', 'agendado', 'concluido', 'cancelado'].includes(b.status)) throw erro('Situação inválida.'); status = b.status; }
+    if (status === 'agendado' && !quando) throw erro('Escolha a data e a hora do agendamento.');
+    const nota = b.nota_admin !== undefined ? String(b.nota_admin).slice(0, 500) : c.nota_admin;
+    const { rows: [n] } = await pool.query('UPDATE saas_chamados SET status=$2, agendado_para=$3, nota_admin=$4, updated_at=now() WHERE id=$1 RETURNING *', [id, status, quando, nota]);
+    await evento(pool, c.conta_id, 'chamado_' + status, `${req.user.email}`);
+    res.json({ chamado: chamadoPublico(n) });
+  }));
+
   // ----- Perfil e situação da conta -----
   app.get('/api/saas/eu', assinante, wrap(async (req, res) => {
     res.json({

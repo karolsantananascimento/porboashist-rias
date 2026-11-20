@@ -153,10 +153,17 @@ async function viewInicio(v) {
     [c.situacao.codigo === 'ativa' || c.situacao.codigo === 'cortesia', 'Assine em <a class="link" data-ir="assinatura">Assinatura</a> antes de o teste acabar'],
   ];
   secao(v, `<div class="view-head"><div><h2>Olá, ${esc((c.nome || '').split(' ')[0] || 'tudo bem')}</h2><p>Comece por aqui. Nada vai ao ar sem a sua confirmação.</p></div></div>
+    <div class="sa-intro">
+      <div class="card sa-video"><h3>Veja a MidIAut em ação</h3>
+        <video controls playsinline preload="metadata" poster="/video/demo-midiaut-poster.jpg" aria-label="Vídeo demonstrativo da MidIAut"><source src="/video/demo-midiaut.mp4" type="video/mp4">Seu navegador não toca este vídeo.</video>
+        <p class="muted">Cerca de 1 minuto: do pedido à campanha pronta para revisar. Os dados do vídeo são ilustrativos.</p></div>
+      <div class="card" id="suporteBox"><h3>Ajuda para integrar</h3><p class="muted">Carregando…</p></div>
+    </div>
     <div class="card"><h3>Primeiros passos</h3><ul class="sa-passos">${passos.map(([f, t]) => `<li class="${f ? 'feito' : ''}"><div class="bola">${f ? '✓' : ''}</div><span>${t}</span></li>`).join('')}</ul></div>
     <div class="sa-grid" id="desemp"></div>`);
   v.querySelectorAll('[data-ir]').forEach((a) => { a.setAttribute('role', 'link'); a.tabIndex = 0; const ir = () => irPara(a.dataset.ir); a.addEventListener('click', ir); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); }); });
   carregarCampanhas().then(() => { /* atualiza o passo 3 */ const li = v.querySelectorAll('.sa-passos li')[2]; if (S.campanhas.length && li) { li.classList.add('feito'); li.querySelector('.bola').textContent = '✓'; } }).catch(() => {});
+  pintarSuporte();
   const d = $('#desemp');
   if (metaOk) api('/api/saas/meta/desempenho?nivel=campaign&periodo=last_7d').then((rows) => {
     const t = rows.reduce((a, r) => ({ gasto: a.gasto + Number(r.spend || 0), cliques: a.cliques + Number(r.clicks || 0), imp: a.imp + Number(r.impressions || 0) }), { gasto: 0, cliques: 0, imp: 0 });
@@ -234,6 +241,44 @@ const OBJ_ROT = { OUTCOME_TRAFFIC: 'Tráfego', OUTCOME_AWARENESS: 'Reconheciment
 const DEST_ROT = { site: 'Site (link)', whatsapp: 'WhatsApp', post: 'Engajamento no anúncio', messenger: 'Mensagens no Messenger', instagram_direct: 'Mensagens no Instagram Direct', instagram_facebook: 'Mensagens no Instagram e Facebook' };
 const CTAS = ['LEARN_MORE', 'SIGN_UP', 'SHOP_NOW', 'CONTACT_US', 'GET_QUOTE', 'SUBSCRIBE', 'DOWNLOAD', 'APPLY_NOW', 'BOOK_TRAVEL'];
 const CTA_ROT = { LEARN_MORE: 'Saiba mais', SIGN_UP: 'Cadastre-se', SHOP_NOW: 'Comprar', CONTACT_US: 'Fale conosco', GET_QUOTE: 'Pedir orçamento', SUBSCRIBE: 'Inscrever-se', DOWNLOAD: 'Baixar', APPLY_NOW: 'Candidate-se', BOOK_TRAVEL: 'Reservar' };
+
+// Pedido de suporte para integração: abre um chamado no painel da administradora para agendar a configuração
+async function pintarSuporte() {
+  const box = $('#suporteBox'); if (!box) return;
+  let lista = [];
+  try { lista = (await api('/api/saas/chamados')).chamados; } catch (e) { box.innerHTML = `<h3>Ajuda para integrar</h3><p class="muted">${esc(e.message)}</p>`; return; }
+  const at = lista.find((c) => ['aberto', 'agendado'].includes(c.status));
+  const quando = (d) => new Date(d).toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short' });
+  const ult = !at && lista[0] && lista[0].status === 'concluido' ? '<p class="muted" style="margin-top:8px">Seu último pedido foi concluído. Se precisar de novo, é só solicitar.</p>' : '';
+  box.innerHTML = at
+    ? `<h3>Ajuda para integrar <span class="pill ${at.status === 'agendado' ? 'ok' : ''}">${at.status === 'agendado' ? 'Agendado' : 'Pedido recebido'}</span></h3>
+       <p>${at.status === 'agendado' ? `Sua configuração está marcada para <b>${esc(quando(at.agendado_para))}</b>.` : 'Recebemos o seu pedido. Vamos entrar em contato para marcar o horário.'}</p>
+       <p class="muted">Integrar: ${at.plataformas.map((x) => (x === 'meta' ? 'Meta Ads' : 'Google Ads')).join(' e ')} · Contato: ${esc(at.contato)}</p>
+       ${S.eu.suporte ? '' : '<button class="btn small" id="bCancSup">Cancelar pedido</button>'}`
+    : `<h3>Ajuda para integrar</h3><p class="muted">Não quer colar as chaves sozinho? Nossa equipe agenda um horário e configura o Meta Ads e o Google Ads com você.</p>${ult}
+       ${S.eu.suporte ? '' : '<div style="margin-top:10px"><button class="btn primary" id="bPedirSup">Solicitar suporte para integração</button></div>'}`;
+  const canc = $('#bCancSup'); if (canc) canc.addEventListener('click', async () => { if (!confirm('Cancelar o pedido de suporte?')) return; try { await api(`/api/saas/chamados/${at.id}/cancelar`, { method: 'POST' }); aviso('Pedido cancelado.'); pintarSuporte(); } catch (e) { falha(e); } });
+  const ped = $('#bPedirSup'); if (ped) ped.addEventListener('click', () => abrirPedidoSuporte());
+}
+function abrirPedidoSuporte() {
+  modal(`<div class="modal-head"><h3>Solicitar suporte para integração</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
+    <div class="modal-body">
+      <p class="muted">Vamos marcar um horário e configurar tudo com você. Você continua dono das suas contas: nós só ajudamos a colar e testar as chaves.</p>
+      <label>O que integrar</label>
+      <div class="sa-checks"><label><input type="checkbox" name="plat" value="meta" checked> Meta Ads (Facebook e Instagram)</label><label><input type="checkbox" name="plat" value="google"> Google Ads</label></div>
+      <label>WhatsApp ou telefone (com DDD)</label><input id="sp_contato" inputmode="tel" placeholder="(81) 99999-9999">
+      <label>Quais dias e horários ficam bons para você?</label><textarea id="sp_janela" rows="2" placeholder="Ex.: terça e quinta à tarde, ou qualquer dia depois das 18h"></textarea>
+      <label>Algo que devemos saber? (opcional)</label><textarea id="sp_obs" rows="2" placeholder="Ex.: já tenho a página do Facebook, falta a conta de anúncios"></textarea>
+      <div id="sp_res"></div></div>
+    <div class="modal-foot"><button class="btn primary" id="sp_enviar">Enviar pedido</button></div>`);
+  $('#sp_enviar').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget; b.disabled = true;
+    try {
+      await api('/api/saas/chamados', { method: 'POST', corpo: { plataformas: [...document.querySelectorAll('input[name=plat]:checked')].map((x) => x.value), contato: $('#sp_contato').value, janela: $('#sp_janela').value, obs: $('#sp_obs').value } });
+      fechar(); aviso('Pedido enviado! Vamos entrar em contato para agendar.'); pintarSuporte();
+    } catch (e) { $('#sp_res').innerHTML = `<div class="sa-res ruim" style="margin-top:10px">${esc(e.message)}</div>`; b.disabled = false; }
+  });
+}
 
 async function viewCampanhas(v) {
   await carregarCampanhas();

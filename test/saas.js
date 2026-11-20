@@ -229,6 +229,31 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('a', 'DELETE', `/api/saas/midias/${m2.id}`);
     ok(r.status === 409 || r.status === 200, 'exclusão respeita rascunhos');
 
+
+    console.log('Pedido de suporte para integração');
+    r = await req(null, 'POST', '/api/saas/chamados', { plataformas: ['meta'] }); ok(r.status === 401, 'sem login não abre chamado');
+    r = await req('a', 'POST', '/api/saas/chamados', { plataformas: [], contato: '81999990000', janela: 'terça à tarde' }); ok(r.status === 400, 'exige escolher o que integrar');
+    r = await req('a', 'POST', '/api/saas/chamados', { plataformas: ['meta'], contato: '123', janela: 'terça à tarde' }); ok(r.status === 400, 'exige telefone válido');
+    r = await req('a', 'POST', '/api/saas/chamados', { plataformas: ['meta'], contato: '81999990000', janela: '' }); ok(r.status === 400, 'exige dias e horários');
+    r = await req('a', 'POST', '/api/saas/chamados', { plataformas: ['meta', 'google', 'tiktok'], contato: '(81) 99999-0000', janela: 'terça e quinta à tarde', obs: 'Já tenho a página' });
+    const ch = r.corpo.chamado;
+    ok(r.status === 200 && ch.status === 'aberto' && ch.plataformas.join() === 'meta,google', 'abre o chamado ignorando plataforma desconhecida');
+    r = await req('a', 'POST', '/api/saas/chamados', { plataformas: ['meta'], contato: '81999990000', janela: 'sexta' }); ok(r.status === 409, 'só um pedido em andamento por conta');
+    r = await req('b', 'GET', '/api/saas/chamados'); ok(r.corpo.chamados.length === 0, 'o outro assinante não vê o chamado da Ana');
+    r = await req('b', 'POST', `/api/saas/chamados/${ch.id}/cancelar`); ok(r.status === 404, 'nem cancela o chamado dela');
+    r = await req('a', 'GET', '/api/saas/admin/chamados'); ok(r.status === 403, 'assinante não acessa a lista da administradora');
+    r = await req('adm', 'GET', '/api/saas/admin/chamados');
+    ok(r.status === 200 && r.corpo.abertos === 1 && r.corpo.chamados[0].email === 'ana@exemplo.com' && r.corpo.chamados[0].contato === '(81) 99999-0000', 'administradora vê o chamado com os dados de contato');
+    r = await req('adm', 'PUT', `/api/saas/admin/chamados/${ch.id}`, { status: 'agendado' }); ok(r.status === 400, 'agendar exige data e hora');
+    const quando = new Date(Date.now() + 2 * 86400000).toISOString();
+    r = await req('adm', 'PUT', `/api/saas/admin/chamados/${ch.id}`, { agendado_para: quando });
+    ok(r.status === 200 && r.corpo.chamado.status === 'agendado' && new Date(r.corpo.chamado.agendado_para).toISOString() === quando, 'administradora agenda a configuração');
+    r = await req('a', 'GET', '/api/saas/chamados'); ok(r.corpo.chamados[0].status === 'agendado' && r.corpo.chamados[0].agendado_para, 'o assinante vê o agendamento');
+    r = await req('adm', 'PUT', `/api/saas/admin/chamados/${ch.id}`, { status: 'concluido' }); ok(r.corpo.chamado.status === 'concluido', 'conclui o chamado');
+    r = await req('a', 'POST', '/api/saas/chamados', { plataformas: ['google'], contato: '81999990000', janela: 'sexta' }); ok(r.status === 200, 'depois de concluído pode pedir de novo');
+    r = await req('a', 'POST', `/api/saas/chamados/${r.corpo.chamado.id}/cancelar`); ok(r.status === 200 && r.corpo.chamado.status === 'cancelado', 'assinante cancela o próprio pedido');
+    r = await req(null, 'GET', '/video/demo-midiaut.mp4'); ok(r.status === 200, 'vídeo demonstrativo é servido');
+
     console.log('Cota de IA');
     await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Segunda campanha de estética em Recife com orçamento de 40 reais por dia.' });
     await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Terceira campanha de estética em Recife com orçamento de 40 reais por dia.' });
