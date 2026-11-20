@@ -95,6 +95,11 @@ const publicoConta = (c, u, usadas = 0) => {
 const clientePublico = (k) => ({ id: k.id, nome: k.nome, principal: k.principal });
 const mesAtual = () => new Date().toISOString().slice(0, 7);
 const mesCota = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7); // mês no horário de Recife
+function cpfValido(c) {
+  if (!/^\d{11}$/.test(c) || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += Number(c[i]) * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
+}
 const limiteIa = (c) => PLANOS[c.plano]?.ia ?? IA_LIMITE_MES;
 const limiteCampanhas = (c) => PLANOS[c.plano]?.campanhas ?? PLANOS.solo.campanhas;
 
@@ -226,7 +231,7 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
   const limitar = (ip) => {
     const t = tentativas.get(ip); const agora = Date.now();
     if (!t || agora - t.desde > 3600000) { tentativas.set(ip, { n: 1, desde: agora }); return false; }
-    t.n++; return t.n > 8;
+    t.n++; return t.n > (Number(process.env.SAAS_CADASTROS_HORA) || 8);
   };
 
   app.get('/api/saas/publico', (req, res) => res.json({
@@ -237,13 +242,18 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
     if (limitar(req.ip)) throw erro('Muitos cadastros deste endereço. Tente de novo mais tarde.', 429);
     const b = req.body || {};
     const email = String(b.email || '').trim().toLowerCase();
-    const nome = String(b.nome || '').trim().slice(0, 120);
+    const primeiro = String(b.nome || '').trim().slice(0, 60);
+    const sobrenome = String(b.sobrenome || '').trim().slice(0, 60);
+    const nome = `${primeiro} ${sobrenome}`.trim();
+    const cpf = String(b.cpf || '').replace(/\D/g, '');
     const empresa = String(b.empresa || '').trim().slice(0, 120);
     const senha = String(b.senha || '');
     const plano = Object.hasOwn(PLANOS, b.plano) ? b.plano : 'solo';
     const bi = b.bi === true;
-    if (!nome) throw erro('Informe o seu nome.');
+    if (!primeiro) throw erro('Informe o seu nome.');
+    if (!sobrenome) throw erro('Informe o seu sobrenome.');
     if (!emailValido(email)) throw erro('E-mail inválido.');
+    if (!cpfValido(cpf)) throw erro('CPF inválido. Confira os 11 números.');
     if (senha.length < 8) throw erro('A senha precisa ter pelo menos 8 caracteres.');
     if (b.aceite !== true) throw erro('Para criar a conta é preciso aceitar os termos de uso.');
     const c = await pool.connect();
@@ -255,14 +265,15 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
         [email, nome, hashSenha(senha)]));
       ({ rows: [conta] } = await c.query(
         plano === 'gratis'
-          ? `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'ativa', NULL, 'gratis', false) RETURNING *`
-          : `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval, $4, $5) RETURNING *`,
-        plano === 'gratis' ? [user.id, empresa || null] : [user.id, empresa || null, String(TRIAL_DIAS), plano, bi]));
+          ? `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi, cpf) VALUES ($1,$2,'ativa', NULL, 'gratis', false, $3) RETURNING *`
+          : `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi, cpf) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval, $4, $5, $6) RETURNING *`,
+        plano === 'gratis' ? [user.id, empresa || null, cpf] : [user.id, empresa || null, String(TRIAL_DIAS), plano, bi, cpf]));
       await c.query('INSERT INTO saas_clientes (conta_id, nome, escopo, principal) VALUES ($1,$2,$3,true)', [conta.id, empresa || nome || 'Meu cliente', escopoDe(conta)]);
       await c.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [conta.id, 'cadastro', 'Conta criada']);
       await c.query('COMMIT');
     } catch (e) {
       await c.query('ROLLBACK');
+      if (e.code === '23505' && /cpf/.test(e.constraint || '')) throw erro('Já existe uma conta com esse CPF. Entre com o e-mail e a senha dessa conta.', 409);
       if (e.code === '23505') throw erro('Já existe uma conta com esse e-mail. Entre com a sua senha.', 409);
       throw e;
     } finally { c.release(); }
@@ -396,7 +407,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
         const r = await cx.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras - 1 WHERE id=$1 AND campanhas_extras > 0 RETURNING 1', [conta.id]);
         if (!r.rowCount) {
           await cx.query('ROLLBACK');
-          throw Object.assign(erro(`Você usou as ${limiteCampanhas(conta)} campanhas deste mês do plano ${PLANOS[conta.plano]?.nome || ''}. Para criar mais, compre campanhas avulsas por R$ ${PRECO_AVULSA} cada (não vencem) ou aguarde o próximo mês.`, 402), { codigo: 'limite_campanhas' });
+          throw Object.assign(erro(`Você usou ${limiteCampanhas(conta) === 1 ? 'a campanha' : 'as ' + limiteCampanhas(conta) + ' campanhas'} deste mês do plano ${PLANOS[conta.plano]?.nome || ''}. Para criar mais, compre campanhas avulsas por R$ ${PRECO_AVULSA} cada (não vencem)${conta.plano === 'gratis' ? ', assine um plano' : ''} ou aguarde o próximo mês.`, 402), { codigo: 'limite_campanhas' });
         }
         tipo = 'extra';
       }
@@ -451,6 +462,8 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     const cl = req.clientes.find((x) => x.id === idDe(req));
     if (!cl) throw erro('Cliente não encontrado.', 404);
     if (cl.principal) throw erro('O cliente principal não pode ser excluído. Renomeie-o, se quiser.');
+    const { rows: [{ n: usadas }] } = await pool.query('SELECT count(*)::int n FROM saas_campanhas WHERE cliente_id=$1 AND cota_mes=$2', [cl.id, mesCota()]);
+    if (usadas > 0) throw erro('Este cliente tem campanhas criadas neste mês e elas contam na cota do plano. Você poderá excluí-lo a partir do próximo mês.', 409);
     const c = await pool.connect();
     try {
       await c.query('BEGIN');

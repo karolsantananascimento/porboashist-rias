@@ -47,9 +47,11 @@
       <form id="fCadastro" role="tabpanel" aria-labelledby="abaCriar" novalidate>
         <h2  id="tCadastro">Assine agora.</h2>
         <p class="dica" id="pCadastro">Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.</p>
-        <div class="campo"><label for="cNome">Seu nome</label><input id="cNome" name="nome" required maxlength="120" autocomplete="name"></div>
-        <div class="campo"><label for="cEmpresa">Empresa ou marca <small>(opcional)</small></label><input id="cEmpresa" name="empresa" maxlength="120" autocomplete="organization"></div>
+        <div class="campo"><label for="cNome">Nome</label><input id="cNome" name="nome" required maxlength="60" autocomplete="given-name"></div>
+        <div class="campo"><label for="cSobrenome">Sobrenome</label><input id="cSobrenome" name="sobrenome" required maxlength="60" autocomplete="family-name"></div>
+        <div class="campo"><label for="cEmpresa">Nome da marca <small>(opcional)</small></label><input id="cEmpresa" name="empresa" maxlength="120" autocomplete="organization"></div>
         <div class="campo"><label for="cEmail">E-mail</label><input id="cEmail" name="email" type="email" required maxlength="200" autocomplete="username" inputmode="email"></div>
+        <div class="campo"><label for="cCpf">CPF</label><input id="cCpf" name="cpf" required maxlength="14" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00"></div>
         <div class="campo">
           <label for="cSenha">Senha</label>
           <div class="senha">
