@@ -13,6 +13,7 @@ const config = require('./config');
 const { gerarPix } = require('./pix');
 const meta = require('./campanhas');
 const gads = require('./googleads');
+const dashboard = require('./dashboard');
 const billing = require('./billing');
 const { GRUPOS, PERMITIDAS, normalizarValor } = require('./saas-chaves');
 const { hashSenha, conferirSenha } = require('./db');
@@ -87,7 +88,7 @@ const publicoConta = (c, u, usadas = 0) => {
   return {
     id: c.id, email: u.email, nome: u.nome, empresa: c.empresa, status: c.status, situacao: s, cortesia: c.cortesia,
     trial_ate: c.trial_ate, periodo_fim: c.periodo_fim, tem_assinatura: !!c.stripe_subscription_id,
-    plano: c.plano, plano_nome: PLANOS[c.plano]?.nome || c.plano, clientes_max: PLANOS[c.plano]?.clientes ?? 1, bi: !!c.bi,
+    plano: c.plano, plano_nome: PLANOS[c.plano]?.nome || c.plano, clientes_max: PLANOS[c.plano]?.clientes ?? 1, bi: biAtivo(c), bi_ate: c.bi_ate || null,
     ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: limiteIa(c) },
     campanhas: { limite: limiteCampanhas(c), usadas, extras: c.campanhas_extras || 0, restantes: Math.max(0, limiteCampanhas(c) - usadas) + (c.campanhas_extras || 0), preco_avulsa: PRECO_AVULSA },
   };
@@ -100,6 +101,7 @@ function cpfValido(c) {
   const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += Number(c[i]) * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r; };
   return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
 }
+const biAtivo = (c) => !!c.bi && (!c.bi_ate || new Date(c.bi_ate) > new Date());
 const limiteIa = (c) => PLANOS[c.plano]?.ia ?? IA_LIMITE_MES;
 const limiteCampanhas = (c) => PLANOS[c.plano]?.campanhas ?? PLANOS.solo.campanhas;
 
@@ -742,6 +744,18 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   app.get('/api/saas/meta/interesses', ...leituraMeta((ctx, req) => { if (!q(req)) throw erro('Digite o interesse'); return meta.buscarInteresses(ctx, q(req)); }));
   app.get('/api/saas/meta/localizacoes', ...leituraMeta((ctx, req) => { if (!q(req)) throw erro('Digite a cidade ou o estado'); return meta.buscarLocal(ctx, q(req), String(req.query.pais || 'BR').toUpperCase().slice(0, 2)); }));
 
+  // ----- Dashboard de KPIs (pacote BI + relatórios) -----
+  app.get('/api/saas/dashboard', assinante, wrap(async (req, res) => {
+    if (!biAtivo(req.conta)) throw Object.assign(erro(`O dashboard faz parte do pacote BI + relatórios (R$ ${PRECO_BI}/mês).`, 402), { codigo: 'bi_necessario' });
+    const periodo = Object.hasOwn(dashboard.PERIODOS, req.query.periodo) ? req.query.periodo : 'last_7d'; const per = dashboard.PERIODOS[periodo];
+    const lido = { meta: [], google: [] }; const plataformas = {};
+    await Promise.all([
+      (async () => meta.desempenho(contextoMeta(req.cliente), { nivel: 'campaign', periodo: per.meta }))().then((r) => { lido.meta = r; plataformas.meta = { ok: true }; }).catch((e) => { plataformas.meta = { ok: false, erro: e.message }; }),
+      (async () => gads.listarCampanhas(contextoGoogle(req.cliente), per.google))().then((r) => { lido.google = r; plataformas.google = { ok: true }; }).catch((e) => { plataformas.google = { ok: false, erro: e.message }; }),
+    ]);
+    res.json({ periodo, periodo_nome: per.nome, periodos: Object.entries(dashboard.PERIODOS).map(([id, p]) => ({ id, nome: p.nome })), conectado: plataformas, ...dashboard.montar(lido), atualizado_em: new Date().toISOString() });
+  }));
+
   // ----- Google Ads -----
   app.get('/api/saas/google/campanhas', assinante, wrap(async (req, res) => {
     res.json(await gads.listarCampanhas(contextoGoogle(req.cliente), String(req.query.periodo || 'LAST_7_DAYS')));
@@ -800,10 +814,11 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
 
   // ----- Assinatura e pagamento -----
   // ----- Pagamento por Pix (QR Code estático; a administradora confere no banco e libera) -----
-  const pixValor = (conta, tipo, qtd, plano) => (tipo === 'mensalidade' ? (PLANOS[plano]?.preco || 0) + (conta.bi ? PRECO_BI : 0) : Math.round(PRECO_AVULSA * qtd * 100) / 100);
+  const pixValor = (conta, tipo, qtd, plano) => (tipo === 'mensalidade' ? (PLANOS[plano]?.preco || 0) + (biAtivo(conta) ? PRECO_BI : 0) : tipo === 'bi' ? PRECO_BI : Math.round(PRECO_AVULSA * qtd * 100) / 100);
   const pixPedido = (req) => {
     const tipo = String(req.body?.tipo ?? req.query.tipo ?? '');
-    if (!['mensalidade', 'avulsas'].includes(tipo)) throw erro('Escolha o que vai pagar: mensalidade ou campanhas avulsas.');
+    if (!['mensalidade', 'avulsas', 'bi'].includes(tipo)) throw erro('Escolha o que vai pagar: mensalidade, BI ou campanhas avulsas.');
+    if (tipo === 'bi' && biAtivo(req.conta) && !req.conta.bi_ate) throw erro('O pacote BI já está incluído na sua assinatura.', 409);
     const qtd = tipo === 'avulsas' ? Math.floor(Number(req.body?.qtd ?? req.query.qtd)) : 1;
     if (tipo === 'avulsas' && !(qtd >= 1 && qtd <= 100)) throw erro('Informe de 1 a 100 campanhas avulsas.');
     let plano = req.conta.plano;
@@ -812,12 +827,12 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
       if (!Object.hasOwn(PLANOS, pedido) || pedido === 'gratis') throw erro('Escolha o plano pago: Solo, Agência ou Escala.');
       plano = pedido;
     }
-    return { tipo, qtd, plano, valor: pixValor(req.conta, tipo, qtd, plano), txid: `MID${req.conta.id}${tipo === 'avulsas' ? 'A' : 'M'}${tipo === 'avulsas' ? qtd : (plano || '').slice(0, 1).toUpperCase()}` };
+    return { tipo, qtd, plano, valor: pixValor(req.conta, tipo, qtd, plano), txid: `MID${req.conta.id}${tipo === 'avulsas' ? 'A' : tipo === 'bi' ? 'B' : 'M'}${tipo === 'avulsas' ? qtd : tipo === 'bi' ? '' : (plano || '').slice(0, 1).toUpperCase()}` };
   };
   const pixPublico = (x) => ({ id: x.id, tipo: x.tipo, qtd: x.qtd, plano: x.plano || null, valor: Number(x.valor), status: x.status, created_at: x.created_at });
   app.get('/api/saas/pix', assinante, wrap(async (req, res) => {
     const p = pixPedido(req);
-    res.json({ ...(await gerarPix({ valor: p.valor, txid: p.txid, descricao: p.tipo === 'mensalidade' ? 'Mensalidade' : `${p.qtd} campanhas` })), tipo: p.tipo, qtd: p.qtd, plano: p.plano });
+    res.json({ ...(await gerarPix({ valor: p.valor, txid: p.txid, descricao: p.tipo === 'mensalidade' ? 'Mensalidade' : p.tipo === 'bi' ? 'BI e relatorios' : `${p.qtd} campanhas` })), tipo: p.tipo, qtd: p.qtd, plano: p.plano });
   }));
   app.post('/api/saas/pix/informar', assinante, semSuporte, wrap(async (req, res) => {
     const p = pixPedido(req);
@@ -848,6 +863,8 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
         if (c.status === 'bloqueada') throw erro('A conta está bloqueada. Desbloqueie antes de liberar.');
         if (c.stripe_subscription_id) throw erro('Esta conta paga no cartão (Stripe). Não libere mensalidade por Pix.');
         await pool.query(`UPDATE saas_contas SET status='ativa', plano=COALESCE($2, plano), periodo_fim = GREATEST(CASE WHEN plano='gratis' THEN now() ELSE COALESCE(periodo_fim, now()) END, now()) + interval '30 days', updated_at=now() WHERE id=$1`, [c.id, x.plano && Object.hasOwn(PLANOS, x.plano) && x.plano !== 'gratis' ? x.plano : null]);
+      } else if (x.tipo === 'bi') {
+        await pool.query(`UPDATE saas_contas SET bi=true, bi_ate = GREATEST(COALESCE(bi_ate, now()), now()) + interval '30 days', updated_at=now() WHERE id=$1`, [c.id]);
       } else await pool.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras + $2, updated_at=now() WHERE id=$1', [c.id, x.qtd]);
     }
     const { rows: [n] } = await pool.query(`UPDATE saas_pix SET status=$2, updated_at=now() WHERE id=$1 AND status='informado' RETURNING *`, [x.id, acao === 'confirmar' ? 'confirmado' : 'recusado']);
@@ -900,7 +917,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     const add = (sql, v) => { vals.push(v); sets.push(sql.replace('?', '$' + vals.length)); };
     if (typeof b.cortesia === 'boolean') add('cortesia=?', b.cortesia);
     if (b.plano !== undefined) { if (!Object.hasOwn(PLANOS, b.plano)) throw erro('Plano inválido'); add('plano=?', b.plano); }
-    if (typeof b.bi === 'boolean') add('bi=?', b.bi);
+    if (typeof b.bi === 'boolean') { add('bi=?', b.bi); add('bi_ate=?', null); }
     if (Number.isInteger(b.campanhas_extras_somar) && Math.abs(b.campanhas_extras_somar) <= 500) add('campanhas_extras = GREATEST(0, campanhas_extras + ?)', b.campanhas_extras_somar);
     if (typeof b.bloqueada === 'boolean') {
       // desbloquear devolve a conta à situação que ela teria: assinando (ativa) ou em teste

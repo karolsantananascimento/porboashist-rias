@@ -765,6 +765,33 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       r = await req('adm', 'POST', `/api/saas/admin/pix/${pg.id}/confirmar`); ok(r.status === 200, 'administradora confirma');
       r = await req('g', 'GET', '/api/saas/eu');
       ok(r.corpo.conta.plano === 'agencia' && r.corpo.conta.situacao.ativa === true && r.corpo.conta.campanhas.limite === 30, 'depois do Pix a conta vira Agência com 30 campanhas');
+      // ---- dashboard de KPIs (pacote BI + relatórios) ----
+      r = await req('g', 'GET', '/api/saas/dashboard'); ok(r.status === 402 && r.corpo.codigo === 'bi_necessario', 'sem o pacote BI o dashboard pede a assinatura');
+      r = await req('g', 'GET', '/api/saas/pix?tipo=bi'); ok(r.status === 200 && r.corpo.valor === 50 && /5405\d*50\.00/.test(r.corpo.payload), 'Pix do BI cobra R$ 50');
+      r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'bi' }); const pbi = r.corpo.pedido; ok(r.status === 200 && pbi.tipo === 'bi', 'avisa o Pix do BI');
+      r = await req('adm', 'POST', `/api/saas/admin/pix/${pbi.id}/confirmar`); ok(r.status === 200, 'administradora libera o BI');
+      r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.bi === true && !!r.corpo.conta.bi_ate && r.corpo.conta.plano === 'agencia', 'BI liberado por 30 dias sem mexer no plano');
+      r = await req('g', 'GET', '/api/saas/dashboard?periodo=last_30d');
+      const dt = r.corpo.total;
+      ok(r.status === 200 && dt.gasto === 150.5 && dt.impressoes === 15000 && dt.cliques === 350, 'dashboard soma investimento, impressões e cliques');
+      ok(dt.conversoes === 15 && dt.custo_conversao === 10.03 && dt.ctr === 2.33 && dt.cpc === 0.43, 'conversões sem contar duas vezes a mesma compra; CTR, CPC e custo por conversão');
+      ok(r.corpo.campanhas[0].nome === 'Meta Vendas' && r.corpo.plataformas.meta.gasto === 150.5 && r.corpo.plataformas.google.gasto === 0, 'ranking por investimento e divisão por plataforma');
+      ok(r.corpo.conectado.meta.ok === true && r.corpo.conectado.google.ok === false && /Google/.test(r.corpo.conectado.google.erro), 'plataforma sem chaves aparece como aviso, sem derrubar o dashboard');
+      ok(chamadas().some((c) => c.alvo === 'meta' && /date_preset=last_30d/.test(c.u || '')), 'o período escolhido vai para o Meta');
+      r = await req('g', 'GET', '/api/saas/dashboard?periodo=inventado'); ok(r.status === 200 && r.corpo.periodo === 'last_7d', 'período inválido volta para 7 dias');
+      r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'bi' }); ok(r.status === 200, 'pode renovar o BI por Pix');
+      await db.query(`UPDATE saas_contas SET bi_ate = now() - interval '1 day' WHERE id=$1`, [cg.id]);
+      r = await req('g', 'GET', '/api/saas/dashboard'); ok(r.status === 402, 'BI vencido volta a pedir renovação');
+      r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.bi === false, 'BI vencido aparece como desligado');
+      r = await req('adm', 'PUT', `/api/saas/admin/assinantes/${cg.id}`, { bi: true });
+      r = await req('g', 'GET', '/api/saas/dashboard'); ok(r.status === 200, 'BI liberado pela administradora não vence');
+      r = await req('g', 'GET', '/api/saas/pix?tipo=bi'); ok(r.status === 409, 'quem já tem o BI incluído não paga de novo');
+      {
+        const dsh = require('../dashboard');
+        ok(dsh.conversoesMeta([{ action_type: 'purchase', value: '2' }, { action_type: 'omni_purchase', value: '3' }, { action_type: 'lead', value: '1' }]) === 4 && dsh.conversoesMeta(undefined) === 0, 'conversões do Meta: maior valor por grupo');
+        const z = dsh.montar({}); ok(z.total.ctr === null && z.total.custo_conversao === null && z.campanhas.length === 0, 'sem dados: sem divisão por zero');
+      }
+
     }
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
