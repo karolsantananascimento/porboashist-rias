@@ -36,6 +36,27 @@ function getCookie(req, name) {
   return m ? decodeURIComponent(m.slice(name.length + 1)) : null;
 }
 
+// Modo suporte: o administrador entra na conta de um assinante. Cookie próprio, assinado, preso ao administrador e ao assinante, válido por 2 horas.
+const COOKIE_SUPORTE = 'pbh_suporte';
+const SUPORTE_DURACAO = 2 * 60 * 60;
+const assinarSuporte = (alvo, adm, exp, senhaHashAdm) =>
+  crypto.createHmac('sha256', SECRET).update(`suporte.${alvo}.${adm}.${exp}.${senhaHashAdm.slice(-16)}`).digest('hex');
+const suporte = {
+  iniciar(res, admin, alvoId) {
+    const exp = Math.floor(Date.now() / 1000) + SUPORTE_DURACAO;
+    res.setHeader('Set-Cookie', `${COOKIE_SUPORTE}=${alvoId}.${admin.id}.${exp}.${assinarSuporte(alvoId, admin.id, exp, admin.senha_hash)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SUPORTE_DURACAO}` +
+      (process.env.NODE_ENV === 'production' ? '; Secure' : ''));
+  },
+  ler(req, admin) { // devolve o id do assinante em atendimento, ou null
+    const [alvo, adm, exp, sig] = (getCookie(req, COOKIE_SUPORTE) || '').split('.');
+    if (!alvo || !adm || !exp || !sig || Number(adm) !== admin.id || Number(exp) < Date.now() / 1000) return null;
+    const esperado = assinarSuporte(alvo, adm, exp, admin.senha_hash);
+    if (esperado.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(esperado), Buffer.from(sig))) return null;
+    return Number(alvo);
+  },
+  encerrar(res) { res.setHeader('Set-Cookie', `${COOKIE_SUPORTE}=; Path=/; Max-Age=0`); },
+};
+
 async function usuarioDaSessao(req) {
   const [id, exp, sig] = (getCookie(req, COOKIE) || '').split('.');
   if (!id || !exp || !sig || Number(exp) < Date.now() / 1000) return null;
@@ -117,7 +138,7 @@ app.post('/api/login', wrap(async (req, res) => {
 }));
 
 app.post('/api/logout', (req, res) => {
-  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0`);
+  res.setHeader('Set-Cookie', [`${COOKIE}=; Path=/; Max-Age=0`, `${COOKIE_SUPORTE}=; Path=/; Max-Age=0`]);
   res.json({ ok: true });
 });
 
@@ -568,7 +589,7 @@ projetos.webhook(app, { pool, wrap });
 require('./integracoes').registrar(app, { pool, wrap, soAdmin });
 require('./esteira').registrar(app, { pool, wrap });
 require('./campanhas').registrar(app, { pool, wrap, soAdmin });
-saas.registrar(app, { pool, wrap, soAdmin, gerarConvite });
+saas.registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte });
 require('./midia').registrar(app, { pool, wrap });
 require('./google').registrar(app, { pool, wrap });
 require('./midia').registrarPublico(app, { pool, wrap });

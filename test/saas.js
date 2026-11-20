@@ -25,7 +25,7 @@ async function req(quem, metodo, caminho, corpo, extra = {}) {
   const r = await fetch(`http://127.0.0.1:${PORTA}${caminho}`, { method: metodo, headers, body: extra.bruto ?? (corpo ? JSON.stringify(corpo) : undefined), redirect: 'manual' });
   const sc = r.headers.get('set-cookie'); if (sc && quem) jar[quem] = sc.split(';')[0];
   const t = await r.text(); let c = {}; try { c = t ? JSON.parse(t) : {}; } catch { c = { raw: t }; }
-  return { status: r.status, corpo: c, loc: r.headers.get('location') };
+  return { status: r.status, corpo: c, loc: r.headers.get('location'), sc };
 }
 const chamadas = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const limparLog = () => fs.writeFileSync(LOG, '');
@@ -347,6 +347,50 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     const { rows: [dd] } = await db.query(`SELECT c.plano FROM saas_contas c JOIN users u ON u.id=c.user_id WHERE u.email='dani@exemplo.com'`);
     ok(r.status === 200 && dd.plano === 'solo', 'plano desconhecido no cadastro vira Solo');
     await db.query(`DELETE FROM users WHERE email IN ('caio@exemplo.com','dani@exemplo.com')`);
+
+    console.log('Modo suporte (administradora dentro da conta do assinante)');
+    r = await req('a', 'POST', `/api/saas/admin/assinantes/${idA}/suporte`);
+    ok(r.status === 403, 'assinante não consegue iniciar modo suporte');
+    r = await req('adm', 'GET', '/api/saas/eu');
+    ok(r.status === 403, 'sem modo suporte, o administrador continua fora da área do assinante');
+    r = await req(null, 'POST', `/api/saas/admin/assinantes/${idA}/suporte`, null, { headers: { cookie: jar.adm } });
+    ok(r.status === 200 && /pbh_suporte=/.test(r.sc || ''), 'administrador inicia o modo suporte e recebe o cookie de suporte');
+    const ckSup = (r.sc || '').split(';')[0];
+    const comSup = { headers: { cookie: `${jar.adm}; ${ckSup}` } };
+    r = await req(null, 'GET', '/api/saas/eu', null, comSup);
+    ok(r.status === 200 && r.corpo.conta.email === 'ana@exemplo.com' && r.corpo.suporte && r.corpo.suporte.admin === 'admin@exemplo.com', 'com o cookie de suporte o administrador vê a conta da Ana e a faixa de suporte');
+    r = await req(null, 'GET', '/api/saas/campanhas', null, comSup);
+    ok(r.status === 200 && Array.isArray(r.corpo), 'administrador lista as campanhas da Ana');
+    r = await req(null, 'GET', '/api/saas/chaves', null, comSup);
+    ok(r.status === 200 && !JSON.stringify(r.corpo).includes(TOKEN_ADMIN), 'vê as chaves da Ana sem ver os valores');
+    r = await req(null, 'POST', '/api/saas/campanhas', { spec: {} }, comSup);
+    ok(r.status === 200, 'cria rascunho na conta da Ana durante o suporte');
+    const campSup = r.corpo.campanha.id;
+    r = await req(null, 'POST', `/api/saas/campanhas/${campSup}/ativar`, { confirmado: true }, comSup);
+    ok(r.status === 403 && /suporte/.test(r.corpo.erro), 'ativar campanha é bloqueado no modo suporte');
+    r = await req(null, 'POST', `/api/saas/campanhas/${campSup}/subir`, { confirmado: true }, comSup);
+    ok(r.status === 403, 'subir campanha para o Meta é bloqueado no modo suporte');
+    r = await req(null, 'POST', '/api/saas/google/campanhas/123/status', { status: 'ENABLED', confirmado: true }, comSup);
+    ok(r.status === 403, 'ativar no Google é bloqueado no modo suporte');
+    r = await req(null, 'POST', '/api/saas/google/campanhas/123/orcamento', { valor: '10', confirmado: true }, comSup);
+    ok(r.status === 403, 'mudar orçamento do Google é bloqueado no modo suporte');
+    for (const [caminho, corpo] of [['/api/saas/assinar', {}], ['/api/saas/portal', {}], ['/api/saas/conta/excluir', { senha: 'senha-forte-1' }]]) {
+      r = await req(null, 'POST', caminho, corpo, comSup);
+      ok(r.status === 403 && /suporte/.test(r.corpo.erro), `${caminho} é bloqueado no modo suporte`);
+    }
+    r = await req(null, 'DELETE', `/api/saas/campanhas/${campSup}`, null, comSup);
+    ok(r.status === 200, 'apagar o rascunho de teste é permitido');
+    const { rows: ev } = await db.query(`SELECT tipo, detalhe FROM saas_eventos WHERE conta_id=$1 AND tipo IN ('suporte_iniciado','suporte_acao') ORDER BY id`, [idA]);
+    ok(ev.some((e) => e.tipo === 'suporte_iniciado' && e.detalhe === 'admin@exemplo.com') && ev.filter((e) => e.tipo === 'suporte_acao').length >= 2, 'início e ações do suporte ficam registrados no histórico da conta');
+    const falso = ckSup.replace(/.$/, (ch) => (ch === '0' ? '1' : '0'));
+    r = await req(null, 'GET', '/api/saas/eu', null, { headers: { cookie: `${jar.adm}; ${falso}` } });
+    ok(r.status === 403, 'cookie de suporte adulterado é recusado');
+    r = await req(null, 'GET', '/api/saas/eu', null, { headers: { cookie: ckSup } });
+    ok(r.status === 401, 'cookie de suporte sozinho, sem login de administrador, não abre nada');
+    r = await req(null, 'POST', '/api/saas/suporte/sair', null, comSup);
+    ok(r.status === 200 && /pbh_suporte=;/.test(r.sc || ''), 'administrador sai do modo suporte');
+    r = await req('adm', 'GET', '/api/saas/eu');
+    ok(r.status === 403, 'depois de sair, volta a não ter acesso à área do assinante');
 
     console.log('Exclusão da conta (LGPD)');
     r = await req('b', 'POST', '/api/saas/conta/excluir', { senha: 'errada' });

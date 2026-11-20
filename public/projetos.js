@@ -1682,7 +1682,8 @@ async function viewAssinantes(v) {
         <td>${a.tem_assinatura ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
         <td>${a.meta_ok ? '<span class="pill ok">Meta</span>' : '<span class="pill">Meta</span>'} ${a.google_ok ? '<span class="pill ok">Google</span>' : '<span class="pill">Google</span>'}</td>
         <td>${a.campanhas} (${a.campanhas_ativas} ativas)</td><td>${dia(a.ultima_atividade)}</td>
-        <td style="white-space:nowrap"><button class="btn small" data-a="${a.id}" data-acao="dias">+7 dias</button>
+        <td style="white-space:nowrap"><button class="btn small primary" data-a="${a.id}" data-acao="suporte">Entrar na conta</button>
+          <button class="btn small" data-a="${a.id}" data-acao="dias">+7 dias</button>
           <button class="btn small" data-a="${a.id}" data-acao="cortesia" data-v="${a.cortesia ? 0 : 1}">${a.cortesia ? 'Tirar cortesia' : 'Cortesia'}</button>
           <button class="btn small" data-a="${a.id}" data-acao="bloqueio" data-v="${a.status === 'bloqueada' ? 0 : 1}">${a.status === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}</button>
           <button class="btn small" data-a="${a.id}" data-acao="senha">Link de senha</button>
@@ -1693,6 +1694,7 @@ async function viewAssinantes(v) {
   v.querySelectorAll('[data-acao]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.a; const ac = b.dataset.acao; const url = `/api/saas/admin/assinantes/${id}`;
     try {
+      if (ac === 'suporte') { await api(url + '/suporte', { method: 'POST' }); location.href = '/assinante'; return; }
       if (ac === 'dias') await api(url, { method: 'PUT', body: { estender_dias: 7 } });
       else if (ac === 'cortesia') await api(url, { method: 'PUT', body: { cortesia: b.dataset.v === '1' } });
       else if (ac === 'bloqueio') { if (b.dataset.v === '1' && !confirm('Bloquear este assinante? Ele não poderá criar nem ativar campanhas (ainda poderá pausar).')) return; await api(url, { method: 'PUT', body: { bloqueada: b.dataset.v === '1' } }); }

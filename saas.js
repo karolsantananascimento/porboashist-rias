@@ -160,12 +160,19 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
 }
 
 // ---------- Rotas autenticadas ----------
-function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
+function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   const base = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
   // Todas as rotas do assinante partem daqui: a conta vem da sessão
   const assinante = wrap(async (req, res, next) => {
-    if (req.user.papel !== 'assinante') return res.status(403).json({ erro: 'Esta área é para assinantes.' });
+    if (req.user.papel === 'admin') {
+      // Modo suporte: a administradora vê e opera a conta do assinante escolhido (cookie próprio, 2 horas)
+      const alvoId = suporte.ler(req, req.user);
+      if (!alvoId) return res.status(403).json({ erro: 'Esta área é para assinantes.' });
+      const { rows: [alvo] } = await pool.query(`SELECT * FROM users WHERE id=$1 AND papel='assinante'`, [alvoId]);
+      if (!alvo) { suporte.encerrar(res); return res.status(403).json({ erro: 'Conta em atendimento não encontrada.' }); }
+      req.suporte = { admin: req.user.email }; req.admin = req.user; req.user = alvo;
+    } else if (req.user.papel !== 'assinante') return res.status(403).json({ erro: 'Esta área é para assinantes.' });
     const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE user_id=$1', [req.user.id]);
     if (!c) return res.status(403).json({ erro: 'Conta de assinante não encontrada.' });
     req.conta = c;
@@ -180,6 +187,8 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const cl = pedido ? cls.find((x) => String(x.id) === String(pedido)) : cls[0];
     if (!cl) return res.status(404).json({ erro: 'Cliente não encontrado.' });
     req.clientes = cls; req.cliente = cl;
+    // Tudo o que a administradora muda na conta do assinante fica registrado
+    if (req.suporte && req.method !== 'GET') await evento(pool, c.id, 'suporte_acao', `${req.suporte.admin}: ${req.method} ${req.path}`);
     next();
   });
   // Rotas que gastam ou criam: exigem assinatura em dia (ou período de teste)
@@ -188,6 +197,10 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     if (s.ativa) return next();
     res.status(402).json({ erro: s.texto, codigo: s.codigo });
   };
+  // No modo suporte ficam bloqueadas as ações que gastam dinheiro do assinante, mexem na cobrança ou apagam a conta
+  const semSuporte = (req, res, next) => (req.suporte
+    ? res.status(403).json({ erro: 'No modo suporte esta ação fica bloqueada: ela gasta dinheiro, mexe na cobrança ou apaga a conta do assinante. Peça para ele fazer.' })
+    : next());
   const idDe = (req) => { const n = Number(req.params.id); if (!Number.isInteger(n) || n <= 0) throw erro('Identificador inválido'); return n; };
   const carregar = async (req) => {
     const { rows: [c] } = await pool.query('SELECT * FROM saas_campanhas WHERE id=$1 AND conta_id=$2 AND cliente_id=$3', [idDe(req), req.conta.id, req.cliente.id]);
@@ -203,7 +216,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   app.get('/api/saas/eu', assinante, wrap(async (req, res) => {
     res.json({
       conta: publicoConta(req.conta, req.user), cobranca: billing.configurado(), preco: process.env.SAAS_PRECO_TEXTO || '',
-      clientes: req.clientes.map(clientePublico), cliente_atual: req.cliente.id,
+      clientes: req.clientes.map(clientePublico), cliente_atual: req.cliente.id, suporte: req.suporte || null,
     });
   }));
 
@@ -257,7 +270,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   }));
 
   // Exclusão da conta e das chaves (LGPD). Quem tem assinatura paga precisa cancelá-la antes.
-  app.post('/api/saas/conta/excluir', assinante, wrap(async (req, res) => {
+  app.post('/api/saas/conta/excluir', assinante, semSuporte, wrap(async (req, res) => {
     if (!conferirSenha(String(req.body?.senha || ''), req.user.senha_hash)) throw erro('Senha incorreta.');
     if (req.conta.stripe_subscription_id && req.conta.status === 'ativa' && !req.conta.cortesia) {
       throw erro('Cancele a assinatura em "Assinatura → Gerenciar pagamento" antes de excluir a conta, para não continuar sendo cobrado.');
@@ -375,7 +388,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   }));
 
   // Cria tudo PAUSADO. O clique do assinante, com confirmado: true, é a autorização.
-  app.post('/api/saas/campanhas/:id/subir', assinante, emDia, wrap(async (req, res) => {
+  app.post('/api/saas/campanhas/:id/subir', assinante, semSuporte, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a criação da campanha.');
     const c0 = await carregar(req);
     const ctx = contextoMeta(req.cliente);
@@ -397,7 +410,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     }
   }));
 
-  app.post('/api/saas/campanhas/:id/ativar', assinante, emDia, wrap(async (req, res) => {
+  app.post('/api/saas/campanhas/:id/ativar', assinante, semSuporte, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a ativação: a campanha começa a gastar.');
     const c0 = await carregar(req);
     if (c0.status !== 'criada_pausada') throw erro('Só dá para ativar uma campanha criada e pausada.', 409);
@@ -441,7 +454,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     res.json(await gads.listarCampanhas(contextoGoogle(req.cliente), String(req.query.periodo || 'LAST_7_DAYS')));
   }));
 
-  app.post('/api/saas/google/campanhas', assinante, emDia, wrap(async (req, res) => {
+  app.post('/api/saas/google/campanhas', assinante, semSuporte, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a criação da campanha (ela nasce pausada).');
     if (await contarCampanhas(req.conta.id) >= MAX_CAMPANHAS) throw erro('Você chegou ao limite de campanhas guardadas. Exclua rascunhos antigos.');
     const ctx = contextoGoogle(req.cliente);
@@ -471,6 +484,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   app.post('/api/saas/google/campanhas/:gid/status', assinante, wrap(async (req, res) => {
     const status = req.body?.status === 'ENABLED' ? 'ENABLED' : 'PAUSED';
     if (status === 'ENABLED') {
+      if (req.suporte) return res.status(403).json({ erro: 'No modo suporte não dá para ativar campanhas: peça para o assinante.' });
       const s = situacao(req.conta); if (!s.ativa) return res.status(402).json({ erro: s.texto, codigo: s.codigo });
       confirmar(req, 'Confirme a ativação: a campanha começa a gastar.');
       if (await ativacoesHoje(req.conta.id) >= ATIVACOES_DIA) throw erro(`Limite de ${ATIVACOES_DIA} ativações por dia atingido. Tente amanhã.`, 429);
@@ -481,7 +495,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     res.json(r);
   }));
 
-  app.post('/api/saas/google/campanhas/:gid/orcamento', assinante, emDia, wrap(async (req, res) => {
+  app.post('/api/saas/google/campanhas/:gid/orcamento', assinante, semSuporte, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a alteração do orçamento.');
     const r = await gads.ajustarOrcamento(contextoGoogle(req.cliente), req.params.gid, req.body?.valor);
     await evento(pool, req.conta.id, 'orcamento_google', `Google ${req.params.gid}: R$ ${r.de_brl} -> R$ ${r.para_brl}`);
@@ -489,13 +503,13 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   }));
 
   // ----- Assinatura e pagamento -----
-  app.post('/api/saas/assinar', assinante, wrap(async (req, res) => {
+  app.post('/api/saas/assinar', assinante, semSuporte, wrap(async (req, res) => {
     if (req.conta.status === 'bloqueada') throw erro('Conta bloqueada. Fale com o suporte.', 403);
     if (req.conta.status === 'ativa' && req.conta.stripe_subscription_id) throw erro('Você já tem uma assinatura ativa. Use "Gerenciar pagamento".');
     res.json({ url: await billing.criarCheckout({ conta: req.conta, email: req.user.email, base: base(req) }) });
   }));
 
-  app.post('/api/saas/portal', assinante, wrap(async (req, res) => {
+  app.post('/api/saas/portal', assinante, semSuporte, wrap(async (req, res) => {
     res.json({ url: await billing.criarPortal({ conta: req.conta, base: base(req) }) });
   }));
 
@@ -541,6 +555,19 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const { rows: [n] } = await pool.query(`UPDATE saas_contas SET ${sets.join(', ')}, updated_at=now() WHERE id=$1 RETURNING *`, vals);
     await evento(pool, c.id, 'admin', `${req.user.email}: ${JSON.stringify(b).slice(0, 200)}`);
     res.json({ ok: true, situacao: situacao(n) });
+  }));
+
+  // Modo suporte: entra na conta do assinante a partir da conta da administradora (fica registrado no histórico dele)
+  app.post('/api/saas/admin/assinantes/:id/suporte', soAdmin, wrap(async (req, res) => {
+    const { rows: [c] } = await pool.query('SELECT c.*, u.email FROM saas_contas c JOIN users u ON u.id=c.user_id WHERE c.id=$1', [idDe(req)]);
+    if (!c) throw erro('Assinante não encontrado', 404);
+    suporte.iniciar(res, req.user, c.user_id);
+    await evento(pool, c.id, 'suporte_iniciado', req.user.email);
+    res.json({ ok: true, url: '/assinante', assinante: c.email });
+  }));
+  app.post('/api/saas/suporte/sair', soAdmin, wrap(async (req, res) => {
+    suporte.encerrar(res);
+    res.json({ ok: true });
   }));
 
   // Link para o assinante criar uma nova senha (não há envio de e-mail neste sistema)
