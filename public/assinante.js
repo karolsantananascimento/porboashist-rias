@@ -3,11 +3,14 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const raiz = $('#raiz');
 
-const S = { eu: null, aba: 'inicio', pub: null, chaves: null, campanhas: [], testes: {}, aberta: null };
+const S = { eu: null, aba: 'inicio', pub: null, chaves: null, campanhas: [], testes: {}, aberta: null, cliente: null };
+// Cliente selecionado (planos com vários clientes): lembrado neste navegador e enviado em todas as chamadas
+try { S.cliente = localStorage.getItem('pbh_cliente') || null; } catch { /* sem armazenamento: usa o principal */ }
+const lembrarCliente = (id) => { S.cliente = id ? String(id) : null; try { if (id) localStorage.setItem('pbh_cliente', String(id)); else localStorage.removeItem('pbh_cliente'); } catch { /* ok */ } };
 
 async function api(caminho, opts = {}) {
   const r = await fetch(caminho, {
-    method: opts.method || 'GET', headers: opts.corpo ? { 'content-type': 'application/json' } : {},
+    method: opts.method || 'GET', headers: { ...(opts.corpo ? { 'content-type': 'application/json' } : {}), ...(S.cliente ? { 'x-cliente': S.cliente } : {}) },
     body: opts.corpo ? JSON.stringify(opts.corpo) : undefined,
   });
   const dados = await r.json().catch(() => ({}));
@@ -28,7 +31,12 @@ const brl = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', c
 function entrada(modo = 'criar') { location.replace(modo === 'entrar' ? '/entrar' : '/cadastro'); }
 
 // ---------------- Estrutura do app ----------------
-async function carregarEu() { S.eu = await api('/api/saas/eu'); }
+async function carregarEu() {
+  try { S.eu = await api('/api/saas/eu'); }
+  catch (e) { if (e.status !== 404 || !S.cliente) throw e; lembrarCliente(null); S.eu = await api('/api/saas/eu'); } // cliente lembrado não existe mais: volta ao principal
+  lembrarCliente(S.eu.cliente_atual);
+}
+const trocarCliente = (id) => { lembrarCliente(id); S.chaves = null; S.campanhas = []; S.testes = {}; S.aberta = null; carregarEu().then(() => render()).catch(falha); };
 
 async function iniciar() {
   try { S.pub = await api('/api/saas/publico', { semSair: true }); } catch { S.pub = {}; }
@@ -46,9 +54,11 @@ async function iniciar() {
   if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada') assinar();
 }
 
-const ABAS = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
+const ABAS_BASE = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
+// Quem tem plano com mais de um cliente ganha a aba Clientes
+const abas = () => (S.eu?.conta.clientes_max > 1 ? [ABAS_BASE[0], ['clientes', 'Clientes'], ...ABAS_BASE.slice(1)] : ABAS_BASE);
 // A aba fica no endereço (/assinante#chaves): recarregar, voltar e compartilhar o link mantêm o lugar
-const abaDoEndereco = () => { const h = location.hash.slice(1); return ABAS.some(([k]) => k === h) ? h : null; };
+const abaDoEndereco = () => { const h = location.hash.slice(1); return abas().some(([k]) => k === h) ? h : null; };
 function irPara(aba) { S.aba = aba; if (location.hash.slice(1) !== aba) history.pushState(null, '', '/assinante#' + aba); render(); window.scrollTo(0, 0); }
 window.addEventListener('popstate', () => { if (S.eu) { S.aba = abaDoEndereco() || 'inicio'; render(); } });
 
@@ -59,13 +69,14 @@ function render() {
   raiz.innerHTML = `
     <header class="sa-top">
       <a class="sa-brand" href="/assinante#inicio" aria-label="Agente de Tráfego, início"><img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="34" height="34">Agente de Tráfego</a>
-      <nav class="sa-nav" aria-label="Seções">${ABAS.map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
-      <div class="sa-me">${pill}<span>${esc(c.nome || c.email)}</span><button class="btn ghost small" id="sair">Sair</button></div>
+      <nav class="sa-nav" aria-label="Seções">${abas().map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
+      <div class="sa-me">${seletorCliente()}${pill}<span>${esc(c.nome || c.email)}</span><button class="btn ghost small" id="sair">Sair</button></div>
     </header>
     <main class="sa-main" id="conteudo"></main>`;
   raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
+  const sel = $('#selCliente'); if (sel) sel.addEventListener('change', () => trocarCliente(sel.value));
   $('#sair').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
-  document.title = `${ABAS.find(([k]) => k === S.aba)[1]} · Agente de Tráfego · A Melhor Mídia do Brasil`;
+  document.title = `${(abas().find(([k]) => k === S.aba) || ABAS_BASE[0])[1]} · Agente de Tráfego · A Melhor Mídia do Brasil`;
   const v = $('#conteudo');
   v.setAttribute('aria-busy', 'true');
   v.innerHTML = '<p class="sa-carregando" role="status">Carregando…</p>';
@@ -80,7 +91,7 @@ function render() {
   // Cada tela monta o conteúdo num bloco à parte; o "Carregando…" some quando ela termina
   const aba = S.aba;
   const tela = document.createElement('div'); tela.style.display = 'contents'; v.append(tela); // as telas usam $('#id') no documento, então o bloco já entra na página
-  ({ inicio: viewInicio, campanhas: viewCampanhas, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
+  ({ inicio: viewInicio, clientes: viewClientes, campanhas: viewCampanhas, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
     .catch((e) => { falha(e); tela.innerHTML = '<div class="card"><p class="muted">Não consegui carregar esta tela. Tente de novo em instantes.</p><button class="btn" data-recarregar>Tentar de novo</button></div>'; })
     .finally(() => {
       if (!v.isConnected) return;
@@ -90,6 +101,39 @@ function render() {
 }
 
 const secao = (v, html) => v.insertAdjacentHTML('beforeend', html);
+
+// ---------------- Clientes (planos Agência e Escala) ----------------
+function seletorCliente() {
+  const cl = S.eu.clientes || [];
+  if (cl.length < 2) return '';
+  return `<label class="sa-cliente"><span class="sr-only">Cliente</span><select id="selCliente" aria-label="Cliente atual">${cl.map((k) => `<option value="${k.id}" ${k.id === S.eu.cliente_atual ? 'selected' : ''}>${esc(k.nome)}</option>`).join('')}</select></label>`;
+}
+async function viewClientes(v) {
+  const r = await api('/api/saas/clientes');
+  const c = S.eu.conta;
+  secao(v, `<div class="view-head"><div><h2>Clientes</h2><p>Cada cliente tem as próprias chaves de API e as próprias campanhas. Use o seletor no topo para trocar de cliente. Seu plano ${esc(c.plano_nome)} permite ${r.max} cliente${r.max > 1 ? 's' : ''} (${r.clientes.length} em uso).</p></div></div>
+    <div class="card"><h3>Seus clientes</h3><ul class="sa-clientes">${r.clientes.map((k) => `<li>
+      <div><b>${esc(k.nome)}</b> ${k.id === r.atual ? '<span class="pill ok">Em uso</span>' : ''} ${k.principal ? '<span class="pill">Principal</span>' : ''}</div>
+      <div class="sa-acoes">${k.id === r.atual ? '' : `<button class="btn small" data-usar="${k.id}">Usar</button>`}<button class="btn small" data-renomear="${k.id}" data-nome="${esc(k.nome)}">Renomear</button>${k.principal ? '' : `<button class="btn small danger" data-excluir="${k.id}" data-nome="${esc(k.nome)}">Excluir</button>`}</div></li>`).join('')}</ul></div>
+    <div class="card"><h3>Novo cliente</h3>${r.clientes.length >= r.max
+      ? `<p class="muted">Você chegou ao limite do seu plano (${r.max}). Para gerenciar mais clientes, fale com o suporte e mude de plano.</p>`
+      : `<form id="fCliente" class="sa-linha"><input id="nomeCliente" maxlength="120" placeholder="Nome do cliente, ex.: Clínica Bella" required aria-label="Nome do novo cliente"><button class="btn primary" type="submit">Adicionar cliente</button></form>
+         <p class="muted">Depois de adicionar, troque para ele no seletor e cole as chaves dele em Chaves de API.</p>`}</div>`);
+  v.querySelectorAll('[data-usar]').forEach((b) => b.addEventListener('click', () => trocarCliente(b.dataset.usar)));
+  v.querySelectorAll('[data-renomear]').forEach((b) => b.addEventListener('click', async () => {
+    const nome = prompt('Novo nome do cliente:', b.dataset.nome); if (!nome || !nome.trim()) return;
+    try { await api(`/api/saas/clientes/${b.dataset.renomear}`, { method: 'PUT', corpo: { nome } }); await carregarEu(); aviso('Nome atualizado.'); render(); } catch (e) { falha(e); }
+  }));
+  v.querySelectorAll('[data-excluir]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`Excluir o cliente "${b.dataset.nome}", as chaves e as campanhas guardadas dele? Não dá para desfazer. Campanhas já criadas no Meta e no Google não são apagadas por lá.`)) return;
+    try { await api(`/api/saas/clientes/${b.dataset.excluir}`, { method: 'DELETE' }); if (String(b.dataset.excluir) === String(S.eu.cliente_atual)) lembrarCliente(null); await carregarEu(); aviso('Cliente excluído.'); render(); } catch (e) { falha(e); }
+  }));
+  const f = $('#fCliente');
+  if (f) f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { const x = await api('/api/saas/clientes', { method: 'POST', corpo: { nome: $('#nomeCliente').value } }); aviso('Cliente adicionado.'); trocarCliente(x.cliente.id); } catch (er) { falha(er); }
+  });
+}
 
 // ---------------- Início ----------------
 async function viewInicio(v) {

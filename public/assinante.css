@@ -80,3 +80,13 @@ a.sa-brand { color: inherit; text-decoration: none; }
   .sa-nav button { white-space: nowrap; }
   .sa-me span:not(.pill) { display: none; }
 }
+
+/* Clientes (planos com mais de um cliente) */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sa-cliente select { max-width: 200px; padding: 6px 8px; border: 1px solid var(--line, #ccc); border-radius: 6px; background: #fff; font: inherit; font-size: 13px; }
+.sa-clientes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.sa-clientes li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-bottom: 1px solid var(--line, #e5e5e5); }
+.sa-clientes li:last-child { border-bottom: 0; }
+.sa-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.sa-linha { display: flex; gap: 10px; flex-wrap: wrap; }
+.sa-linha input { flex: 1 1 240px; padding: 10px 12px; border: 1px solid var(--line, #ccc); border-radius: 6px; font: inherit; }

@@ -1671,13 +1671,13 @@ async function viewAssinantes(v) {
         <p><code class="url">${esc(location.origin)}/assinante</code> <button class="btn small" id="cpSaas">Copiar</button> <span class="muted">(área do assinante)</span></p>
         <p class="muted">Pagando: <b>${cont('ativa')}</b> · Cortesia: <b>${cont('cortesia')}</b> · Em teste: <b>${cont('trial')}</b> · Inadimplentes: <b>${cont('inadimplente')}</b></p></div>
       <div class="card"><h3>Cobrança (Stripe) ${r.cobranca ? '<span class="pill ok">Ligada</span>' : '<span class="pill warn">Não configurada</span>'}</h3>
-        <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PRICE_ID</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code>.</p>
+        <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code> e os preços do Stripe: <code>STRIPE_PRICE_SOLO</code>, <code>STRIPE_PRICE_AGENCIA</code>, <code>STRIPE_PRICE_ESCALA</code>, <code>STRIPE_PRICE_BI</code> (ou só <code>STRIPE_PRICE_ID</code> para preço único).</p>
         <p class="muted">Webhook no Stripe: <code class="url">${esc(location.origin)}/api/saas/webhook</code> (eventos de assinatura e fatura).</p></div></div>
     <div class="card" style="padding:0;overflow-x:auto"><table>
       <thead><tr><th>Assinante</th><th>Plano</th><th>Situação</th><th>Teste até / Período até</th><th>Chaves</th><th>Campanhas</th><th>Última atividade</th><th></th></tr></thead>
       <tbody>${l.length ? l.map((a) => { const [t, c] = rot[a.situacao.codigo] || [a.situacao.codigo, '']; return `<tr>
         <td><b>${esc(a.nome || '')}</b><br><span class="muted">${esc(a.email)}${a.empresa ? ' · ' + esc(a.empresa) : ''}</span></td>
-        <td><select data-plano="${a.id}"><option value="solo"${a.plano === 'solo' ? ' selected' : ''}>Solo · 1</option><option value="agencia"${a.plano === 'agencia' ? ' selected' : ''}>Agência · 3</option><option value="escala"${a.plano === 'escala' ? ' selected' : ''}>Escala · 5</option></select><br><label class="muted"><input type="checkbox" data-bi="${a.id}"${a.bi ? ' checked' : ''}> BI + relatórios</label></td>
+        <td><select data-plano="${a.id}"><option value="solo"${a.plano === 'solo' ? ' selected' : ''}>Solo · 1</option><option value="agencia"${a.plano === 'agencia' ? ' selected' : ''}>Agência · 3</option><option value="escala"${a.plano === 'escala' ? ' selected' : ''}>Escala · 5</option></select><br><span class="muted">${a.clientes}/${a.clientes_max} clientes</span><br><label class="muted"><input type="checkbox" data-bi="${a.id}"${a.bi ? ' checked' : ''}> BI + relatórios</label></td>
         <td><span class="pill ${c}">${t}</span></td>
         <td>${a.tem_assinatura ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
         <td>${a.meta_ok ? '<span class="pill ok">Meta</span>' : '<span class="pill">Meta</span>'} ${a.google_ok ? '<span class="pill ok">Google</span>' : '<span class="pill">Google</span>'}</td>
