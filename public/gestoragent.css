@@ -1,0 +1,28 @@
+/* Página de vendas /gestoragent: planos e destaques. Complementa assinar.css. */
+.destaques { list-style: none; padding: 0; margin: 0 0 26px; display: grid; gap: 8px; font-size: 10px; color: var(--prata); }
+.destaques li::before { content: "+"; color: var(--vermelho); margin-right: 10px; }
+
+.sub-planos { margin: 12px 0 34px; max-width: 60ch; }
+.planos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 28px; align-items: stretch; }
+.plano-cartao { position: relative; display: flex; flex-direction: column; background: var(--creme); color: var(--preto); padding: 34px 26px 28px; border: 2px solid var(--preto); }
+.plano-cartao.destaque { box-shadow: 10px 10px 0 var(--vermelho); }
+.plano-cartao h3 { font-size: 12px; color: var(--vermelho); font-weight: 700; margin: 0 0 14px; }
+.plano-cartao .valor, .adicional .valor { font-size: clamp(26px, 3.4vw, 36px); margin: 0 0 6px; }
+.plano-cartao .valor small, .adicional .valor small { font: 500 14px Inter, sans-serif; text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.plano-cartao .quem-e { margin: 0 0 18px; font-size: 16px; }
+.plano-cartao ul { padding-left: 20px; margin: 0 0 26px; display: grid; gap: 8px; color: #3a332d; font-size: 15px; flex: 1; }
+.plano-cartao .botao { width: 100%; text-align: center; }
+.faixa-top { position: absolute; top: -13px; left: 20px; background: var(--vermelho); color: var(--creme); font-size: 9px; font-weight: 700; padding: 6px 12px; }
+
+.adicional { display: flex; gap: 24px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 40px; padding: 26px 28px; border: 2px dashed var(--prata); }
+.adicional h3 { font-size: clamp(15px, 1.8vw, 19px); margin: 0 0 8px; }
+.adicional p { margin: 0; }
+.adicional .rotulo { margin-bottom: 12px; }
+.adicional .valor { color: var(--creme); }
+.adicional .valor small { color: var(--prata); }
+
+.marcar-bi { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-weight: 600; cursor: pointer; }
+.marcar-bi input { width: 18px; height: 18px; accent-color: var(--vermelho); }
+
+.link-teste { display: block; margin-top: 12px; text-align: center; color: var(--preto); font-size: 14px; font-weight: 600; text-decoration: underline; }
+.link-teste:hover { color: var(--vermelho); }

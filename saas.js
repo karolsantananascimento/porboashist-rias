@@ -18,6 +18,9 @@ const { hashSenha, conferirSenha } = require('./db');
 
 const ESCOPO_BASE = 1_000_000;
 const escopoDe = (conta) => ESCOPO_BASE + conta.id;
+// Planos de venda (/gestoragent). O plano é um rótulo administrado por você; o limite de clientes ainda não é aplicado pelo sistema.
+const PLANOS = { solo: { nome: 'Solo', clientes: 1, preco: 370 }, agencia: { nome: 'Agência', clientes: 3, preco: 760 }, escala: { nome: 'Escala', clientes: 5, preco: 950 } };
+const PRECO_BI = 50;
 const TRIAL_DIAS = Number(process.env.SAAS_TRIAL_DIAS ?? 7);
 const IA_LIMITE_MES = Number(process.env.SAAS_IA_MES || 30);
 const ATIVACOES_DIA = Number(process.env.SAAS_ATIVACOES_DIA || 10);
@@ -45,6 +48,7 @@ const publicoConta = (c, u) => {
   return {
     id: c.id, email: u.email, nome: u.nome, empresa: c.empresa, status: c.status, situacao: s, cortesia: c.cortesia,
     trial_ate: c.trial_ate, periodo_fim: c.periodo_fim, tem_assinatura: !!c.stripe_subscription_id,
+    plano: c.plano, plano_nome: PLANOS[c.plano]?.nome || c.plano, clientes_max: PLANOS[c.plano]?.clientes ?? 1, bi: !!c.bi,
     ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: IA_LIMITE_MES },
   };
 };
@@ -114,6 +118,8 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
     const nome = String(b.nome || '').trim().slice(0, 120);
     const empresa = String(b.empresa || '').trim().slice(0, 120);
     const senha = String(b.senha || '');
+    const plano = Object.hasOwn(PLANOS, b.plano) ? b.plano : 'solo';
+    const bi = b.bi === true;
     if (!nome) throw erro('Informe o seu nome.');
     if (!emailValido(email)) throw erro('E-mail inválido.');
     if (senha.length < 8) throw erro('A senha precisa ter pelo menos 8 caracteres.');
@@ -126,8 +132,8 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
         `INSERT INTO users (email, nome, senha_hash, papel, trocar_senha, aceite_termos_em) VALUES ($1,$2,$3,'assinante',false,now()) RETURNING *`,
         [email, nome, hashSenha(senha)]));
       ({ rows: [conta] } = await c.query(
-        `INSERT INTO saas_contas (user_id, empresa, status, trial_ate) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval) RETURNING *`,
-        [user.id, empresa || null, String(TRIAL_DIAS)]));
+        `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval, $4, $5) RETURNING *`,
+        [user.id, empresa || null, String(TRIAL_DIAS), plano, bi]));
       await c.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [conta.id, 'cadastro', 'Conta criada']);
       await c.query('COMMIT');
     } catch (e) {
@@ -444,7 +450,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
       const e = escopoDe(r); const tem = (k) => !!config.cfgProprio(k, e);
       return {
         id: r.id, email: r.email, nome: r.nome, empresa: r.empresa, status: r.status, situacao: situacao(r), cortesia: r.cortesia,
-        trial_ate: r.trial_ate, periodo_fim: r.periodo_fim, tem_assinatura: !!r.stripe_subscription_id, campanhas: r.campanhas, campanhas_ativas: r.campanhas_ativas,
+        plano: r.plano, bi: !!r.bi, trial_ate: r.trial_ate, periodo_fim: r.periodo_fim, tem_assinatura: !!r.stripe_subscription_id, campanhas: r.campanhas, campanhas_ativas: r.campanhas_ativas,
         ultima_atividade: r.ultima_atividade, criado_em: r.created_at,
         meta_ok: tem('META_ADS_TOKEN') && tem('META_AD_ACCOUNT_ID') && tem('META_PAGE_ID'),
         google_ok: tem('GOOGLE_ADS_DEVELOPER_TOKEN') && tem('GOOGLE_ADS_REFRESH_TOKEN') && tem('GOOGLE_ADS_CUSTOMER_ID'),
@@ -460,6 +466,8 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const sets = []; const vals = [c.id];
     const add = (sql, v) => { vals.push(v); sets.push(sql.replace('?', '$' + vals.length)); };
     if (typeof b.cortesia === 'boolean') add('cortesia=?', b.cortesia);
+    if (b.plano !== undefined) { if (!Object.hasOwn(PLANOS, b.plano)) throw erro('Plano inválido'); add('plano=?', b.plano); }
+    if (typeof b.bi === 'boolean') add('bi=?', b.bi);
     if (typeof b.bloqueada === 'boolean') {
       // desbloquear devolve a conta à situação que ela teria: assinando (ativa) ou em teste
       add('status=?', b.bloqueada ? 'bloqueada' : (c.stripe_subscription_id ? 'ativa' : 'trial'));
