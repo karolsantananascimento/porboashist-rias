@@ -1,4 +1,4 @@
-// A Melhor Mídia do Brasil — interface de gestão
+// MidIAut · sistema interno — interface de gestão
 const STATUS = ['pauta', 'conteudo', 'design', 'revisao', 'aprovacao', 'agendado', 'publicado'];
 const STATUS_LABEL = {
   pauta: 'Pauta', conteudo: 'Conteúdo / copy', design: 'Design / edição', revisao: 'Revisão interna',
