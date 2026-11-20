@@ -1705,4 +1705,76 @@ async function viewAssinantes(v) {
   });
 }
 
-window.VIEWS_EXTRA = { assinantes: viewAssinantes, solicitar: viewSolicitar, visao: viewSolicitar, recursos: (v) => viewArea(v, 'recursos'), acessos: (v) => viewArea(v, 'acessos'), relatorios: viewRelatorios, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };
+// ---------- Site e Blog: prévia do site da MidIAut e editor de artigos ----------
+// Pensado para crescer: hoje o site vende o agente de tráfego; os próximos agentes (conteúdo, designer...) entram como novas páginas/seções.
+async function viewSiteBlog(v) {
+  if (S.me.papel !== 'admin') { S.view = 'inicio'; return render(); }
+  const aba = S.siteAba || 'previa';
+  v.innerHTML = `<div class="view-head"><div><h2>Site e Blog</h2><p>Veja o site como o visitante vê e publique artigos no blog.</p></div></div>
+    <div class="sb-abas"><button class="${aba === 'previa' ? 'on' : ''}" data-aba="previa">Prévia do site</button><button class="${aba === 'blog' ? 'on' : ''}" data-aba="blog">Blog</button></div><div id="sbCorpo"></div>`;
+  v.querySelectorAll('[data-aba]').forEach((b) => b.onclick = () => { S.siteAba = b.dataset.aba; viewSiteBlog(v); });
+  const corpo = v.querySelector('#sbCorpo');
+  if (aba === 'previa') return sitePrevia(corpo);
+  return siteBlog(corpo);
+}
+
+function sitePrevia(el, caminho) {
+  const pg = caminho || S.sitePg || '/midiaut'; S.sitePg = pg; const larg = S.siteLarg || '100%';
+  const paginas = [['/midiaut', 'Página inicial'], ['/blog', 'Blog'], ['/cadastro', 'Cadastro'], ['/entrar', 'Entrar']];
+  el.innerHTML = `<div class="sb-barra">
+      <select id="sbPg">${paginas.map(([u, n]) => `<option value="${u}" ${pg === u ? 'selected' : ''}>${n}</option>`).join('')}${pg.startsWith('/blog/') ? `<option value="${esc(pg)}" selected>${esc(pg)}</option>` : ''}</select>
+      <div class="sb-disp">${[['100%', 'Computador'], ['820px', 'Tablet'], ['390px', 'Celular']].map(([w, n]) => `<button class="${larg === w ? 'on' : ''}" data-w="${w}">${n}</button>`).join('')}</div>
+      <button class="btn small" id="sbRec">Recarregar</button><a class="btn small" href="${esc(pg)}" target="_blank" rel="noopener">Abrir em nova aba</a></div>
+    <div class="sb-moldura"><iframe id="sbFrame" src="${esc(pg)}" title="Prévia do site" style="width:${larg}"></iframe></div>`;
+  el.querySelector('#sbPg').onchange = (e) => sitePrevia(el, e.target.value);
+  el.querySelectorAll('[data-w]').forEach((b) => b.onclick = () => { S.siteLarg = b.dataset.w; sitePrevia(el, pg); });
+  el.querySelector('#sbRec').onclick = () => { const f = el.querySelector('#sbFrame'); f.src = f.src; };
+}
+
+async function siteBlog(el, abrirId) {
+  const r = await api('/api/site/posts');
+  if (abrirId) return siteEditor(el, abrirId);
+  el.innerHTML = `<div class="sb-barra"><button class="btn primary" id="sbNovo">+ Novo artigo</button><span class="muted">Os artigos publicados aparecem em <code>/blog</code> e no mapa do site (sitemap.xml) para o Google.</span></div>
+    ${r.posts.length ? `<div class="sb-lista">${r.posts.map((p) => `<div class="sb-item" data-id="${p.id}"><div><b>${esc(p.titulo)}</b><small>${p.status === 'publicado' ? `Publicado em ${new Date(p.publicado_em).toLocaleDateString('pt-BR')} · /blog/${esc(p.slug)}` : 'Rascunho'}</small></div><span class="sb-st ${p.status}">${p.status === 'publicado' ? 'No ar' : 'Rascunho'}</span></div>`).join('')}</div>` : '<p class="muted">Nenhum artigo ainda. Clique em “Novo artigo” para escrever o primeiro.</p>'}`;
+  el.querySelector('#sbNovo').onclick = async () => { try { const x = await api('/api/site/posts', { method: 'POST', body: { titulo: 'Novo artigo' } }); siteEditor(el, x.post.id); } catch (e) { toast(e.message); } };
+  el.querySelectorAll('.sb-item').forEach((i) => i.onclick = () => siteEditor(el, Number(i.dataset.id)));
+}
+
+async function siteEditor(el, id) {
+  const { post: p } = await api(`/api/site/posts/${id}`); const no = p.status === 'publicado';
+  el.innerHTML = `<div class="sb-barra"><button class="btn small" id="sbVoltar">← Artigos</button><span class="sb-st ${p.status}">${no ? 'No ar' : 'Rascunho'}</span>
+      <span style="flex:1"></span><button class="btn" id="sbSalvar">Salvar</button>${no ? `<a class="btn" href="/blog/${esc(p.slug)}" target="_blank" rel="noopener">Ver no site</a><button class="btn" id="sbTirar">Tirar do ar</button>` : ''}<button class="btn primary" id="sbPub">${no ? 'Salvar e atualizar no site' : 'Publicar no site'}</button></div>
+    <div class="sb-ed">
+      <div class="sb-col">
+        <label>Título</label><input id="pTit" maxlength="140" value="${esc(p.titulo)}">
+        <label>Resumo <small id="cRes"></small></label><textarea id="pRes" rows="2" maxlength="300" placeholder="Aparece na lista do blog e no Google">${esc(p.resumo)}</textarea>
+        <label>Imagem de capa (link https, opcional)</label><input id="pCapa" value="${esc(p.capa_url)}" placeholder="https://…">
+        <label>Texto do artigo</label>
+        <div class="sb-tools">${[['## ', 'Título'], ['**', 'Negrito'], ['- ', 'Lista'], ['[', 'Link'], ['> ', 'Citação']].map(([c, n]) => `<button type="button" data-ins="${esc(c)}">${n}</button>`).join('')}</div>
+        <textarea id="pCorpo" rows="18" placeholder="Escreva aqui. Use ## para títulos, **negrito**, - para listas, [texto](https://link) para links.">${esc(p.corpo)}</textarea>
+        <details class="sb-seo"><summary>Google (SEO)</summary><label>Título no Google <small>até 70</small></label><input id="pSeoT" maxlength="70" value="${esc(p.seo_titulo)}"><label>Descrição no Google <small>até 170</small></label><textarea id="pSeoD" rows="2" maxlength="170">${esc(p.seo_desc)}</textarea>
+          <label>Endereço</label><input id="pSlug" value="${esc(p.slug)}" ${no ? 'disabled' : ''}><small class="muted">${no ? 'O endereço não muda depois de publicado, para não quebrar links.' : 'Gerado do título; pode ajustar.'}</small></details>
+        <button class="btn ghost danger small" id="sbDel">Excluir artigo</button>
+      </div>
+      <div class="sb-col"><div class="sb-prev-t">Prévia do artigo</div><div class="sb-prev" id="pPrev"></div></div>
+    </div>`;
+  const $$ = (q) => el.querySelector(q);
+  const corpoDe = (st) => ({ titulo: $$('#pTit').value, resumo: $$('#pRes').value, capa_url: $$('#pCapa').value, corpo: $$('#pCorpo').value, seo_titulo: $$('#pSeoT').value, seo_desc: $$('#pSeoD').value, slug: $$('#pSlug').value, ...(st ? { status: st } : {}) });
+  let tm;
+  const prever = () => { clearTimeout(tm); tm = setTimeout(async () => { try { const x = await api('/api/site/previa', { method: 'POST', body: { corpo: $$('#pCorpo').value } }); const capa = /^https:\/\//.test($$('#pCapa').value) ? `<img class="sb-capa" src="${esc($$('#pCapa').value)}" alt="">` : ''; $$('#pPrev').innerHTML = `<h1>${esc($$('#pTit').value)}</h1><p class="sb-lede">${esc($$('#pRes').value)}</p>${capa}${x.html}<p class="muted">${x.minutos} min de leitura</p>`; } catch { /* prévia some até voltar a rede */ } }, 250); };
+  ['#pTit', '#pRes', '#pCapa', '#pCorpo'].forEach((q) => $$(q).addEventListener('input', () => { $$('#cRes').textContent = `${$$('#pRes').value.length}/300`; prever(); }));
+  $$('#cRes').textContent = `${p.resumo.length}/300`; prever();
+  el.querySelectorAll('[data-ins]').forEach((b) => b.onclick = () => {
+    const t = $$('#pCorpo'); const a = t.selectionStart; const z = t.selectionEnd; const sel = t.value.slice(a, z); const c = b.dataset.ins;
+    const novo = c === '**' ? `**${sel || 'texto'}**` : c === '[' ? `[${sel || 'texto do link'}](https://)` : `${c}${sel}`;
+    t.setRangeText(novo, a, z, 'end'); t.focus(); prever();
+  });
+  const salvar = async (st) => { const x = await api(`/api/site/posts/${id}`, { method: 'PUT', body: corpoDe(st) }); return x.post; };
+  $$('#sbVoltar').onclick = () => siteBlog(el);
+  $$('#sbSalvar').onclick = async () => { try { await salvar(); toast('Salvo'); siteEditor(el, id); } catch (e) { toast(e.message); } };
+  $$('#sbPub').onclick = async () => { try { const x = await salvar('publicado'); toast(no ? 'Atualizado no site' : 'Publicado! Já está em /blog/' + x.slug); siteEditor(el, id); } catch (e) { toast(e.message); } };
+  const tirar = $$('#sbTirar'); if (tirar) tirar.onclick = async () => { if (!confirm('Tirar este artigo do site? Ele volta a ser rascunho.')) return; try { await salvar('rascunho'); toast('Artigo fora do ar'); siteEditor(el, id); } catch (e) { toast(e.message); } };
+  $$('#sbDel').onclick = async () => { if (!confirm('Excluir este artigo? Não dá para desfazer.')) return; try { await api(`/api/site/posts/${id}`, { method: 'DELETE' }); siteBlog(el); } catch (e) { toast(e.message); } };
+}
+
+window.VIEWS_EXTRA = { siteblog: viewSiteBlog, assinantes: viewAssinantes, solicitar: viewSolicitar, visao: viewSolicitar, recursos: (v) => viewArea(v, 'recursos'), acessos: (v) => viewArea(v, 'acessos'), relatorios: viewRelatorios, inicio: viewInicio, criar: viewCriar, solicitacoes: viewSolicitacoes, mensagens: viewMensagens, empregos: viewEmpregos, integracoes: viewIntegracoes };

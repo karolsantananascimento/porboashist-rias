@@ -421,6 +421,31 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     for (const rota of ['/cadastro', '/entrar', '/assinante']) { r = await req(null, 'GET', rota); ok(r.status === 200 && /MidIAut/.test(r.corpo.raw || '') && !/Agente de Tráfego|A Melhor Mídia/.test(r.corpo.raw || ''), `${rota} usa a marca MidIAut`); }
     r = await req(null, 'GET', '/brand/midiaut/logo-escuro.svg'); ok(r.status === 200, 'logo da MidIAut é servido');
     r = await req(null, 'GET', '/fonts/Manrope.ttf'); ok(r.status === 200, 'fonte Manrope é servida');
+
+    console.log('Site e Blog');
+    r = await req('a', 'GET', '/api/site/posts'); ok(r.status === 403 || r.status === 401, 'assinante não acessa o editor do blog');
+    r = await req(null, 'GET', '/api/site/posts'); ok(r.status === 401, 'sem login não acessa o editor do blog');
+    r = await req('adm', 'POST', '/api/site/posts', { titulo: 'Como criar anúncios no Instagram' });
+    const post = r.corpo.post; ok(r.status === 200 && post.slug === 'como-criar-anuncios-no-instagram' && post.status === 'rascunho', 'cria rascunho com endereço limpo');
+    r = await req(null, 'GET', '/blog/' + post.slug); ok(r.status === 404, 'rascunho não aparece no site');
+    r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: post.titulo, status: 'publicado' }); ok(r.status === 400, 'não publica sem resumo e texto');
+    r = await req('adm', 'POST', '/api/site/previa', { corpo: '## Oi\n<script>alert(1)</script> **forte** [x](javascript:alert(1)) [ok](https://exemplo.com)\n- a\n- b' });
+    ok(/<h3>Oi<\/h3>/.test(r.corpo.html) && !/<script/.test(r.corpo.html) && !/href="javascript/.test(r.corpo.html) && /<strong>forte<\/strong>/.test(r.corpo.html) && /<ul>/.test(r.corpo.html) && /href="https:\/\/exemplo.com"/.test(r.corpo.html), 'Markdown vira HTML e escapa script e links perigosos');
+    r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Como criar anúncios no Instagram', resumo: 'Passo a passo simples.', corpo: '## Comece\nTexto <b>cru</b>.', capa_url: 'http://inseguro.com/a.jpg', status: 'publicado' });
+    ok(r.status === 400, 'capa precisa ser https');
+    r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Como criar anúncios no Instagram', resumo: 'Passo a passo simples.', corpo: '## Comece\nTexto <b>cru</b>.', status: 'publicado' });
+    ok(r.status === 200 && r.corpo.post.status === 'publicado' && r.corpo.post.publicado_em, 'publica o artigo');
+    r = await req(null, 'GET', '/blog/' + post.slug);
+    ok(r.status === 200 && /<h1>Como criar anúncios no Instagram<\/h1>/.test(r.corpo.raw) && /&lt;b&gt;cru&lt;\/b&gt;/.test(r.corpo.raw) && /BlogPosting/.test(r.corpo.raw) && /rel="canonical"/.test(r.corpo.raw), 'artigo público com SEO e texto escapado');
+    r = await req(null, 'GET', '/blog'); ok(r.status === 200 && /Como criar anúncios no Instagram/.test(r.corpo.raw), 'lista do blog mostra o artigo');
+    r = await req(null, 'GET', '/sitemap.xml'); ok(/\/blog\/como-criar-anuncios-no-instagram/.test(r.corpo.raw) && /\/midiaut/.test(r.corpo.raw), 'sitemap inclui o artigo');
+    r = await req(null, 'GET', '/robots.txt'); ok(/Sitemap:/.test(r.corpo.raw) && /Disallow: \/api\//.test(r.corpo.raw), 'robots.txt aponta o sitemap');
+    r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Outro título', resumo: 'x', corpo: 'y', slug: 'mudou' });
+    ok(r.corpo.post.slug === post.slug, 'endereço publicado não muda');
+    r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Outro título', resumo: 'x', corpo: 'y', status: 'rascunho' });
+    r = await req(null, 'GET', '/blog/' + post.slug); ok(r.status === 404, 'tirar do ar remove da página pública');
+    r = await req(null, 'GET', '/midiaut'); ok(/href="\/blog"/.test(r.corpo.raw), 'a página inicial linka o blog');
+    r = await req('adm', 'DELETE', `/api/site/posts/${post.id}`); ok(r.status === 200, 'exclui o artigo');
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
   }
