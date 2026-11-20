@@ -411,6 +411,7 @@ CREATE INDEX IF NOT EXISTS saas_campanhas_conta ON saas_campanhas (conta_id, id 
 ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS cliente_id INT REFERENCES saas_clientes(id) ON DELETE CASCADE;
 UPDATE saas_campanhas x SET cliente_id = (SELECT k.id FROM saas_clientes k WHERE k.conta_id = x.conta_id AND k.principal) WHERE x.cliente_id IS NULL;
 CREATE INDEX IF NOT EXISTS saas_campanhas_cliente ON saas_campanhas (cliente_id, id DESC);
+CREATE TABLE IF NOT EXISTS site_seeds (slug TEXT PRIMARY KEY, criado_em TIMESTAMPTZ NOT NULL DEFAULT now());   -- artigos iniciais já semeados (apagar um artigo não o recria)
 CREATE TABLE IF NOT EXISTS site_posts (
   id SERIAL PRIMARY KEY,
   titulo TEXT NOT NULL,

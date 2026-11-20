@@ -712,6 +712,15 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(r.status === 200 && r.corpo.post.status === 'publicado' && r.corpo.post.publicado_em, 'publica o artigo');
     r = await req(null, 'GET', '/blog/' + post.slug);
     ok(r.status === 200 && /<h1>Como criar anúncios no Instagram<\/h1>/.test(r.corpo.raw) && /&lt;b&gt;cru&lt;\/b&gt;/.test(r.corpo.raw) && /BlogPosting/.test(r.corpo.raw) && /rel="canonical"/.test(r.corpo.raw), 'artigo público com SEO e texto escapado');
+    {
+      const seeds = require('../blog-seed'); const slugs = seeds.map((a) => a.slug);
+      ok(seeds.length === 6, 'seis artigos iniciais de SEO');
+      r = await req(null, 'GET', '/sitemap.xml'); ok(slugs.every((sl) => r.corpo.raw.includes('/blog/' + sl)), 'sitemap lista os artigos iniciais');
+      ok(seeds.every((a) => a.seo_titulo.length <= 60 && a.seo_desc.length >= 100 && a.seo_desc.length <= 160), 'títulos SEO até 60 e descrições entre 100 e 160 caracteres');
+      const links = seeds.flatMap((a) => [...a.corpo.matchAll(/\]\(\/blog\/([a-z0-9-]+)\)/g)].map((m) => m[1]));
+      ok(links.length >= 6 && links.every((sl) => slugs.includes(sl)), 'links internos entre os artigos apontam para artigos que existem');
+      for (const a of seeds) { r = await req(null, 'GET', '/blog/' + a.slug); ok(r.status === 200 && r.corpo.raw.includes('<h1>') && /rel="canonical"/.test(r.corpo.raw) && /BlogPosting/.test(r.corpo.raw), 'artigo no ar: ' + a.slug); }
+    }
     r = await req(null, 'GET', '/blog'); ok(r.status === 200 && /Como criar anúncios no Instagram/.test(r.corpo.raw), 'lista do blog mostra o artigo');
     r = await req(null, 'GET', '/sitemap.xml'); ok(/\/blog\/como-criar-anuncios-no-instagram/.test(r.corpo.raw) && /\/midiaut/.test(r.corpo.raw), 'sitemap inclui o artigo');
     r = await req(null, 'GET', '/robots.txt'); ok(/Sitemap:/.test(r.corpo.raw) && /Disallow: \/api\//.test(r.corpo.raw), 'robots.txt aponta o sitemap');
