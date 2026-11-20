@@ -598,6 +598,7 @@ const solic = require('./solicitacoes');
 solic.registrar(app, { pool, wrap, soAdmin });
 solic.registrarPublico(app, { pool, wrap });
 require('./comandos').registrar(app, { pool, wrap });
+require('./blog').registrar(app, { pool, wrap, soAdmin });
 
 // ---------- Backup ----------
 app.get('/api/backup', wrap(async (req, res) => {
@@ -662,6 +663,7 @@ app.use((err, req, res, next) => {
 
 // ---------- Interface ----------
 // Site de vendas da MidIAut (/midiaut, com planos R$ 370 / 760 / 950 + pacote BI); os endereços antigos continuam apontando para ele
+require('./blog').registrarPublico(app, { pool, wrap });
 app.get(['/midiaut', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'midiaut.html')));
 app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));

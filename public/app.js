@@ -16,7 +16,7 @@ const hoje = new Date();
 const hojeISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
 
 const VIEWS_TAREFAS = ['calendario', 'quadro', 'lista'];
-const VIEWS_EXTRA_NOMES = ['inicio', 'solicitar', 'recursos', 'acessos', 'relatorios', 'criar', 'solicitacoes', 'mensagens', 'empregos', 'integracoes', 'assinantes'];
+const VIEWS_EXTRA_NOMES = ['inicio', 'solicitar', 'recursos', 'acessos', 'relatorios', 'criar', 'solicitacoes', 'mensagens', 'empregos', 'integracoes', 'assinantes', 'siteblog'];
 const VIEWS_VALIDAS = ['visao', 'painel', ...VIEWS_TAREFAS, 'captacao', 'programacao', 'area', 'materiais', 'clientes', 'usuarios', ...VIEWS_EXTRA_NOMES];
 const viewSalva = localStorageGet('pbh_view');
 const tarefasSalva = localStorageGet('pbh_view_tarefas');
@@ -95,6 +95,7 @@ function mostrarEu() {
   $('#navUsuarios').classList.toggle('hidden', S.me.papel !== 'admin');
   $('#navApis').classList.toggle('hidden', S.me.papel !== 'admin');
   $('#navSaas').classList.toggle('hidden', S.me.papel !== 'admin');
+  $('#navSite').classList.toggle('hidden', S.me.papel !== 'admin');
   $('#secAdmin').classList.toggle('hidden', S.me.papel !== 'admin');
   if (S.view === 'usuarios' && S.me.papel !== 'admin') S.view = 'painel';
 }
@@ -231,7 +232,7 @@ async function render() {
   // "Nova tarefa" só aparece onde faz sentido criar tarefa
   $('#novaTarefa').style.display = comMes ? '' : 'none';
   // filtro de cliente não se aplica à gestão de usuários nem às telas globais
-  $('#fCliente').style.display = (S.projeto || ['usuarios', 'inicio', 'solicitacoes', 'mensagens', 'empregos', 'integracoes', 'assinantes'].includes(S.view)) ? 'none' : '';
+  $('#fCliente').style.display = (S.projeto || ['usuarios', 'inicio', 'solicitacoes', 'mensagens', 'empregos', 'integracoes', 'assinantes', 'siteblog'].includes(S.view)) ? 'none' : '';
   mostrarProjetoAtual();
   window.scrollTo({ top: 0 });
   const v = $('#view');

@@ -409,6 +409,21 @@ CREATE INDEX IF NOT EXISTS saas_campanhas_conta ON saas_campanhas (conta_id, id 
 ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS cliente_id INT REFERENCES saas_clientes(id) ON DELETE CASCADE;
 UPDATE saas_campanhas x SET cliente_id = (SELECT k.id FROM saas_clientes k WHERE k.conta_id = x.conta_id AND k.principal) WHERE x.cliente_id IS NULL;
 CREATE INDEX IF NOT EXISTS saas_campanhas_cliente ON saas_campanhas (cliente_id, id DESC);
+CREATE TABLE IF NOT EXISTS site_posts (
+  id SERIAL PRIMARY KEY,
+  titulo TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  resumo TEXT NOT NULL DEFAULT '',
+  corpo TEXT NOT NULL DEFAULT '',
+  capa_url TEXT NOT NULL DEFAULT '',
+  seo_titulo TEXT NOT NULL DEFAULT '',
+  seo_desc TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'rascunho',      -- rascunho | publicado
+  autor TEXT NOT NULL DEFAULT '',
+  publicado_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS saas_midias (
   id SERIAL PRIMARY KEY,
   conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
