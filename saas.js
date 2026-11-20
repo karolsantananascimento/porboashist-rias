@@ -10,6 +10,7 @@
 
 const crypto = require('crypto');
 const config = require('./config');
+const { gerarPix } = require('./pix');
 const meta = require('./campanhas');
 const gads = require('./googleads');
 const billing = require('./billing');
@@ -44,6 +45,7 @@ function situacao(c) {
   const trialAte = c.trial_ate ? new Date(c.trial_ate).getTime() : 0;
   if (c.status === 'bloqueada') return { ativa: false, codigo: 'bloqueada', texto: 'Conta bloqueada. Fale com o suporte.' };
   if (c.cortesia) return { ativa: true, codigo: 'cortesia', texto: 'Acesso liberado' };
+  if (c.status === 'ativa' && !c.stripe_subscription_id && c.periodo_fim && new Date(c.periodo_fim).getTime() < agora) return { ativa: false, codigo: 'pix_vencido', texto: 'Sua mensalidade paga por Pix venceu. Gere um novo Pix em Assinatura para continuar.' };
   if (c.status === 'ativa') return { ativa: true, codigo: 'ativa', texto: 'Assinatura ativa' };
   if (c.status === 'trial') {
     if (trialAte > agora) return { ativa: true, codigo: 'trial', texto: 'Período de teste', dias_trial: Math.max(1, Math.ceil((trialAte - agora) / 86400000)) };
@@ -753,6 +755,56 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   }));
 
   // ----- Assinatura e pagamento -----
+  // ----- Pagamento por Pix (QR Code estático; a administradora confere no banco e libera) -----
+  const pixValor = (conta, tipo, qtd) => (tipo === 'mensalidade' ? (PLANOS[conta.plano]?.preco || 0) + (conta.bi ? PRECO_BI : 0) : Math.round(PRECO_AVULSA * qtd * 100) / 100);
+  const pixPedido = (req) => {
+    const tipo = String(req.body?.tipo ?? req.query.tipo ?? '');
+    if (!['mensalidade', 'avulsas'].includes(tipo)) throw erro('Escolha o que vai pagar: mensalidade ou campanhas avulsas.');
+    const qtd = tipo === 'avulsas' ? Math.floor(Number(req.body?.qtd ?? req.query.qtd)) : 1;
+    if (tipo === 'avulsas' && !(qtd >= 1 && qtd <= 100)) throw erro('Informe de 1 a 100 campanhas avulsas.');
+    return { tipo, qtd, valor: pixValor(req.conta, tipo, qtd), txid: `MID${req.conta.id}${tipo === 'avulsas' ? 'A' : 'M'}${qtd}` };
+  };
+  const pixPublico = (x) => ({ id: x.id, tipo: x.tipo, qtd: x.qtd, valor: Number(x.valor), status: x.status, created_at: x.created_at });
+  app.get('/api/saas/pix', assinante, wrap(async (req, res) => {
+    const p = pixPedido(req);
+    res.json({ ...(await gerarPix({ valor: p.valor, txid: p.txid, descricao: p.tipo === 'mensalidade' ? 'Mensalidade' : `${p.qtd} campanhas` })), tipo: p.tipo, qtd: p.qtd });
+  }));
+  app.post('/api/saas/pix/informar', assinante, semSuporte, wrap(async (req, res) => {
+    const p = pixPedido(req);
+    const { rows: [aberto] } = await pool.query(`SELECT 1 FROM saas_pix WHERE conta_id=$1 AND tipo=$2 AND status='informado' LIMIT 1`, [req.conta.id, p.tipo]);
+    if (aberto) throw erro('Você já avisou este pagamento. Assim que a administradora conferir no banco, ele é liberado.', 409);
+    const { rows: [x] } = await pool.query('INSERT INTO saas_pix (conta_id, tipo, qtd, valor, txid) VALUES ($1,$2,$3,$4,$5) RETURNING *', [req.conta.id, p.tipo, p.qtd, p.valor, p.txid]);
+    await evento(pool, req.conta.id, 'pix_informado', `${p.tipo} ${p.qtd} R$ ${p.valor}`);
+    res.json({ pedido: pixPublico(x) });
+  }));
+  app.get('/api/saas/pix/pedidos', assinante, wrap(async (req, res) => {
+    const { rows } = await pool.query('SELECT * FROM saas_pix WHERE conta_id=$1 ORDER BY id DESC LIMIT 10', [req.conta.id]);
+    res.json({ pedidos: rows.map(pixPublico) });
+  }));
+  app.get('/api/saas/admin/pix', soAdmin, wrap(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT x.*, c.empresa, c.plano, u.nome, u.email FROM saas_pix x JOIN saas_contas c ON c.id=x.conta_id JOIN users u ON u.id=c.user_id
+       WHERE x.status='informado' OR x.updated_at > now() - interval '7 days' ORDER BY (x.status='informado') DESC, x.id DESC LIMIT 60`);
+    res.json({ abertos: rows.filter((x) => x.status === 'informado').length, pedidos: rows.map((x) => ({ ...pixPublico(x), conta_id: x.conta_id, nome: x.nome, email: x.email, empresa: x.empresa, plano: x.plano, txid: x.txid })) });
+  }));
+  app.post('/api/saas/admin/pix/:id/:acao', soAdmin, wrap(async (req, res) => {
+    const acao = req.params.acao; if (!['confirmar', 'recusar'].includes(acao)) throw erro('Ação inválida', 404);
+    const { rows: [x] } = await pool.query('SELECT * FROM saas_pix WHERE id=$1', [Number(req.params.id) || 0]);
+    if (!x) throw erro('Pagamento não encontrado.', 404);
+    if (x.status !== 'informado') throw erro('Este pagamento já foi tratado.', 409);
+    if (acao === 'confirmar') {
+      const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE id=$1', [x.conta_id]);
+      if (x.tipo === 'mensalidade') {
+        if (c.status === 'bloqueada') throw erro('A conta está bloqueada. Desbloqueie antes de liberar.');
+        if (c.stripe_subscription_id) throw erro('Esta conta paga no cartão (Stripe). Não libere mensalidade por Pix.');
+        await pool.query(`UPDATE saas_contas SET status='ativa', periodo_fim = GREATEST(COALESCE(periodo_fim, now()), now()) + interval '30 days', updated_at=now() WHERE id=$1`, [c.id]);
+      } else await pool.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras + $2, updated_at=now() WHERE id=$1', [c.id, x.qtd]);
+    }
+    const { rows: [n] } = await pool.query(`UPDATE saas_pix SET status=$2, updated_at=now() WHERE id=$1 AND status='informado' RETURNING *`, [x.id, acao === 'confirmar' ? 'confirmado' : 'recusado']);
+    await evento(pool, x.conta_id, `pix_${n.status}`, `${req.user.email}: ${x.tipo} ${x.qtd} R$ ${x.valor}`);
+    res.json({ pedido: pixPublico(n) });
+  }));
+
   app.post('/api/saas/assinar', assinante, semSuporte, wrap(async (req, res) => {
     if (req.conta.status === 'bloqueada') throw erro('Conta bloqueada. Fale com o suporte.', 403);
     if (req.conta.status === 'ativa' && req.conta.stripe_subscription_id) throw erro('Você já tem uma assinatura ativa. Use "Gerenciar pagamento".');
