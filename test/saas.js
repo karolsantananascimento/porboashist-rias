@@ -19,6 +19,7 @@ let n = 0; let falhas = 0;
 const ok = (c, nome) => { n++; if (c) console.log('  ✓', nome); else { falhas++; console.log('  ✗', nome); } };
 
 // ---- cliente HTTP com cookie por usuário ----
+const cpfDe = (n) => { const d = String(100000000 + n * 7919).slice(0, 9).split('').map(Number); for (const k of [9, 10]) { let t = 0; for (let i = 0; i < k; i++) t += d[i] * (k + 1 - i); const r = (t * 10) % 11; d.push(r === 10 ? 0 : r); } return d.join(''); };
 const jar = {};
 async function req(quem, metodo, caminho, corpo, extra = {}) {
   const headers = { 'content-type': 'application/json', ...(jar[quem] ? { cookie: jar[quem] } : {}), ...(extra.headers || {}) };
@@ -44,7 +45,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       NODE_OPTIONS: `--require ${path.join(__dirname, 'saas-mock.js')}`,
       ACESSOS_KEY: Buffer.alloc(32, 9).toString('base64'), SESSION_SECRET: 'segredo-de-teste', ADMIN_EMAIL: 'admin@exemplo.com', ADMIN_PASSWORD: 'senhaadmin123',
       ANTHROPIC_API_KEY: 'chave-claude-admin', META_ADS_TOKEN: TOKEN_ADMIN, META_AD_ACCOUNT_ID: 'act_999', META_PAGE_ID: '999',
-      STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_PRICE_ID: 'price_x', STRIPE_WEBHOOK_SECRET: WH, SAAS_IA_MES: '3', SAAS_PRECO_TEXTO: 'R$ 97/mês',
+      STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_PRICE_ID: 'price_x', STRIPE_WEBHOOK_SECRET: WH, SAAS_IA_MES: '3', SAAS_CADASTROS_HORA: '100', SAAS_PRECO_TEXTO: 'R$ 97/mês',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -58,16 +59,25 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     console.log('Cadastro');
     let r = await req(null, 'GET', '/api/saas/publico');
     ok(r.status === 200 && r.corpo.cobranca === true && r.corpo.preco === 'R$ 97/mês', 'página pública mostra preço e se a cobrança está ligada');
-    r = await req('a', 'POST', '/api/saas/cadastro', { nome: 'Ana', email: 'ana@exemplo.com', senha: 'abc', aceite: true });
+    r = await req('a', 'POST', '/api/saas/cadastro', { nome: 'Ana', sobrenome: 'Silva', cpf: cpfDe(1), email: 'ana@exemplo.com', senha: 'abc', aceite: true });
     ok(r.status === 400 && /8 caracteres/.test(r.corpo.erro), 'senha curta é recusada');
-    r = await req('a', 'POST', '/api/saas/cadastro', { nome: 'Ana', email: 'ana@exemplo.com', senha: 'senha-forte-1' });
+    r = await req('a', 'POST', '/api/saas/cadastro', { nome: 'Ana', sobrenome: 'Silva', cpf: cpfDe(2), email: 'ana@exemplo.com', senha: 'senha-forte-1' });
     ok(r.status === 400 && /termos/.test(r.corpo.erro), 'sem aceitar os termos não cria conta');
-    r = await req('a', 'POST', '/api/saas/cadastro', { nome: 'Ana', empresa: 'Clínica Ana', email: 'ana@exemplo.com', senha: 'senha-forte-1', aceite: true });
+    r = await req('a', 'POST', '/api/saas/cadastro', { nome: 'Ana', sobrenome: 'Silva', cpf: cpfDe(3), empresa: 'Clínica Ana', email: 'ana@exemplo.com', senha: 'senha-forte-1', aceite: true });
     ok(r.status === 200 && jar.a, 'cadastro cria a conta e já entra');
-    r = await req('b', 'POST', '/api/saas/cadastro', { nome: 'Bruno', empresa: 'Loja Bruno', email: 'bruno@exemplo.com', senha: 'senha-forte-2', aceite: true });
+    r = await req('b', 'POST', '/api/saas/cadastro', { nome: 'Bruno', sobrenome: 'Silva', cpf: cpfDe(4), empresa: 'Loja Bruno', email: 'bruno@exemplo.com', senha: 'senha-forte-2', aceite: true });
     ok(r.status === 200, 'segundo assinante criado');
-    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Ana', email: 'ANA@exemplo.com', senha: 'senha-forte-1', aceite: true });
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Ana', sobrenome: 'Silva', cpf: cpfDe(3), email: 'ANA@exemplo.com', senha: 'senha-forte-1', aceite: true });
     ok(r.status === 409, 'e-mail repetido (mesmo em maiúsculas) é recusado');
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Zé', email: 'ze@exemplo.com', cpf: cpfDe(40), senha: 'senha-forte-1', aceite: true });
+    ok(r.status === 400 && /sobrenome/i.test(r.corpo.erro), 'sobrenome é obrigatório');
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Zé', sobrenome: 'Lima', email: 'ze@exemplo.com', cpf: '111.111.111-11', senha: 'senha-forte-1', aceite: true });
+    ok(r.status === 400 && /CPF/.test(r.corpo.erro), 'CPF com dígitos repetidos é recusado');
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Zé', sobrenome: 'Lima', email: 'ze@exemplo.com', cpf: cpfDe(40).slice(0, 10) + '0', senha: 'senha-forte-1', aceite: true });
+    ok(r.status === 400 && /CPF/.test(r.corpo.erro), 'CPF com dígito verificador errado é recusado');
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Zé', sobrenome: 'Lima', email: 'ze@exemplo.com', cpf: cpfDe(3), senha: 'senha-forte-1', aceite: true });
+    ok(r.status === 409 && /CPF/.test(r.corpo.erro), 'o mesmo CPF não abre uma segunda conta');
+
     r = await req('a', 'GET', '/api/saas/eu');
     ok(r.status === 200 && r.corpo.conta.status === 'trial' && r.corpo.conta.situacao.ativa && r.corpo.conta.situacao.dias_trial >= 6, 'conta nova começa em período de teste');
     const { rows: [u] } = await db.query(`SELECT papel, aceite_termos_em FROM users WHERE email='ana@exemplo.com'`);
@@ -604,11 +614,11 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('a', 'DELETE', `/api/saas/clientes/${sol}`);
     r = await req('adm', 'PUT', `/api/saas/admin/assinantes/${idA}`, { plano: 'solo', bi: false });
     ok(r.status === 200, 'volta a Ana para o plano Solo');
-    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Caio', email: 'caio@exemplo.com', senha: 'senha-forte-3', aceite: true, plano: 'escala', bi: true });
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Caio', sobrenome: 'Silva', cpf: cpfDe(6), email: 'caio@exemplo.com', senha: 'senha-forte-3', aceite: true, plano: 'escala', bi: true });
     ok(r.status === 200, 'cadastro vindo da landing com plano Escala e BI');
     const { rows: [cc] } = await db.query(`SELECT c.plano, c.bi, (SELECT count(*) FROM saas_clientes k WHERE k.conta_id=c.id AND k.principal)::int p FROM saas_contas c JOIN users u ON u.id=c.user_id WHERE u.email='caio@exemplo.com'`);
     ok(cc.plano === 'escala' && cc.bi === true && cc.p === 1, 'o plano e o BI escolhidos na landing ficam gravados, com cliente principal');
-    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Dani', email: 'dani@exemplo.com', senha: 'senha-forte-4', aceite: true, plano: 'inventado' });
+    r = await req(null, 'POST', '/api/saas/cadastro', { nome: 'Dani', sobrenome: 'Silva', cpf: cpfDe(7), email: 'dani@exemplo.com', senha: 'senha-forte-4', aceite: true, plano: 'inventado' });
     const { rows: [dd] } = await db.query(`SELECT c.plano FROM saas_contas c JOIN users u ON u.id=c.user_id WHERE u.email='dani@exemplo.com'`);
     ok(r.status === 200 && dd.plano === 'solo', 'plano desconhecido no cadastro vira Solo');
     await db.query(`DELETE FROM users WHERE email IN ('caio@exemplo.com','dani@exemplo.com')`);
@@ -679,7 +689,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     console.log('Identidade MidIAut e endereços do site');
     for (const rota of ['/midiaut', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego']) {
       r = await req(null, 'GET', rota);
-      ok(r.status === 200 && /MidIAut/.test(r.corpo.raw || '') && !/Agente de Tráfego|A Melhor Mídia/.test(r.corpo.raw || ''), `${rota} abre a página da MidIAut`);
+      ok(rota === '/midiaut' ? (r.status === 200 && /MidIAut/.test(r.corpo.raw || '')) : r.status === 301, `${rota} abre ou redireciona para a página da MidIAut`);
     }
     r = await req(null, 'GET', '/midiaut');
     ok(/R\$ 370/.test(r.corpo.raw) && /R\$ 760/.test(r.corpo.raw) && /R\$ 950/.test(r.corpo.raw) && /Tráfego em piloto automático\./.test(r.corpo.raw), 'landing traz os três planos e o slogan');
@@ -710,9 +720,13 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Outro título', resumo: 'x', corpo: 'y', status: 'rascunho' });
     r = await req(null, 'GET', '/blog/' + post.slug); ok(r.status === 404, 'tirar do ar remove da página pública');
     r = await req(null, 'GET', '/midiaut'); ok(/href="\/blog"/.test(r.corpo.raw), 'a página inicial linka o blog');
+    ok(/<link rel="canonical" href="http:\/\/[^"]+\/midiaut">/.test(r.corpo.raw) && /property="og:image" content="http:\/\//.test(r.corpo.raw) && !/\{\{BASE\}\}/.test(r.corpo.raw), 'página de vendas com canonical e imagem social absolutos');
+    ok(/"@type":"FAQPage"/.test(r.corpo.raw) && /"@type":"Question"/.test(r.corpo.raw) && /"name":"Grátis"/.test(r.corpo.raw), 'dados estruturados: FAQ e plano Grátis');
+    r = await req(null, 'GET', '/assinar'); ok(r.status === 301, 'endereços antigos redirecionam para /midiaut (sem conteúdo duplicado)');
+    r = await req(null, 'GET', '/sitemap.xml'); ok(/<loc>[^<]+\/midiaut<\/loc><lastmod>\d{4}-\d\d-\d\d/.test(r.corpo.raw), 'sitemap traz a data da página de vendas');
     r = await req('adm', 'DELETE', `/api/site/posts/${post.id}`); ok(r.status === 200, 'exclui o artigo');
     // ---- plano Grátis ----
-    r = await req('g', 'POST', '/api/saas/cadastro', { nome: 'Gabi', empresa: 'Loja Gabi', email: 'gabi@exemplo.com', senha: 'senha-forte-9', aceite: true, plano: 'gratis' });
+    r = await req('g', 'POST', '/api/saas/cadastro', { nome: 'Gabi', sobrenome: 'Silva', cpf: cpfDe(8), empresa: 'Loja Gabi', email: 'gabi@exemplo.com', senha: 'senha-forte-9', aceite: true, plano: 'gratis' });
     ok(r.status === 200, 'cadastro direto no plano Grátis');
     r = await req('g', 'GET', '/api/saas/eu');
     ok(r.corpo.conta.plano === 'gratis' && r.corpo.conta.situacao.ativa === true && r.corpo.conta.situacao.codigo === 'gratis', 'Grátis nasce ativo, sem teste');
@@ -724,6 +738,15 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.situacao.ativa === true, 'Grátis não expira');
       for (let i = 0; i < 1; i++) await db.query(`INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, status, criada_em, cota_mes) SELECT $1, id, 'google', '{}', 'criada_pausada', now(), $2 FROM saas_clientes WHERE conta_id=$1 AND principal`, [cg.id, new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7)]);
       r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.campanhas.usadas === 1 && r.corpo.conta.campanhas.restantes === 0, 'campanha em qualquer plataforma gasta a cota única');
+      for (const [k, v] of [['META_ADS_TOKEN', 'EAAB-token-da-gabi-1234567890abcdef'], ['META_AD_ACCOUNT_ID', '2222222222'], ['META_PAGE_ID', '66666']]) await req('g', 'PUT', '/api/saas/chaves', { chave: k, valor: v });
+      r = await req('g', 'POST', '/api/saas/campanhas', { spec: { ...camp.spec, nome: 'Segunda do mês' } }); const g2 = r.corpo.campanha;
+      ok(r.status === 200, 'Grátis ainda pode guardar rascunho depois de usar a cota');
+      r = await req('g', 'POST', `/api/saas/campanhas/${g2.id}/subir`, { confirmado: true });
+      ok(r.status === 402 && r.corpo.codigo === 'limite_campanhas' && /assine um plano/.test(r.corpo.erro) && /a campanha deste mês/.test(r.corpo.erro), 'Grátis: a 2ª campanha do mês trava com 402 e oferece avulsa ou plano');
+      r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.situacao.ativa === true, 'a conta Grátis segue ativa depois de travar (só novas campanhas param)');
+      await db.query(`UPDATE saas_campanhas SET cota_mes='2000-01' WHERE conta_id=$1`, [cg.id]);
+      r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.campanhas.restantes === 1, 'no mês seguinte a cota volta a 1');
+      await db.query(`UPDATE saas_campanhas SET cota_mes=$2 WHERE conta_id=$1 AND status='criada_pausada'`, [cg.id, new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7)]);
       r = await req('g', 'POST', '/api/saas/assinar', {}); ok(r.status === 400, 'conta Grátis precisa escolher um plano pago ao assinar');
       r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade' }); ok(r.status === 400, 'Pix de mensalidade da conta Grátis exige plano');
       r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade', plano: 'agencia' }); const pg = r.corpo.pedido;

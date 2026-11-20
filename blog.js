@@ -1,6 +1,8 @@
 // Blog do site MidIAut: o administrador escreve em Markdown simples, vê a prévia e publica em /blog.
 // Páginas públicas são geradas no servidor (boas para SEO) e o texto é sempre escapado antes de virar HTML.
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -97,7 +99,7 @@ function registrarPublico(app, { pool, wrap }) {
   }));
   app.get('/sitemap.xml', wrap(async (req, res) => {
     const b = baseDe(req); const { rows } = await pool.query(`SELECT slug, updated_at FROM site_posts WHERE status='publicado' ORDER BY publicado_em DESC`);
-    const u = [['/midiaut', null], ['/blog', null], ...rows.map((p) => [`/blog/${p.slug}`, p.updated_at])];
+    const u = [['/midiaut', fs.statSync(path.join(__dirname, 'public', 'midiaut.html')).mtime], ['/blog', rows[0]?.updated_at || null], ...rows.map((p) => [`/blog/${p.slug}`, p.updated_at])];
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${u.map(([l, d]) => `<url><loc>${esc(b + l)}</loc>${d ? `<lastmod>${new Date(d).toISOString().slice(0, 10)}</lastmod>` : ''}</url>`).join('')}</urlset>`);
   }));
   app.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nAllow: /midiaut\nAllow: /blog\nDisallow: /api/\nDisallow: /assinante\nSitemap: ${baseDe(req)}/sitemap.xml\n`));

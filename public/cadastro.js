@@ -64,23 +64,35 @@ document.querySelectorAll('.olho').forEach((b) => b.addEventListener('click', ()
   b.setAttribute('aria-label', mostrar ? 'Ocultar senha' : 'Mostrar senha');
 }));
 
+const cpfOk = (c) => {
+  c = c.replace(/\D/g, '');
+  if (!/^\d{11}$/.test(c) || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += Number(c[i]) * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
+};
+$('#cCpf').addEventListener('input', (e) => {
+  const d = e.target.value.replace(/\D/g, '').slice(0, 11);
+  e.target.value = d.replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1-$2');
+});
 $('#fCadastro').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.currentTarget; const erro = $('#cErro'); erro.textContent = '';
-  const nome = $('#cNome').value.trim(); const email = $('#cEmail').value.trim(); const senha = $('#cSenha').value;
+  const nome = $('#cNome').value.trim(); const sobrenome = $('#cSobrenome').value.trim(); const cpf = $('#cCpf').value; const email = $('#cEmail').value.trim(); const senha = $('#cSenha').value;
   const ruins = [];
   if (!nome) ruins.push('cNome');
+  if (!sobrenome) ruins.push('cSobrenome');
+  if (!cpfOk(cpf)) ruins.push('cCpf');
   if (!emailOk(email)) ruins.push('cEmail');
   if (senha.length < 8) ruins.push('cSenha');
   marcarInvalidos(f, ruins);
   if (ruins.length) {
-    erro.textContent = ruins[0] === 'cNome' ? 'Informe o seu nome.' : ruins[0] === 'cEmail' ? 'Confira o e-mail.' : 'A senha precisa ter pelo menos 8 caracteres.';
+    erro.textContent = ruins[0] === 'cNome' ? 'Informe o seu nome.' : ruins[0] === 'cSobrenome' ? 'Informe o seu sobrenome.' : ruins[0] === 'cCpf' ? 'Confira o CPF.' : ruins[0] === 'cEmail' ? 'Confira o e-mail.' : 'A senha precisa ter pelo menos 8 caracteres.';
     $('#' + ruins[0]).focus(); return;
   }
   if (!$('#cAceite').checked) { erro.textContent = 'Para criar a conta é preciso aceitar os termos de uso.'; $('#cAceite').focus(); return; }
   ocupado(f, true);
   try {
-    await chamar('/api/saas/cadastro', { nome, empresa: $('#cEmpresa').value.trim(), email, senha, aceite: true, plano: planoEscolhido, bi: comBi });
+    await chamar('/api/saas/cadastro', { nome, sobrenome, cpf, empresa: $('#cEmpresa').value.trim(), email, senha, aceite: true, plano: planoEscolhido, bi: comBi });
     location.href = destino();
   } catch (er) {
     erro.textContent = er.message; ocupado(f, false);
