@@ -53,6 +53,21 @@ async function criarCheckout({ conta, email, base }) {
   return s.url;
 }
 
+// Campanhas avulsas: pagamento único (R$ por campanha x quantidade), com preço definido na hora, sem precisar cadastrar produto no Stripe
+async function criarCheckoutAvulsa({ conta, email, base, quantidade, precoCentavos }) {
+  const corpo = {
+    mode: 'payment', locale: 'pt-BR',
+    line_items: [{ quantity: quantidade, price_data: { currency: 'brl', unit_amount: precoCentavos, product_data: { name: 'Campanha avulsa MidIAut', description: 'Uma campanha a mais, além do limite mensal do seu plano. Não vence.' } } }],
+    success_url: `${base}/assinante?avulsas=ok`, cancel_url: `${base}/assinante?avulsas=cancelada`,
+    client_reference_id: String(conta.id),
+    metadata: { conta_id: String(conta.id), tipo: 'campanhas_avulsas', quantidade: String(quantidade) },
+    payment_intent_data: { metadata: { conta_id: String(conta.id), tipo: 'campanhas_avulsas' } },
+  };
+  if (conta.stripe_customer_id) corpo.customer = conta.stripe_customer_id; else corpo.customer_email = email;
+  const s = await stripe('checkout/sessions', corpo);
+  return s.url;
+}
+
 async function criarPortal({ conta, base }) {
   if (!conta.stripe_customer_id) throw erro('Você ainda não tem uma assinatura para gerenciar.');
   const s = await stripe('billing_portal/sessions', { customer: conta.stripe_customer_id, return_url: `${base}/assinante` });
@@ -94,7 +109,18 @@ async function aplicarEvento(pool, ev) {
   if (!conta) return null;
   const evento = (tipo, detalhe) => pool.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [conta.id, tipo, detalhe]);
 
-  if (ev.type === 'checkout.session.completed' && o.mode === 'subscription') {
+  const avulsa = ['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(ev.type) && o.mode === 'payment' && o.metadata?.tipo === 'campanhas_avulsas';
+  if (avulsa) {
+    const qtd = Number(o.metadata.quantidade);
+    if (o.payment_status !== 'paid' || !Number.isInteger(qtd) || qtd < 1 || qtd > 100) return conta; // pagamento ainda pendente: o Stripe avisa de novo quando cair
+    const minimo = qtd * (Number(process.env.SAAS_PRECO_AVULSA || 15) * 100);
+    if (Number(o.amount_total) < minimo) { console.error('Compra avulsa com valor menor que o esperado', o.id); return conta; }
+    const { rows } = await pool.query('INSERT INTO saas_compras (session_id, conta_id, quantidade, valor_centavos) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING 1', [o.id, conta.id, qtd, Number(o.amount_total)]);
+    if (rows.length) { // evento repetido do Stripe não credita duas vezes
+      await pool.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras + $2, updated_at=now() WHERE id=$1', [conta.id, qtd]);
+      await evento('campanhas_avulsas', `${qtd} campanha(s) avulsa(s) paga(s)`);
+    }
+  } else if (ev.type === 'checkout.session.completed' && o.mode === 'subscription') {
     await pool.query('UPDATE saas_contas SET stripe_customer_id=COALESCE($2,stripe_customer_id), stripe_subscription_id=COALESCE($3,stripe_subscription_id), updated_at=now() WHERE id=$1',
       [conta.id, typeof o.customer === 'string' ? o.customer : null, typeof o.subscription === 'string' ? o.subscription : null]);
     await evento('assinatura_iniciada', 'Checkout concluído');
@@ -118,4 +144,4 @@ async function aplicarEvento(pool, ev) {
   return conta;
 }
 
-module.exports = { configurado, criarCheckout, criarPortal, conferirAssinatura, aplicarEvento, STATUS };
+module.exports = { configurado, criarCheckout, criarCheckoutAvulsa, criarPortal, conferirAssinatura, aplicarEvento, STATUS };

@@ -229,6 +229,73 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('a', 'DELETE', `/api/saas/midias/${m2.id}`);
     ok(r.status === 409 || r.status === 200, 'exclusão respeita rascunhos');
 
+
+    console.log('Limite de campanhas por plano e campanhas avulsas');
+    {
+      const { rows: [orig] } = await db.query(`SELECT status, trial_ate FROM saas_contas WHERE id=$1`, [idA]);
+      await db.query(`UPDATE saas_contas SET status='ativa' WHERE id=$1`, [idA]);
+      await db.query(`UPDATE saas_campanhas SET cota_mes=NULL WHERE conta_id=$1`, [idA]); // zera a cota do mês sem apagar as campanhas
+      r = await req('a', 'GET', '/api/saas/eu');
+      ok(r.corpo.conta.campanhas.limite === 10 && r.corpo.conta.campanhas.usadas === 0 && r.corpo.conta.campanhas.preco_avulsa === 15, 'plano Solo: 10 campanhas por mês, avulsa a R$ 15');
+      const mk = async (nome) => (await req('a', 'POST', '/api/saas/campanhas', { spec: { ...camp.spec, nome } })).corpo.campanha;
+      // enche a cota do mês direto no banco (9 usadas)
+      const mes = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7);
+      for (let i = 0; i < 9; i++) await db.query(`INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, status, criada_em, cota_mes) SELECT $1, id, 'meta', '{}', 'criada_pausada', now(), $2 FROM saas_clientes WHERE conta_id=$1 AND principal`, [idA, mes]);
+      const c10 = await mk('Décima'); const c11 = await mk('Onze');
+      r = await req('a', 'POST', `/api/saas/campanhas/${c10.id}/subir`, { confirmado: true });
+      ok(r.status === 200 && r.corpo.campanha.status === 'criada_pausada', 'a 10ª campanha cabe no plano');
+      r = await req('a', 'GET', '/api/saas/eu');
+      ok(r.corpo.conta.campanhas.usadas === 10 && r.corpo.conta.campanhas.restantes === 0, 'contador mostra 10/10');
+      limparLog();
+      r = await req('a', 'POST', `/api/saas/campanhas/${c11.id}/subir`, { confirmado: true });
+      ok(r.status === 402 && r.corpo.codigo === 'limite_campanhas' && /R\$ 15/.test(r.corpo.erro), 'a 11ª trava com 402 e oferece avulsa de R$ 15');
+      ok(chamadas().filter((c) => c.alvo === 'meta').length === 0, 'travou antes de falar com o Meta');
+      const { rows: [st] } = await db.query('SELECT status FROM saas_campanhas WHERE id=$1', [c11.id]);
+      ok(st.status === 'rascunho', 'a campanha continua rascunho');
+      // compra avulsa
+      r = await req('a', 'POST', '/api/saas/campanhas-avulsas', { quantidade: 0 }); ok(r.status === 400, 'quantidade inválida é recusada');
+      limparLog();
+      r = await req('a', 'POST', '/api/saas/campanhas-avulsas', { quantidade: 3 });
+      ok(r.status === 200 && /checkout\.stripe\.com/.test(r.corpo.url) && r.corpo.total === 45, 'compra de 3 avulsas = R$ 45 no Stripe');
+      const sb = chamadas().find((c) => c.alvo === 'stripe');
+      const sd = decodeURIComponent(sb.body);
+      ok(/mode=payment/.test(sd) && /unit_amount\]=1500/.test(sd) && /quantity\]=3/.test(sd) && /currency\]=brl/.test(sd), 'sessão de pagamento único, 3 x R$ 15,00 em BRL');
+      const sessao = (id, extra = {}) => ({ type: 'checkout.session.completed', data: { object: { id, mode: 'payment', payment_status: 'paid', amount_total: 4500, customer: 'cus_x', client_reference_id: String(idA), metadata: { conta_id: String(idA), tipo: 'campanhas_avulsas', quantidade: '3' }, ...extra } } });
+      await webhook(sessao('cs_test_1', { payment_status: 'unpaid' }));
+      let { rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]);
+      ok(ex.campanhas_extras === 0, 'pagamento ainda não confirmado não libera nada');
+      await webhook(sessao('cs_test_1', { amount_total: 100 }));
+      ({ rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]));
+      ok(ex.campanhas_extras === 0, 'valor menor que o esperado não libera');
+      r = await webhook(sessao('cs_test_1'));
+      ({ rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]));
+      ok(r.status === 200 && ex.campanhas_extras === 3, 'pagamento confirmado credita 3 avulsas');
+      await webhook(sessao('cs_test_1'));
+      ({ rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]));
+      ok(ex.campanhas_extras === 3, 'evento repetido do Stripe não credita de novo');
+      r = await req('a', 'POST', `/api/saas/campanhas/${c11.id}/subir`, { confirmado: true });
+      ({ rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]));
+      ok(r.status === 200 && ex.campanhas_extras === 2, 'a 11ª sobe usando 1 avulsa (sobram 2)');
+      r = await req('a', 'GET', '/api/saas/eu');
+      ok(r.corpo.conta.campanhas.usadas === 10 && r.corpo.conta.campanhas.extras === 2, 'contador do plano segue 10/10 e mostra 2 avulsas');
+      // falha no Meta devolve a avulsa
+      const c12 = await mk('Doze');
+      const mockFalha = await db.query(`UPDATE saas_campanhas SET spec = spec || '{"url_destino":"http://sem-https.com"}' WHERE id=$1`, [c12.id]);
+      r = await req('a', 'POST', `/api/saas/campanhas/${c12.id}/subir`, { confirmado: true });
+      ({ rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]));
+      ok(r.status === 400 && ex.campanhas_extras === 2, 'rascunho inválido não gasta avulsa');
+      // Google também conta
+      r = await req('b', 'GET', '/api/saas/eu'); ok(r.corpo.conta.campanhas.limite === 10, 'outro assinante tem a própria cota');
+      r = await req('adm', 'PUT', `/api/saas/admin/assinantes/${idA}`, { campanhas_extras_somar: 5 });
+      ({ rows: [ex] } = await db.query('SELECT campanhas_extras FROM saas_contas WHERE id=$1', [idA]));
+      ok(r.status === 200 && ex.campanhas_extras === 7, 'administradora pode liberar avulsas de cortesia');
+      await db.query(`UPDATE saas_contas SET plano='agencia' WHERE id=$1`, [idA]);
+      r = await req('a', 'GET', '/api/saas/eu'); ok(r.corpo.conta.campanhas.limite === 30, 'plano Agência: 30 por mês');
+      await db.query(`UPDATE saas_contas SET plano='solo', campanhas_extras=0 WHERE id=$1`, [idA]);
+      await db.query(`UPDATE saas_contas SET status=$2, trial_ate=$3 WHERE id=$1`, [idA, orig.status, orig.trial_ate]);
+      r = await req(null, 'GET', '/midiaut'); ok(/10 campanhas novas por mês/.test(r.corpo.raw) && /R\$ 15/.test(r.corpo.raw), 'página de vendas mostra o limite e a avulsa');
+    }
+
     console.log('Cota de IA');
     await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Segunda campanha de estética em Recife com orçamento de 40 reais por dia.' });
     await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Terceira campanha de estética em Recife com orçamento de 40 reais por dia.' });

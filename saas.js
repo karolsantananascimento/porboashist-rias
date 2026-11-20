@@ -21,7 +21,9 @@ const escopoDe = (conta) => ESCOPO_BASE + conta.id; // escopo do cliente princip
 const ESCOPO_CLIENTE_BASE = 2_000_000;
 const escopoCliente = (cliente) => cliente.escopo;
 // Planos de venda (/gestoragent). O plano é um rótulo administrado por você; o limite de clientes ainda não é aplicado pelo sistema.
-const PLANOS = { solo: { nome: 'Solo', clientes: 1, preco: 370 }, agencia: { nome: 'Agência', clientes: 3, preco: 760 }, escala: { nome: 'Escala', clientes: 5, preco: 950 } };
+// campanhas = campanhas novas criadas por mês (somando todos os clientes da conta). Passou disso, cada campanha extra custa PRECO_AVULSA.
+const PLANOS = { solo: { nome: 'Solo', clientes: 1, preco: 370, campanhas: 10 }, agencia: { nome: 'Agência', clientes: 3, preco: 760, campanhas: 30 }, escala: { nome: 'Escala', clientes: 5, preco: 950, campanhas: 50 } };
+const PRECO_AVULSA = Number(process.env.SAAS_PRECO_AVULSA || 15);
 const PRECO_BI = 50;
 const TRIAL_DIAS = Number(process.env.SAAS_TRIAL_DIAS ?? 7);
 const IA_LIMITE_MES = Number(process.env.SAAS_IA_MES || 30);
@@ -48,17 +50,20 @@ function situacao(c) {
   return { ativa: false, codigo: 'cancelada', texto: 'Assinatura cancelada. Assine de novo para voltar a criar campanhas.' };
 }
 
-const publicoConta = (c, u) => {
+const publicoConta = (c, u, usadas = 0) => {
   const s = situacao(c);
   return {
     id: c.id, email: u.email, nome: u.nome, empresa: c.empresa, status: c.status, situacao: s, cortesia: c.cortesia,
     trial_ate: c.trial_ate, periodo_fim: c.periodo_fim, tem_assinatura: !!c.stripe_subscription_id,
     plano: c.plano, plano_nome: PLANOS[c.plano]?.nome || c.plano, clientes_max: PLANOS[c.plano]?.clientes ?? 1, bi: !!c.bi,
     ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: IA_LIMITE_MES },
+    campanhas: { limite: limiteCampanhas(c), usadas, extras: c.campanhas_extras || 0, restantes: Math.max(0, limiteCampanhas(c) - usadas) + (c.campanhas_extras || 0), preco_avulsa: PRECO_AVULSA },
   };
 };
 const clientePublico = (k) => ({ id: k.id, nome: k.nome, principal: k.principal });
 const mesAtual = () => new Date().toISOString().slice(0, 7);
+const mesCota = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7); // mês no horário de Recife
+const limiteCampanhas = (c) => PLANOS[c.plano]?.campanhas ?? PLANOS.solo.campanhas;
 
 async function evento(pool, contaId, tipo, detalhe) {
   await pool.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [contaId, tipo, String(detalhe || '').slice(0, 400)]).catch(() => {});
@@ -241,10 +246,40 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     `SELECT count(*)::int n FROM saas_eventos WHERE conta_id=$1 AND tipo='campanha_ativada'
        AND created_at >= date_trunc('day', now() AT TIME ZONE 'America/Recife') AT TIME ZONE 'America/Recife'`, [contaId])).rows[0].n;
 
+
+  // ----- Limite de campanhas por plano (por mês) + campanhas avulsas -----
+  const usadasNoMes = async (contaId) => (await pool.query('SELECT count(*)::int n FROM saas_campanhas WHERE conta_id=$1 AND cota_mes=$2', [contaId, mesCota()])).rows[0].n;
+  // Decide, de forma atômica por conta, se a campanha cabe no plano ou gasta uma avulsa. Devolve 'plano' ou 'extra'; sem saldo, 402.
+  async function reservarCampanha(conta) {
+    const cx = await pool.connect();
+    try {
+      await cx.query('BEGIN'); await cx.query('SELECT pg_advisory_xact_lock($1)', [conta.id]);
+      const { rows: [{ n }] } = await cx.query('SELECT count(*)::int n FROM saas_campanhas WHERE conta_id=$1 AND cota_mes=$2', [conta.id, mesCota()]);
+      let tipo = 'plano';
+      if (n >= limiteCampanhas(conta)) {
+        const r = await cx.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras - 1 WHERE id=$1 AND campanhas_extras > 0 RETURNING 1', [conta.id]);
+        if (!r.rowCount) {
+          await cx.query('ROLLBACK');
+          throw Object.assign(erro(`Você usou as ${limiteCampanhas(conta)} campanhas deste mês do plano ${PLANOS[conta.plano]?.nome || ''}. Para criar mais, compre campanhas avulsas por R$ ${PRECO_AVULSA} cada (não vencem) ou aguarde o próximo mês.`, 402), { codigo: 'limite_campanhas' });
+        }
+        tipo = 'extra';
+      }
+      await cx.query('COMMIT');
+      return tipo;
+    } catch (e) { await cx.query('ROLLBACK').catch(() => {}); throw e; } finally { cx.release(); }
+  }
+  const devolverCampanha = async (contaId, tipo) => { if (tipo === 'extra') await pool.query('UPDATE saas_contas SET campanhas_extras = campanhas_extras + 1 WHERE id=$1', [contaId]); };
+
+  app.post('/api/saas/campanhas-avulsas', assinante, semSuporte, emDia, wrap(async (req, res) => {
+    const q = Number(req.body?.quantidade);
+    if (!Number.isInteger(q) || q < 1 || q > 50) throw erro('Escolha de 1 a 50 campanhas avulsas.');
+    res.json({ url: await billing.criarCheckoutAvulsa({ conta: req.conta, email: req.user.email, base: base(req), quantidade: q, precoCentavos: Math.round(PRECO_AVULSA * 100) }), total: q * PRECO_AVULSA });
+  }));
+
   // ----- Perfil e situação da conta -----
   app.get('/api/saas/eu', assinante, wrap(async (req, res) => {
     res.json({
-      conta: publicoConta(req.conta, req.user), cobranca: billing.configurado(), preco: process.env.SAAS_PRECO_TEXTO || '',
+      conta: publicoConta(req.conta, req.user, await usadasNoMes(req.conta.id)), cobranca: billing.configurado(), preco: process.env.SAAS_PRECO_TEXTO || '',
       clientes: req.clientes.map(clientePublico), cliente_atual: req.cliente.id, suporte: req.suporte || null,
     });
   }));
@@ -295,7 +330,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   app.put('/api/saas/conta', assinante, wrap(async (req, res) => {
     const empresa = String(req.body?.empresa ?? '').trim().slice(0, 120) || null;
     const { rows: [c] } = await pool.query('UPDATE saas_contas SET empresa=$2, updated_at=now() WHERE id=$1 RETURNING *', [req.conta.id, empresa]);
-    res.json({ conta: publicoConta(c, req.user) });
+    res.json({ conta: publicoConta(c, req.user, await usadasNoMes(c.id)) });
   }));
 
   // Exclusão da conta e das chaves (LGPD). Quem tem assinatura paga precisa cancelá-la antes.
@@ -458,9 +493,12 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     const c0 = await carregar(req);
     const ctx = contextoMeta(req.cliente);
     const prob = meta.validar(c0.spec, ctx); if (prob) throw erro(prob);
+    if (!['rascunho', 'erro'].includes(c0.status)) throw erro('Esta campanha já está sendo criada ou já foi criada.', 409);
+    const cota = await reservarCampanha(req.conta);
     const { rows: [c] } = await pool.query(
-      `UPDATE saas_campanhas SET status='criando', erro=NULL, updated_at=now() WHERE id=$1 AND status IN ('rascunho','erro') RETURNING *`, [c0.id]);
-    if (!c) throw erro('Esta campanha já está sendo criada ou já foi criada.', 409);
+      `UPDATE saas_campanhas SET status='criando', erro=NULL, cota_mes=$2, usou_extra=$3, updated_at=now() WHERE id=$1 AND status IN ('rascunho','erro') RETURNING *`,
+      [c0.id, cota === 'plano' ? mesCota() : null, cota === 'extra']);
+    if (!c) { await devolverCampanha(req.conta.id, cota); throw erro('Esta campanha já está sendo criada ou já foi criada.', 409); }
     try {
       const ids = await meta.subirCampanha(ctx, c.spec);
       const sobra = [...(c0.ids?.restos_pausados || []), ...(c0.ids?.campanha_id ? [c0.ids.campanha_id] : [])];
@@ -470,7 +508,8 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
       res.json({ campanha: n });
     } catch (e) {
       console.error('SaaS: falha ao subir campanha', c.id, e.message);
-      const { rows: [n] } = await pool.query(`UPDATE saas_campanhas SET status='erro', erro=$2, ids=$3, updated_at=now() WHERE id=$1 RETURNING *`, [c.id, e.message, e.criado || {}]);
+      await devolverCampanha(req.conta.id, cota); // falhou: não gasta a cota nem a campanha avulsa
+      const { rows: [n] } = await pool.query(`UPDATE saas_campanhas SET status='erro', erro=$2, ids=$3, cota_mes=NULL, usou_extra=false, updated_at=now() WHERE id=$1 RETURNING *`, [c.id, e.message, e.criado || {}]);
       res.status(e.status && e.status < 500 ? e.status : 502).json({ erro: e.message, campanha: n });
     }
   }));
@@ -531,14 +570,17 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
       titulos: lista(b.titulos, 15), descricoes: lista(b.descricoes, 4), url_final: String(b.url_final || '').trim().slice(0, 500),
       palavras_exatas: lista(b.palavras_exatas, 50), palavras_frase: lista(b.palavras_frase, 50),
     };
+    const cota = await reservarCampanha(req.conta);
     try {
       const ids = await gads.criarPesquisa(ctx, spec);
       const { rows: [n] } = await pool.query(
-        `INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, status, ids, criada_em) VALUES ($1,$4,'google',$2,'criada_pausada',$3,now()) RETURNING *`, [req.conta.id, spec, ids, req.cliente.id]);
+        `INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, status, ids, criada_em, cota_mes, usou_extra) VALUES ($1,$4,'google',$2,'criada_pausada',$3,now(),$5,$6) RETURNING *`,
+        [req.conta.id, spec, ids, req.cliente.id, cota === 'plano' ? mesCota() : null, cota === 'extra']);
       await evento(pool, req.conta.id, 'campanha_criada', `Google ${ids.campanha_id}`);
       res.json({ campanha: n });
     } catch (e) {
       console.error('SaaS: falha ao criar campanha no Google', e.message);
+      await devolverCampanha(req.conta.id, cota);
       res.status(e.status && e.status < 500 ? e.status : 502).json({ erro: e.message, criado: e.criado || {} });
     }
   }));
@@ -609,6 +651,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     if (typeof b.cortesia === 'boolean') add('cortesia=?', b.cortesia);
     if (b.plano !== undefined) { if (!Object.hasOwn(PLANOS, b.plano)) throw erro('Plano inválido'); add('plano=?', b.plano); }
     if (typeof b.bi === 'boolean') add('bi=?', b.bi);
+    if (Number.isInteger(b.campanhas_extras_somar) && Math.abs(b.campanhas_extras_somar) <= 500) add('campanhas_extras = GREATEST(0, campanhas_extras + ?)', b.campanhas_extras_somar);
     if (typeof b.bloqueada === 'boolean') {
       // desbloquear devolve a conta à situação que ela teria: assinando (ativa) ou em teste
       add('status=?', b.bloqueada ? 'bloqueada' : (c.stripe_subscription_id ? 'ativa' : 'trial'));
