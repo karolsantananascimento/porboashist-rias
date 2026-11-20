@@ -640,10 +640,8 @@ app.use((err, req, res, next) => {
 });
 
 // ---------- Interface ----------
-// Site de vendas do Agente de Tráfego; os botões levam a /cadastro (criar conta) e /entrar (login)
-app.get(['/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinar.html')));
-// Página de vendas com os planos (R$ 370 / 760 / 950 + pacote BI)
-app.get(['/gestoragent', '/gestoragente'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'gestoragent.html')));
+// Site de vendas da MidIAut (/midiaut, com planos R$ 370 / 760 / 950 + pacote BI); os endereços antigos continuam apontando para ele
+app.get(['/midiaut', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'midiaut.html')));
 app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
 app.use(express.static(path.join(__dirname, 'public')));

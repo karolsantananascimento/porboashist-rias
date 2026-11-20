@@ -3,30 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Criar conta e entrar · Agente de Tráfego · A Melhor Mídia do Brasil</title>
+  <title>Criar conta e entrar · MidIAut</title>
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#0B0B0B">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Boldonse&family=Syncopate:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assinar.css">
-  <link rel="icon" href="/brand/melhor-midia/emblema-mm.jpg">
+  <meta name="theme-color" content="#17191D">
+  <link rel="preload" href="/fonts/Manrope.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="/midiaut.css">
+  <link rel="icon" href="/brand/midiaut/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/brand/midiaut/apple-touch-icon.png">
 </head>
 <body>
-  <div class="grao" aria-hidden="true"></div>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+    <linearGradient id="gCinza" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F2F4F7"/><stop offset="1" stop-color="#777E8B"/></linearGradient>
+    <linearGradient id="gLima" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C8FF6B"/><stop offset="1" stop-color="#B6FF45"/></linearGradient>
+    <symbol id="sim" viewBox="0 0 92 80"><g transform="matrix(1 0 -0.2867 1 24 0)"><rect x="2" y="46" width="16" height="30" rx="8" fill="url(#gCinza)"/><rect x="26" y="26" width="16" height="50" rx="8" fill="url(#gCinza)"/><rect x="50" y="38" width="16" height="38" rx="8" fill="url(#gLima)"/></g><circle cx="78" cy="14" r="9.5" fill="url(#gLima)"/></symbol>
+  </defs></svg>
   <header class="topo">
-    <a class="marca" href="/assinar" aria-label="A Melhor Mídia do Brasil, voltar ao site">
-      <img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="44" height="44">
-      <span class="syn">A MELHOR MÍDIA<br>DO BRASIL</span>
-    </a>
-    <a class="voltar syn" href="/assinar">← VOLTAR AO SITE</a>
+    <a class="marca" href="/midiaut" aria-label="MidIAut, voltar ao site"><svg class="simbolo" aria-hidden="true"><use href="#sim"/></svg><span class="wm">Mid<i>IA</i>ut</span></a>
+    <a class="voltar" href="/midiaut">← Voltar ao site</a>
   </header>
   <main>
   <div class="pg" id="inicio">
     <section class="intro" aria-labelledby="titulo">
-      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> AGENTE DE TRÁFEGO</p>
-      <h1 id="titulo" class="boldo">Campanhas com <em>intenção</em>.</h1>
-      <span class="filete" aria-hidden="true"></span>
+      <p class="etiqueta">Gestor de tráfego com IA</p>
+      <h1 id="titulo" class="titulo">Tráfego em <em>piloto automático.</em></h1>
       <p class="lead">Crie a sua conta para montar campanhas no Meta e no Google com a ajuda da IA. Você confere tudo e só ativa quando quiser.</p>
       <div class="selos">
         <span id="preco" class="selo hidden"></span>
@@ -40,14 +39,13 @@
     </section>
 
     <section class="painel" id="cadastro" aria-label="Criar conta ou entrar">
-      <div class="cantos" aria-hidden="true"><i>+</i><i>+</i><i>+</i><i>+</i></div>
-      <div class="abas syn" role="tablist">
-        <button type="button" role="tab" id="abaCriar" aria-controls="fCadastro" aria-selected="true">CRIAR CONTA</button>
-        <button type="button" role="tab" id="abaEntrar" aria-controls="fLogin" aria-selected="false">ENTRAR</button>
+            <div class="abas" role="tablist">
+        <button type="button" role="tab" id="abaCriar" aria-controls="fCadastro" aria-selected="true">Criar conta</button>
+        <button type="button" role="tab" id="abaEntrar" aria-controls="fLogin" aria-selected="false">Entrar</button>
       </div>
 
       <form id="fCadastro" role="tabpanel" aria-labelledby="abaCriar" novalidate>
-        <h2 class="boldo" id="tCadastro">Assine agora.</h2>
+        <h2  id="tCadastro">Assine agora.</h2>
         <p class="dica" id="pCadastro">Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.</p>
         <div class="campo"><label for="cNome">Seu nome</label><input id="cNome" name="nome" required maxlength="120" autocomplete="name"></div>
         <div class="campo"><label for="cEmpresa">Empresa ou marca <small>(opcional)</small></label><input id="cEmpresa" name="empresa" maxlength="120" autocomplete="organization"></div>
@@ -70,7 +68,7 @@
       </form>
 
       <form id="fLogin" role="tabpanel" aria-labelledby="abaEntrar" class="hidden" novalidate>
-        <h2 class="boldo">Bem-vindo de volta.</h2>
+        <h2 >Bem-vindo de volta.</h2>
         <div class="campo"><label for="lEmail">E-mail</label><input id="lEmail" name="email" type="email" required autocomplete="username" inputmode="email"></div>
         <div class="campo">
           <label for="lSenha">Senha</label>
@@ -87,7 +85,7 @@
     </section>
   </div>
   </main>
-  <footer class="rodape syn">MARKETING · ESTRATÉGIA · TECNOLOGIA · NEGÓCIOS · IA</footer>
+  <footer class="rodape">MidIAut · Tráfego em piloto automático.</footer>
   <script src="/cadastro.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Página de cadastro e acesso do Agente de Tráfego (SaaS), aberta pelos botões do site de vendas (/assinar).
+// Página de cadastro e acesso da MidIAut (SaaS), aberta pelos botões do site de vendas (/midiaut).
 // Fala só com /api/saas/publico, /api/saas/cadastro, /api/login e /api/sessao. Depois de entrar, vai para /assinante.
 const $ = (s) => document.querySelector(s);
 const DESTINO = '/assinante';
