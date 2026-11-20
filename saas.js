@@ -85,7 +85,7 @@ function situacao(c) {
 const publicoConta = (c, u, usadas = 0) => {
   const s = situacao(c);
   return {
-    id: c.id, email: u.email, nome: u.nome, empresa: c.empresa, status: c.status, situacao: s, cortesia: c.cortesia,
+    id: c.id, admin: u.papel === 'admin', email: u.email, nome: u.nome, empresa: c.empresa, status: c.status, situacao: s, cortesia: c.cortesia,
     trial_ate: c.trial_ate, periodo_fim: c.periodo_fim, tem_assinatura: !!c.stripe_subscription_id,
     plano: c.plano, plano_nome: PLANOS[c.plano]?.nome || c.plano, clientes_max: PLANOS[c.plano]?.clientes ?? 1, bi: !!c.bi,
     ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: limiteIa(c) },
@@ -302,10 +302,15 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     if (req.user.papel === 'admin') {
       // Modo suporte: a administradora vê e opera a conta do assinante escolhido (cookie próprio, 2 horas)
       const alvoId = suporte.ler(req, req.user);
-      if (!alvoId) return res.status(403).json({ erro: 'Esta área é para assinantes.' });
-      const { rows: [alvo] } = await pool.query(`SELECT * FROM users WHERE id=$1 AND papel='assinante'`, [alvoId]);
-      if (!alvo) { suporte.encerrar(res); return res.status(403).json({ erro: 'Conta em atendimento não encontrada.' }); }
-      req.suporte = { admin: req.user.email }; req.admin = req.user; req.user = alvo;
+      if (!alvoId) {
+        // sem atendimento em curso: a administradora só entra aqui se criou o próprio perfil de assinante
+        const { rows: [propria] } = await pool.query('SELECT 1 FROM saas_contas WHERE user_id=$1', [req.user.id]);
+        if (!propria) return res.status(403).json({ erro: 'Esta área é para assinantes.' });
+      } else {
+        const { rows: [alvo] } = await pool.query(`SELECT * FROM users WHERE id=$1 AND papel='assinante'`, [alvoId]);
+        if (!alvo) { suporte.encerrar(res); return res.status(403).json({ erro: 'Conta em atendimento não encontrada.' }); }
+        req.suporte = { admin: req.user.email }; req.admin = req.user; req.user = alvo;
+      }
     } else if (req.user.papel !== 'assinante') return res.status(403).json({ erro: 'Esta área é para assinantes.' });
     const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE user_id=$1', [req.user.id]);
     if (!c) return res.status(403).json({ erro: 'Conta de assinante não encontrada.' });
@@ -935,6 +940,35 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     res.json({ link: await gerarConvite(c.user_id, req) });
   }));
 
+  // A administradora cria o próprio perfil de assinante (acesso liberado, plano Escala + BI) e traz para ele as APIs padrão já instaladas.
+  const CHAVES_PERFIL = ['META_ADS_TOKEN', 'META_AD_ACCOUNT_ID', 'META_PAGE_ID', 'META_IG_ID', 'META_PIXEL_ID', 'META_MAX_DAILY_BUDGET_BRL',
+    'GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID', 'GOOGLE_ADS_LOGIN_CUSTOMER_ID', 'GOOGLE_ADS_MAX_DAILY_BUDGET_BRL'];
+  app.post('/api/saas/admin/meu-perfil', soAdmin, wrap(async (req, res) => {
+    let { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE user_id=$1', [req.user.id]);
+    const criada = !c;
+    if (!c) {
+      const cx = await pool.connect();
+      try {
+        await cx.query('BEGIN');
+        ({ rows: [c] } = await cx.query(
+          `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi, cortesia) VALUES ($1,$2,'ativa', NULL, 'escala', true, true) RETURNING *`,
+          [req.user.id, String(req.body?.empresa || '').trim().slice(0, 120) || 'Minha agência']));
+        await cx.query('INSERT INTO saas_clientes (conta_id, nome, escopo, principal) VALUES ($1,$2,$3,true)', [c.id, c.empresa, escopoDe(c)]);
+        await cx.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [c.id, 'cadastro', 'Perfil de assinante da administradora']);
+        await cx.query('COMMIT');
+      } catch (e) { await cx.query('ROLLBACK').catch(() => {}); throw e; } finally { cx.release(); }
+    }
+    // traz as APIs padrão (banco ou variável de ambiente) para o cliente principal; o que já estiver preenchido ali não é sobrescrito
+    const escopo = escopoDe(c); const trazidas = []; const jaTinha = [];
+    for (const k of CHAVES_PERFIL) {
+      if (config.cfgProprio(k, escopo)) { jaTinha.push(k); continue; }
+      const v = config.cfg(k, 0);
+      if (v) { await config.definir(pool, k, v, escopo); trazidas.push(k); }
+    }
+    if (trazidas.length) await pool.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [c.id, 'apis_trazidas', trazidas.join(', ')]);
+    res.json({ ok: true, criada, trazidas, ja_tinha: jaTinha });
+  }));
+
   app.delete('/api/saas/admin/assinantes/:id', soAdmin, wrap(async (req, res) => {
     const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE id=$1', [idDe(req)]);
     if (!c) throw erro('Assinante não encontrado', 404);
@@ -946,6 +980,8 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
 
 // Apaga usuário, conta, campanhas e todas as chaves guardadas daquele escopo
 async function excluirConta(pool, conta) {
+  const { rows: [dono] } = await pool.query('SELECT papel FROM users WHERE id=$1', [conta.user_id]);
+  if (dono?.papel === 'admin') throw erro('Este é o perfil de assinante da administradora e não pode ser excluído.', 409);
   const escopos = [escopoDe(conta), ...(await pool.query('SELECT escopo FROM saas_clientes WHERE conta_id=$1', [conta.id])).rows.map((x) => x.escopo)];
   const c = await pool.connect();
   try {
