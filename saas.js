@@ -24,6 +24,23 @@ const escopoCliente = (cliente) => cliente.escopo;
 // Planos de venda (/gestoragent). O plano é um rótulo administrado por você; o limite de clientes ainda não é aplicado pelo sistema.
 // campanhas = campanhas novas criadas por mês (somando todos os clientes da conta). Passou disso, cada campanha extra custa PRECO_AVULSA.
 const PLANOS = { solo: { nome: 'Solo', clientes: 1, preco: 370, campanhas: 10 }, agencia: { nome: 'Agência', clientes: 3, preco: 760, campanhas: 30 }, escala: { nome: 'Escala', clientes: 5, preco: 950, campanhas: 50 } };
+// O que cada plano faz (mesmo texto da página de vendas); aparece em Assinatura, dentro do sistema
+const acoesPlano = (id) => {
+  const p = PLANOS[id];
+  const base = [
+    'Cria campanhas no Meta Ads (Facebook e Instagram) e no Google Ads (Pesquisa) a partir do seu pedido em texto',
+    `${p.campanhas} campanhas novas por mês (quando acabar, cada avulsa custa R$ ${PRECO_AVULSA})`,
+    `Rascunho com inteligência artificial: objetivo, público, cidades, orçamento e textos (até ${IA_LIMITE_MES} por mês)`,
+    'Envio de imagens e vídeos como criativo, em anúncio simples ou carrossel de até 10 itens',
+    'Conferência antes de criar: a campanha sobe pausada e só gasta quando você ativa',
+    'Ativar, pausar e acompanhar investimento, cliques, impressões e conversões dos últimos 7 dias',
+    'Assistente para conectar Meta e Google e pedido de suporte para agendar a configuração',
+  ];
+  if (id === 'solo') return [...base, '1 cliente: uma conta de anúncios em cada plataforma'];
+  if (id === 'agencia') return ['Tudo do plano Solo', `${p.campanhas} campanhas novas por mês (avulsas por R$ ${PRECO_AVULSA})`, 'Até 3 clientes, cada um com chaves, criativos e campanhas separados', 'Troca de cliente em um clique', 'Indicado para gestores com uma carteira pequena de clientes'];
+  return ['Tudo do plano Agência', `${p.campanhas} campanhas novas por mês (avulsas por R$ ${PRECO_AVULSA})`, 'Até 5 clientes na mesma assinatura, cada um com chaves, criativos e campanhas separados', 'Indicado para agências e gestores com mais clientes'];
+};
+const planosPublico = () => Object.entries(PLANOS).map(([id, p]) => ({ id, nome: p.nome, preco: p.preco, clientes: p.clientes, campanhas: p.campanhas, acoes: acoesPlano(id) }));
 const PRECO_AVULSA = Number(process.env.SAAS_PRECO_AVULSA || 15);
 const PRECO_BI = 50;
 const TRIAL_DIAS = Number(process.env.SAAS_TRIAL_DIAS ?? 7);
@@ -387,6 +404,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     res.json({
       conta: publicoConta(req.conta, req.user, await usadasNoMes(req.conta.id)), cobranca: billing.configurado(), preco: process.env.SAAS_PRECO_TEXTO || '',
       clientes: req.clientes.map(clientePublico), cliente_atual: req.cliente.id, suporte: req.suporte || null,
+      planos: planosPublico(), bi_preco: PRECO_BI, preco_avulsa: PRECO_AVULSA,
     });
   }));
 
