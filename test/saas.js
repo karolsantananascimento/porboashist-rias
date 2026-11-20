@@ -366,6 +366,17 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('adm', 'POST', '/api/restaurar', r.corpo);
     const { rows: [sob] } = await db.query(`SELECT (SELECT count(*) FROM saas_contas)::int c, (SELECT count(*) FROM saas_campanhas)::int k`);
     ok(r.status === 200 && sob.c === 1 && sob.k >= 1, 'restaurar um backup não apaga contas nem campanhas dos assinantes');
+
+    console.log('Identidade MidIAut e endereços do site');
+    for (const rota of ['/midiaut', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego']) {
+      r = await req(null, 'GET', rota);
+      ok(r.status === 200 && /MidIAut/.test(r.corpo.raw || '') && !/Agente de Tráfego|A Melhor Mídia/.test(r.corpo.raw || ''), `${rota} abre a página da MidIAut`);
+    }
+    r = await req(null, 'GET', '/midiaut');
+    ok(/R\$ 370/.test(r.corpo.raw) && /R\$ 760/.test(r.corpo.raw) && /R\$ 950/.test(r.corpo.raw) && /Tráfego em piloto automático\./.test(r.corpo.raw), 'landing traz os três planos e o slogan');
+    for (const rota of ['/cadastro', '/entrar', '/assinante']) { r = await req(null, 'GET', rota); ok(r.status === 200 && /MidIAut/.test(r.corpo.raw || '') && !/Agente de Tráfego|A Melhor Mídia/.test(r.corpo.raw || ''), `${rota} usa a marca MidIAut`); }
+    r = await req(null, 'GET', '/brand/midiaut/logo-escuro.svg'); ok(r.status === 200, 'logo da MidIAut é servido');
+    r = await req(null, 'GET', '/fonts/Manrope.ttf'); ok(r.status === 200, 'fonte Manrope é servida');
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
   }

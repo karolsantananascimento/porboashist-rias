@@ -68,7 +68,7 @@ function render() {
     : sit.ativa ? `<span class="pill ok">${esc(sit.texto)}</span>` : `<span class="pill ruim">${esc(sit.codigo === 'bloqueada' ? 'Bloqueada' : 'Sem assinatura ativa')}</span>`;
   raiz.innerHTML = `
     <header class="sa-top">
-      <a class="sa-brand" href="/assinante#inicio" aria-label="Agente de Tráfego, início"><img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="34" height="34">Agente de Tráfego</a>
+      <a class="sa-brand" href="/assinante#inicio" aria-label="MidIAut, início"><img src="/brand/midiaut/simbolo.svg" alt="" width="34" height="30"><span class="sa-wm">Mid<i>IA</i>ut</span></a>
       <nav class="sa-nav" aria-label="Seções">${abas().map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
       <div class="sa-me">${seletorCliente()}${pill}<span>${esc(c.nome || c.email)}</span><button class="btn ghost small" id="sair">Sair</button></div>
     </header>
@@ -76,7 +76,7 @@ function render() {
   raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
   const sel = $('#selCliente'); if (sel) sel.addEventListener('change', () => trocarCliente(sel.value));
   $('#sair').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
-  document.title = `${(abas().find(([k]) => k === S.aba) || ABAS_BASE[0])[1]} · Agente de Tráfego · A Melhor Mídia do Brasil`;
+  document.title = `${(abas().find(([k]) => k === S.aba) || ABAS_BASE[0])[1]} · MidIAut`;
   const v = $('#conteudo');
   v.setAttribute('aria-busy', 'true');
   v.innerHTML = '<p class="sa-carregando" role="status">Carregando…</p>';
