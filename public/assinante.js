@@ -57,7 +57,7 @@ async function iniciar() {
   if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada' && S.eu.conta.plano !== 'gratis') assinar();
 }
 
-const ABAS_BASE = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
+const ABAS_BASE = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['analytics', 'Analytics'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
 // Quem tem plano com mais de um cliente ganha a aba Clientes
 const abas = () => (S.eu?.conta.clientes_max > 1 ? [ABAS_BASE[0], ['clientes', 'Clientes'], ...ABAS_BASE.slice(1)] : ABAS_BASE);
 // A aba fica no endereço (/assinante#chaves): recarregar, voltar e compartilhar o link mantêm o lugar
@@ -96,7 +96,7 @@ function render() {
   // Cada tela monta o conteúdo num bloco à parte; o "Carregando…" some quando ela termina
   const aba = S.aba;
   const tela = document.createElement('div'); tela.style.display = 'contents'; v.append(tela); // as telas usam $('#id') no documento, então o bloco já entra na página
-  ({ inicio: viewInicio, clientes: viewClientes, campanhas: viewCampanhas, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
+  ({ inicio: viewInicio, clientes: viewClientes, campanhas: viewCampanhas, analytics: viewAnalytics, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
     .catch((e) => { falha(e); tela.innerHTML = '<div class="card"><p class="muted">Não consegui carregar esta tela. Tente de novo em instantes.</p><button class="btn" data-recarregar>Tentar de novo</button></div>'; })
     .finally(() => {
       if (!v.isConnected) return;
@@ -105,6 +105,7 @@ function render() {
     });
 }
 
+const qualTeste = (id) => (id === 'meta' ? 'meta' : id === 'analytics' ? 'ga4' : 'google');
 const secao = (v, html) => v.insertAdjacentHTML('beforeend', html);
 
 // ---------------- Clientes (planos Agência e Escala) ----------------
@@ -178,6 +179,27 @@ async function viewInicio(v) {
   }).catch((e) => d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Google Ads</h3><p class="muted">Não consegui ler o desempenho: ${esc(e.message)}</p></div>`));
 }
 
+// ---------------- Analytics (GA4) ----------------
+async function viewAnalytics(v) {
+  const dias = [7, 14, 30, 90].includes(Number(S.diasGa)) ? Number(S.diasGa) : 7;
+  secao(v, `<div class="view-head"><div><h2>Analytics</h2><p>Visitas, origens e conversões do seu site, direto do Google Analytics 4.</p></div>
+    <div><select id="gaDias" aria-label="Período">${[7, 14, 30, 90].map((d) => `<option value="${d}" ${d === dias ? 'selected' : ''}>Últimos ${d} dias</option>`).join('')}</select></div></div><div id="gaCorpo"><p class="muted">Carregando...</p></div>`);
+  $('#gaDias').addEventListener('change', (e) => { S.diasGa = e.target.value; render(); });
+  const corpo = $('#gaCorpo');
+  let d;
+  try { d = await api(`/api/saas/analytics?dias=${dias}`); }
+  catch (e) { corpo.innerHTML = `<div class="card"><p>${esc(e.message)}</p><button class="btn" id="gaChaves">Abrir Chaves de API</button></div>`; $('#gaChaves').addEventListener('click', () => { S.aba = 'chaves'; render(); }); return; }
+  const t = d.totais; const pct = (x) => (Number(x) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const dur = (s) => `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`;
+  const kpi = (r, val) => `<div class="card kpi"><p class="muted">${r}</p><p style="font-size:24px;margin:4px 0 0">${val}</p></div>`;
+  const max = Math.max(1, ...d.serie.map((x) => x.sessoes));
+  const dia = (s) => `${s.slice(6, 8)}/${s.slice(4, 6)}`;
+  corpo.innerHTML = `<div class="kpis">${kpi('Sessões', t.sessoes.toLocaleString('pt-BR'))}${kpi('Usuários', t.usuarios.toLocaleString('pt-BR'))}${kpi('Novos usuários', t.novos.toLocaleString('pt-BR'))}${kpi('Conversões (eventos-chave)', t.conversoes.toLocaleString('pt-BR'))}${kpi('Engajamento', pct(t.engajamento))}${kpi('Duração média', dur(t.duracao))}</div>
+    <div class="card"><h3>Sessões por dia</h3><div style="display:flex;align-items:flex-end;gap:3px;height:120px;margin-top:10px">${d.serie.map((x) => `<div title="${dia(x.data)}: ${x.sessoes} sessões, ${x.conversoes} conversões" style="flex:1;background:var(--accent,#c0392b);min-height:2px;height:${Math.max(2, Math.round((x.sessoes / max) * 100))}%"></div>`).join('') || '<p class="muted">Sem dados no período.</p>'}</div></div>
+    <div class="card"><h3>Principais origens</h3><div class="sa-tabela"><table><thead><tr><th>Origem / mídia</th><th>Sessões</th><th>Conversões</th><th>Engajamento</th></tr></thead><tbody>${d.origens.map((o) => `<tr><td>${esc(o.origem)}</td><td>${o.sessoes.toLocaleString('pt-BR')}</td><td>${o.conversoes.toLocaleString('pt-BR')}</td><td>${pct(o.engajamento)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sem dados.</td></tr>'}</tbody></table></div></div>
+    <div class="card"><h3>Páginas mais vistas</h3><div class="sa-tabela"><table><thead><tr><th>Página</th><th>Visualizações</th><th>Usuários</th></tr></thead><tbody>${d.paginas.map((p) => `<tr><td>${esc(p.pagina)}</td><td>${p.visualizacoes.toLocaleString('pt-BR')}</td><td>${p.usuarios.toLocaleString('pt-BR')}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Sem dados.</td></tr>'}</tbody></table></div></div>`;
+}
+
 // ---------------- Chaves de API ----------------
 async function carregarChaves() { S.chaves = await api('/api/saas/chaves'); }
 
@@ -185,10 +207,10 @@ async function viewChaves(v) {
   await carregarChaves();
   secao(v, `<div class="view-head"><div><h2>Chaves de API</h2><p>Clique no <b>?</b> de cada campo para ver o passo a passo de como gerar. As chaves ficam criptografadas e não aparecem inteiras depois de salvas.</p></div></div>`);
   for (const g of S.chaves.grupos) {
-    const t = S.testes[g.id === 'meta' ? 'meta' : 'google'];
+    const t = S.testes[qualTeste(g.id)];
     secao(v, `<section class="card" data-grupo="${g.id}">
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><div><h3>${esc(g.titulo)}</h3><p class="muted" style="margin:2px 0 0">${esc(g.intro)}</p></div>
-        <button class="btn" data-testar="${g.id === 'meta' ? 'meta' : 'google'}">Testar conexão</button></div>
+        <button class="btn" data-testar="${qualTeste(g.id)}">Testar conexão</button></div>
       <div class="sa-res ${t ? (t.ok ? 'ok' : 'ruim') : 'hidden'}" id="res-${g.id}" style="margin-top:10px">${t ? esc(textoTeste(t)) : ''}</div>
       ${g.campos.map((c) => campoChave(c)).join('')}</section>`);
   }
@@ -212,7 +234,7 @@ async function viewChaves(v) {
 
 function textoTeste(t) {
   if (!t.ok) return `Não conectou: ${t.erro}`;
-  return ['Conectado', t.conta && `conta "${t.conta}"`, t.pagina && `página "${t.pagina}"`, t.moeda, t.aviso].filter(Boolean).join(' · ');
+  return ['Conectado', t.conta && `conta "${t.conta}"`, t.pagina && `página "${t.pagina}"`, t.moeda, t.propriedade && `propriedade ${t.propriedade}`, t.sessoes_7d != null && `${t.sessoes_7d} sessões nos últimos 7 dias`, t.aviso].filter(Boolean).join(' · ');
 }
 
 function campoChave(c) {
@@ -308,7 +330,7 @@ function pintarCota() {
 async function abrirIntegrar(plat = 'meta') {
   try { await carregarChaves(); } catch (e) { return falha(e); }
   const grupo = (id) => S.chaves.grupos.find((g) => g.id === id);
-  const g = grupo(plat) || S.chaves.grupos[0]; const qual = g.id === 'meta' ? 'meta' : 'google';
+  const g = grupo(plat) || S.chaves.grupos[0]; const qual = qualTeste(g.id);
   const tudo = g.campos.filter((c) => c.obrigatorio).every((c) => c.definido);
   const t = S.testes[qual];
   modal(`<div class="modal-head"><h3>Integrar para anunciar</h3><button class="btn ghost small" data-fechar>Fechar</button></div>

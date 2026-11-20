@@ -37,6 +37,17 @@ global.fetch = async (url, init = {}) => {
     return j({ data: [] });
   }
   if (u.startsWith('https://oauth2.googleapis.com/token')) { log({ alvo: 'google-oauth', body }); return j({ access_token: 'gat-' + decodeURIComponent((/refresh_token=([^&]+)/.exec(body) || [])[1]), expires_in: 3600 }); }
+  if (u.startsWith('https://analyticsdata.googleapis.com')) {
+    log({ alvo: 'ga4', u, auth, body });
+    const b = body ? JSON.parse(body) : {};
+    const dim = b.dimensions?.[0]?.name;
+    const v = (x) => ({ value: String(x) });
+    if (/999/.test(u)) return j({ error: { message: 'sem acesso' } }, 403);
+    if (dim === 'date') return j({ rows: [{ dimensionValues: [v('20261118')], metricValues: [v(40), v(3)] }, { dimensionValues: [v('20261119')], metricValues: [v(60), v(5)] }] });
+    if (dim === 'sessionSourceMedium') return j({ rows: [{ dimensionValues: [v('google / cpc')], metricValues: [v(70), v(6), v(0.55)] }] });
+    if (dim === 'pagePath') return j({ rows: [{ dimensionValues: [v('/')], metricValues: [v(120), v(80)] }] });
+    return j({ rows: [{ metricValues: [v(100), v(80), v(50), v(8), v(0.6), v(95)] }] });
+  }
   if (u.startsWith('https://googleads.googleapis.com')) {
     log({ alvo: 'google', m, u, auth, dev: h['developer-token'], body });
     const b = body ? JSON.parse(body) : {};

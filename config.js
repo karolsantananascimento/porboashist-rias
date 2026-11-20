@@ -25,6 +25,8 @@ const CHAVES = {
   GOOGLE_ADS_MAX_DAILY_BUDGET_BRL: { grupo: 'googleads', rotulo: 'Google Ads · Teto de orçamento diário por campanha, em R$ (padrão 100)', secreto: false, porCliente: true },
   LINKEDIN_CLIENT_ID: { grupo: 'linkedin', rotulo: 'LinkedIn · Client ID', secreto: false, porCliente: true },
   LINKEDIN_CLIENT_SECRET: { grupo: 'linkedin', rotulo: 'LinkedIn · Client Secret', secreto: true, porCliente: true },
+  GA4_PROPERTY_ID: { grupo: 'analytics', rotulo: 'Google Analytics 4 · ID da propriedade', secreto: false, porCliente: true },
+  GA4_REFRESH_TOKEN: { grupo: 'analytics', rotulo: 'Google Analytics 4 · Refresh token', secreto: true, porCliente: true },
   GOOGLE_CLIENT_ID: { grupo: 'google', rotulo: 'Google · ID do cliente OAuth', secreto: false, porCliente: true },
   GOOGLE_CLIENT_SECRET: { grupo: 'google', rotulo: 'Google · Chave secreta do cliente OAuth', secreto: true, porCliente: true },
 };
