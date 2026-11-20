@@ -1,4 +1,4 @@
-// Site de vendas do Agente de Tráfego (/assinar e /gestoragent). Os botões são links para /cadastro e /entrar; aqui ficam só o preço, os termos e o vídeo.
+// Site de vendas da MidIAut (/midiaut). Os botões são links para /cadastro e /entrar; aqui ficam só o preço, os termos, o vídeo e o adicional de BI.
 const $ = (s) => document.querySelector(s);
 
 (async () => {
