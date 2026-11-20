@@ -292,6 +292,22 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(r.status === 409 || r.status === 200, 'exclusão respeita rascunhos');
 
 
+    // arquivos enviados ao Meta são apagados 1 hora depois (menos os que ainda estão em rascunho)
+    r = await envia('a', png, 'image/png', 'temporaria.png'); const m3 = r.corpo.midia;
+    r = await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Arquivo temporário', imagem_url: m3.token } });
+    await req('a', 'POST', `/api/saas/campanhas/${r.corpo.campanha.id}/subir`, { confirmado: true });
+    { const { rows: [a] } = await db.query(`SELECT enviada_em FROM saas_midias WHERE id=$1`, [m3.id]);
+      ok(!!a.enviada_em, 'o envio ao Meta marca a hora no arquivo');
+      await db.query(`UPDATE saas_midias SET enviada_em = now() - interval '30 minutes' WHERE id=$1`, [m3.id]);
+      await req('a', 'GET', '/api/saas/midias');
+      ok((await db.query(`SELECT 1 FROM saas_midias WHERE id=$1`, [m3.id])).rowCount === 1, 'com 30 minutos o arquivo ainda fica');
+      await db.query(`UPDATE saas_midias SET enviada_em = now() - interval '2 hours' WHERE id=$1`, [m3.id]);
+      await req('a', 'GET', '/api/saas/midias');
+      ok((await db.query(`SELECT 1 FROM saas_midias WHERE id=$1`, [m3.id])).rowCount === 0, 'passou 1 hora do envio ao Meta: arquivo apagado');
+      await db.query(`UPDATE saas_midias SET enviada_em = now() - interval '2 hours' WHERE id=$1`, [v1.id]);
+      await req('a', 'GET', '/api/saas/midias');
+      ok((await db.query(`SELECT 1 FROM saas_midias WHERE id=$1`, [v1.id])).rowCount === 1, 'arquivo que ainda está em rascunho não é apagado'); }
+
     console.log('Pedido de suporte para integração');
     r = await req(null, 'POST', '/api/saas/chamados', { plataformas: ['meta'] }); ok(r.status === 401, 'sem login não abre chamado');
     r = await req('a', 'POST', '/api/saas/chamados', { plataformas: [], contato: '81999990000', janela: 'terça à tarde' }); ok(r.status === 400, 'exige escolher o que integrar');

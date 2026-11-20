@@ -32,6 +32,7 @@ const MAX_CAMPANHAS = 300;
 const MAX_MIDIAS = 200;
 const MAX_MIDIA_BYTES = 8 * 1024 * 1024;
 const MAX_VIDEOS = 20;
+const MIDIA_GUARDA_MIN = Number(process.env.SAAS_MIDIA_GUARDA_MIN || 60); // minutos que o arquivo fica depois de enviado ao Meta
 const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
 let poolRef = null;
 const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -139,6 +140,8 @@ function contextoMeta(cliente) {
       const { rows: [m] } = await poolRef.query(`SELECT id, nome, mime, tamanho, duracao, meta_ids${dados ? ', dados' : ''} FROM saas_midias WHERE id=$1 AND cliente_id=$2`, [Number(id), cliente.id]);
       return m || null;
     },
+    // marca o momento em que o arquivo foi enviado ao Meta: 1 hora depois ele é apagado daqui
+    marcarEnviada: async (id) => { if (poolRef) await poolRef.query('UPDATE saas_midias SET enviada_em = COALESCE(enviada_em, now()) WHERE id=$1 AND cliente_id=$2', [Number(id), cliente.id]).catch(() => {}); },
     // vídeo já enviado a esta conta de anúncios: evita subir de novo se a criação precisar ser repetida
     guardarVideoMeta: async (id, conta, videoId) => {
       if (poolRef) await poolRef.query(`UPDATE saas_midias SET meta_ids = meta_ids || jsonb_build_object($3::text, $4::text) WHERE id=$1 AND cliente_id=$2`, [Number(id), cliente.id, conta, String(videoId)]).catch(() => {});
@@ -146,6 +149,17 @@ function contextoMeta(cliente) {
   };
 }
 const contextoGoogle = (cliente) => gads.contexto((k) => config.cfgProprio(k, escopoCliente(cliente)));
+
+// Apaga os arquivos enviados ao Meta há mais de 1 hora (o Meta já guarda a cópia dele), exceto os que ainda estão em rascunho
+async function purgarMidias(pool) {
+  try {
+    const r = await pool.query(
+      `DELETE FROM saas_midias m WHERE m.enviada_em IS NOT NULL AND m.enviada_em < now() - make_interval(mins => $1::int)
+       AND NOT EXISTS (SELECT 1 FROM saas_campanhas c WHERE c.cliente_id=m.cliente_id AND c.status IN ('rascunho','erro','criando')
+         AND (c.spec->>'imagem_url'='midia:'||m.id OR c.spec->'imagens_urls' ? ('midia:'||m.id)))`, [MIDIA_GUARDA_MIN]);
+    return r.rowCount;
+  } catch { return 0; }
+}
 
 // ---------- Rascunho por IA (cota mensal por assinante) ----------
 async function reservarIa(pool, conta) {
@@ -237,6 +251,7 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
 // ---------- Rotas autenticadas ----------
 function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   poolRef = pool;
+  purgarMidias(pool); setInterval(() => purgarMidias(pool), 10 * 60 * 1000).unref();
   const base = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
   // Todas as rotas do assinante partem daqui: a conta vem da sessão
@@ -494,6 +509,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   });
   const COLS_MIDIA = 'id, nome, mime, tamanho, largura, altura, duracao';
   app.get('/api/saas/midias', assinante, wrap(async (req, res) => {
+    await purgarMidias(pool);
     const { rows } = await pool.query(`SELECT ${COLS_MIDIA} FROM saas_midias WHERE cliente_id=$1 ORDER BY id DESC LIMIT 100`, [req.cliente.id]);
     res.json({ midias: rows.map(metaMidia) });
   }));

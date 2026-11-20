@@ -438,6 +438,7 @@ CREATE TABLE IF NOT EXISTS saas_midias (
 );
 CREATE INDEX IF NOT EXISTS saas_midias_cliente ON saas_midias (cliente_id, id DESC);
 ALTER TABLE saas_midias ADD COLUMN IF NOT EXISTS duracao NUMERIC;
+ALTER TABLE saas_midias ADD COLUMN IF NOT EXISTS enviada_em TIMESTAMPTZ;
 ALTER TABLE saas_midias ADD COLUMN IF NOT EXISTS meta_ids JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS saas_chamados (
   id SERIAL PRIMARY KEY,

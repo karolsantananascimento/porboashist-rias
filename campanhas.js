@@ -382,6 +382,7 @@ async function subirCampanha(ctx, s) {
     }
   });
   criado.criativo = cri.id;
+  for (const u of imgsOrig.filter(ehMidia)) if (ctx.marcarEnviada) await ctx.marcarEnviada(u.slice(6));
   // 3) Campanha -> conjunto -> anúncio
   const camp = await etapa('campanha', () => post(ctx, `${conta}/campaigns`, { name: s.nome, objective: s.objetivo, status: 'PAUSED', special_ad_categories: '[]', daily_budget: centavos(s.orcamento_diario_brl), bid_strategy: 'LOWEST_COST_WITHOUT_CAP' }));
   criado.campanha = camp.id;
