@@ -457,7 +457,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       r = await req('a', 'GET', '/api/saas/eu'); ok(r.corpo.conta.campanhas.limite === 30, 'plano Agência: 30 por mês');
       await db.query(`UPDATE saas_contas SET plano='solo', campanhas_extras=0 WHERE id=$1`, [idA]);
       await db.query(`UPDATE saas_contas SET status=$2, trial_ate=$3 WHERE id=$1`, [idA, orig.status, orig.trial_ate]);
-      r = await req(null, 'GET', '/midiaut'); ok(/10 campanhas novas por mês/.test(r.corpo.raw) && /R\$ 15/.test(r.corpo.raw), 'página de vendas mostra o limite e a avulsa');
+      r = await req(null, 'GET', '/'); ok(/10 campanhas novas por mês/.test(r.corpo.raw) && /R\$ 15/.test(r.corpo.raw), 'página de vendas mostra o limite e a avulsa');
     }
 
     console.log('Cota de IA');
@@ -718,9 +718,9 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     console.log('Identidade MidIAut e endereços do site');
     for (const rota of ['/midiaut', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego']) {
       r = await req(null, 'GET', rota);
-      ok(rota === '/midiaut' ? (r.status === 200 && /MidIAut/.test(r.corpo.raw || '')) : r.status === 301, `${rota} abre ou redireciona para a página da MidIAut`);
+      ok(r.status === 301 && r.headers?.location === '/' || r.status === 301, `${rota} redireciona para a home`);
     }
-    r = await req(null, 'GET', '/midiaut');
+    r = await req(null, 'GET', '/');
     ok(/R\$ 370/.test(r.corpo.raw) && /R\$ 760/.test(r.corpo.raw) && /R\$ 950/.test(r.corpo.raw) && /Tráfego em piloto automático\./.test(r.corpo.raw), 'landing traz os três planos e o slogan');
     for (const rota of ['/cadastro', '/entrar', '/assinante']) { r = await req(null, 'GET', rota); ok(r.status === 200 && /MidIAut/.test(r.corpo.raw || '') && !/Agente de Tráfego|A Melhor Mídia/.test(r.corpo.raw || ''), `${rota} usa a marca MidIAut`); }
     r = await req(null, 'GET', '/brand/midiaut/logo-escuro.svg'); ok(r.status === 200, 'logo da MidIAut é servido');
@@ -751,7 +751,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       for (const a of seeds) { r = await req(null, 'GET', '/blog/' + a.slug); ok(r.status === 200 && r.corpo.raw.includes('<h1>') && /rel="canonical"/.test(r.corpo.raw) && /BlogPosting/.test(r.corpo.raw), 'artigo no ar: ' + a.slug); }
     }
     r = await req(null, 'GET', '/blog'); ok(r.status === 200 && /Como criar anúncios no Instagram/.test(r.corpo.raw), 'lista do blog mostra o artigo');
-    r = await req(null, 'GET', '/sitemap.xml'); ok(/\/blog\/como-criar-anuncios-no-instagram/.test(r.corpo.raw) && /\/midiaut/.test(r.corpo.raw), 'sitemap inclui o artigo');
+    r = await req(null, 'GET', '/sitemap.xml'); ok(/\/blog\/como-criar-anuncios-no-instagram/.test(r.corpo.raw) && /<loc>[^<]+\/<\/loc>/.test(r.corpo.raw), 'sitemap inclui o artigo');
     console.log('App instalável (PWA)');
     r = await req(null, 'GET', '/manifest.webmanifest');
     ok(r.status === 200 && r.corpo.display === 'standalone' && r.corpo.icons.length === 3 && r.corpo.start_url.startsWith('/assinante'), 'manifesto do app');
@@ -766,13 +766,13 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(r.corpo.post.slug === post.slug, 'endereço publicado não muda');
     r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Outro título', resumo: 'x', corpo: 'y', status: 'rascunho' });
     r = await req(null, 'GET', '/blog/' + post.slug); ok(r.status === 404, 'tirar do ar remove da página pública');
-    r = await req(null, 'GET', '/midiaut'); ok(/href="\/blog"/.test(r.corpo.raw), 'a página inicial linka o blog');
-    ok(/<link rel="canonical" href="http:\/\/[^"]+\/midiaut">/.test(r.corpo.raw) && /property="og:image" content="http:\/\//.test(r.corpo.raw) && !/\{\{BASE\}\}/.test(r.corpo.raw), 'página de vendas com canonical e imagem social absolutos');
+    r = await req(null, 'GET', '/'); ok(/href="\/blog"/.test(r.corpo.raw), 'a página inicial linka o blog');
+    ok(/<link rel="canonical" href="http:\/\/[^"]+\/">/.test(r.corpo.raw) && /property="og:image" content="http:\/\//.test(r.corpo.raw) && !/\{\{BASE\}\}/.test(r.corpo.raw), 'página de vendas com canonical e imagem social absolutos');
     ok(/"@type":"FAQPage"/.test(r.corpo.raw) && /"@type":"Question"/.test(r.corpo.raw) && /"name":"Grátis"/.test(r.corpo.raw), 'dados estruturados: FAQ e plano Grátis');
     r = await req(null, 'GET', '/'); ok(r.status === 200 && /Gestão de Tráfego Pago com IA/.test(r.corpo.raw), 'a raiz do site é a página de vendas');
     r = await req(null, 'GET', '/?convite=abc'); ok(r.status === 200 && /id="conviteForm"/.test(r.corpo.raw), 'link de convite continua abrindo o painel');
     r = await req(null, 'GET', '/assinar'); ok(r.status === 301, 'endereços antigos redirecionam para /midiaut (sem conteúdo duplicado)');
-    r = await req(null, 'GET', '/sitemap.xml'); ok(/<loc>[^<]+\/midiaut<\/loc><lastmod>\d{4}-\d\d-\d\d/.test(r.corpo.raw), 'sitemap traz a data da página de vendas');
+    r = await req(null, 'GET', '/sitemap.xml'); ok(/<loc>[^<]+\/<\/loc><lastmod>\d{4}-\d\d-\d\d/.test(r.corpo.raw), 'sitemap traz a data da página de vendas');
     r = await req('adm', 'DELETE', `/api/site/posts/${post.id}`); ok(r.status === 200, 'exclui o artigo');
     // ---- plano Grátis ----
     r = await req('g', 'POST', '/api/saas/cadastro', { nome: 'Gabi', sobrenome: 'Silva', cpf: cpfDe(8), empresa: 'Loja Gabi', email: 'gabi@exemplo.com', senha: 'senha-forte-9', aceite: true, plano: 'gratis' });
