@@ -139,14 +139,8 @@ async function mostrarConvite(token) {
   };
 }
 
-function mostrarLogin() {
-  $('#app').classList.add('hidden');
-  $('#login').classList.remove('hidden');
-  $('#conviteForm').classList.add('hidden');
-  $('#loginForm').classList.remove('hidden');
-  $('#modal').open && $('#modal').close();
-  ($('#email').value ? $('#senha') : $('#email')).focus();
-}
+// Login e cadastro são uma página só (/entrar); a administração e a equipe entram por ela e seguem para /sistema
+function mostrarLogin() { location.replace('/entrar?modo=entrar&area=equipe'); }
 
 $('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
