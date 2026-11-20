@@ -119,7 +119,7 @@ h2.titulo { font-weight: 800; font-size: clamp(28px, 3.8vw, 46px); line-height: 
 .cartao p { color: var(--texto-claro-2); font-size: 15.5px; }
 
 /* Planos */
-.planos { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 22px; align-items: stretch; }
+.planos { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 22px; align-items: stretch; }
 .plano-cartao { position: relative; display: flex; flex-direction: column; background: var(--grafite-2); border: 1px solid var(--linha); border-radius: 20px; padding: 36px 28px 30px; }
 .plano-cartao.destaque { border: 2px solid var(--lima); background: linear-gradient(180deg, rgba(182,255,69,.07), var(--grafite-2) 40%); box-shadow: 0 0 60px rgba(182,255,69,.1); }
 .plano-cartao h3 { font-size: 15px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--lima); margin-bottom: 14px; }

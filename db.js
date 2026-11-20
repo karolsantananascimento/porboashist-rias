@@ -453,6 +453,7 @@ CREATE TABLE IF NOT EXISTS saas_pix (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saas_pix_conta ON saas_pix (conta_id, id DESC);
+ALTER TABLE saas_pix ADD COLUMN IF NOT EXISTS plano TEXT;
 CREATE TABLE IF NOT EXISTS saas_chamados (
   id SERIAL PRIMARY KEY,
   conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,

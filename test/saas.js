@@ -711,6 +711,27 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req(null, 'GET', '/blog/' + post.slug); ok(r.status === 404, 'tirar do ar remove da página pública');
     r = await req(null, 'GET', '/midiaut'); ok(/href="\/blog"/.test(r.corpo.raw), 'a página inicial linka o blog');
     r = await req('adm', 'DELETE', `/api/site/posts/${post.id}`); ok(r.status === 200, 'exclui o artigo');
+    // ---- plano Grátis ----
+    r = await req('g', 'POST', '/api/saas/cadastro', { nome: 'Gabi', empresa: 'Loja Gabi', email: 'gabi@exemplo.com', senha: 'senha-forte-9', aceite: true, plano: 'gratis' });
+    ok(r.status === 200, 'cadastro direto no plano Grátis');
+    r = await req('g', 'GET', '/api/saas/eu');
+    ok(r.corpo.conta.plano === 'gratis' && r.corpo.conta.situacao.ativa === true && r.corpo.conta.situacao.codigo === 'gratis', 'Grátis nasce ativo, sem teste');
+    ok(r.corpo.conta.campanhas.limite === 1 && r.corpo.conta.ia.limite === 3, 'Grátis: 1 campanha e 3 rascunhos de IA por mês');
+    ok(Array.isArray(r.corpo.planos) && r.corpo.planos.length === 4 && r.corpo.planos[0].id === 'gratis' && r.corpo.planos.find((x) => x.id === 'solo').campanhas === 10 && r.corpo.planos.find((x) => x.id === 'escala').campanhas === 50, 'lista tem 4 planos e os volumes dos outros não mudaram');
+    {
+      r = await req('adm', 'GET', '/api/saas/admin/assinantes'); const cg = { id: r.corpo.assinantes.find((x) => x.email === 'gabi@exemplo.com').id };
+      await db.query(`UPDATE saas_contas SET trial_ate = now() - interval '30 days' WHERE id=$1`, [cg.id]);
+      r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.situacao.ativa === true, 'Grátis não expira');
+      for (let i = 0; i < 1; i++) await db.query(`INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, status, criada_em, cota_mes) SELECT $1, id, 'google', '{}', 'criada_pausada', now(), $2 FROM saas_clientes WHERE conta_id=$1 AND principal`, [cg.id, new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7)]);
+      r = await req('g', 'GET', '/api/saas/eu'); ok(r.corpo.conta.campanhas.usadas === 1 && r.corpo.conta.campanhas.restantes === 0, 'campanha em qualquer plataforma gasta a cota única');
+      r = await req('g', 'POST', '/api/saas/assinar', {}); ok(r.status === 400, 'conta Grátis precisa escolher um plano pago ao assinar');
+      r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade' }); ok(r.status === 400, 'Pix de mensalidade da conta Grátis exige plano');
+      r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade', plano: 'agencia' }); const pg = r.corpo.pedido;
+      ok(r.status === 200 && pg.plano === 'agencia', 'Pix para subir do Grátis ao Agência');
+      r = await req('adm', 'POST', `/api/saas/admin/pix/${pg.id}/confirmar`); ok(r.status === 200, 'administradora confirma');
+      r = await req('g', 'GET', '/api/saas/eu');
+      ok(r.corpo.conta.plano === 'agencia' && r.corpo.conta.situacao.ativa === true && r.corpo.conta.campanhas.limite === 30, 'depois do Pix a conta vira Agência com 30 campanhas');
+    }
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
   }

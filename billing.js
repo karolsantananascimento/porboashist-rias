@@ -45,8 +45,8 @@ async function criarCheckout({ conta, email, base }) {
     mode: 'subscription', locale: 'pt-BR',
     line_items: itens,
     success_url: `${base}/assinante?assinatura=ok`, cancel_url: `${base}/assinante?assinatura=cancelada`,
-    client_reference_id: String(conta.id), allow_promotion_codes: 'true',
-    subscription_data: { metadata: { conta_id: String(conta.id) } },
+    client_reference_id: String(conta.id), allow_promotion_codes: 'true', metadata: { plano: conta.plano },
+    subscription_data: { metadata: { conta_id: String(conta.id), plano: conta.plano } },
   };
   if (conta.stripe_customer_id) corpo.customer = conta.stripe_customer_id; else corpo.customer_email = email;
   const s = await stripe('checkout/sessions', corpo);
@@ -121,8 +121,9 @@ async function aplicarEvento(pool, ev) {
       await evento('campanhas_avulsas', `${qtd} campanha(s) avulsa(s) paga(s)`);
     }
   } else if (ev.type === 'checkout.session.completed' && o.mode === 'subscription') {
-    await pool.query('UPDATE saas_contas SET stripe_customer_id=COALESCE($2,stripe_customer_id), stripe_subscription_id=COALESCE($3,stripe_subscription_id), updated_at=now() WHERE id=$1',
-      [conta.id, typeof o.customer === 'string' ? o.customer : null, typeof o.subscription === 'string' ? o.subscription : null]);
+    await pool.query(`UPDATE saas_contas SET stripe_customer_id=COALESCE($2,stripe_customer_id), stripe_subscription_id=COALESCE($3,stripe_subscription_id),
+        plano = CASE WHEN $4 IN ('solo','agencia','escala') THEN $4 ELSE plano END, updated_at=now() WHERE id=$1`,
+      [conta.id, typeof o.customer === 'string' ? o.customer : null, typeof o.subscription === 'string' ? o.subscription : null, o.metadata?.plano || null]);
     await evento('assinatura_iniciada', 'Checkout concluído');
   } else if (['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(ev.type)) {
     // "bloqueada" é decisão do administrador: o Stripe não reativa

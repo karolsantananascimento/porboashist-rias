@@ -1671,11 +1671,11 @@ async function viewAssinantes(v) {
       <button class="btn small" data-a="${x.conta_id}" data-acao="suporte">Entrar na conta</button> <button class="btn small" data-ch="${x.id}" data-chacao="concluir">Concluir</button> <button class="btn small danger" data-ch="${x.id}" data-chacao="cancelar">Cancelar</button></div>` : ''}</td></tr>`;
   const brlPix = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const linhaPx = (x) => `<tr><td><b>${esc(x.nome || '')}</b><br><span class="muted">${esc(x.email)}${x.empresa ? ' · ' + esc(x.empresa) : ''}</span></td>
-    <td>${x.tipo === 'mensalidade' ? `Mensalidade (${esc(x.plano)})` : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`}<br><span class="muted">Código ${esc(x.txid)}</span></td>
+    <td>${x.tipo === 'mensalidade' ? `Mensalidade (${esc(x.plano || x.plano_atual)})` : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`}<br><span class="muted">Código ${esc(x.txid)}</span></td>
     <td><b>${brlPix(x.valor)}</b><br><span class="muted">${new Date(x.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span></td>
     <td>${x.status === 'informado' ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small primary" data-px="${x.id}" data-pxacao="confirmar">Conferi no banco: liberar</button> <button class="btn small danger" data-px="${x.id}" data-pxacao="recusar">Recusar</button></div>` : `<span class="pill ${x.status === 'confirmado' ? 'ok' : ''}">${x.status === 'confirmado' ? 'Liberado' : 'Recusado'}</span>`}</td></tr>`;
   const cont = (cod) => l.filter((a) => a.situacao.codigo === cod).length;
-  const rot = { ativa: ['Pagando', 'ok'], cortesia: ['Cortesia', 'ok'], trial: ['Em teste', ''], trial_expirado: ['Teste acabou', 'warn'], pix_vencido: ['Pix venceu', 'warn'], inadimplente: ['Inadimplente', 'warn'], cancelada: ['Cancelada', ''], bloqueada: ['Bloqueada', 'warn'] };
+  const rot = { gratis: ['Grátis', ''], ativa: ['Pagando', 'ok'], cortesia: ['Cortesia', 'ok'], trial: ['Em teste', ''], trial_expirado: ['Teste acabou', 'warn'], pix_vencido: ['Pix venceu', 'warn'], inadimplente: ['Inadimplente', 'warn'], cancelada: ['Cancelada', ''], bloqueada: ['Bloqueada', 'warn'] };
   const dia = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '—');
   v.innerHTML = `
     <div class="view-head"><div><h2>Assinantes (SaaS)</h2><p>Quem assinou o Gestor de Tráfego. Cada assinante usa as próprias chaves e só enxerga os próprios dados.</p></div></div>
@@ -1683,7 +1683,7 @@ async function viewAssinantes(v) {
       <div class="card"><h3>Página de assinatura</h3>
         <p><code class="url">${esc(location.origin)}/gestoragent</code> <span class="muted">(página de vendas)</span></p>
         <p><code class="url">${esc(location.origin)}/assinante</code> <button class="btn small" id="cpSaas">Copiar</button> <span class="muted">(área do assinante)</span></p>
-        <p class="muted">Pagando: <b>${cont('ativa')}</b> · Cortesia: <b>${cont('cortesia')}</b> · Em teste: <b>${cont('trial')}</b> · Inadimplentes: <b>${cont('inadimplente')}</b></p></div>
+        <p class="muted">Pagando: <b>${cont('ativa')}</b> · Cortesia: <b>${cont('cortesia')}</b> · Grátis: <b>${cont('gratis')}</b> · Em teste: <b>${cont('trial')}</b> · Inadimplentes: <b>${cont('inadimplente')}</b></p></div>
       <div class="card"><h3>Cobrança (Stripe) ${r.cobranca ? '<span class="pill ok">Ligada</span>' : '<span class="pill warn">Não configurada</span>'}</h3>
         <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code> e os preços do Stripe: <code>STRIPE_PRICE_SOLO</code>, <code>STRIPE_PRICE_AGENCIA</code>, <code>STRIPE_PRICE_ESCALA</code>, <code>STRIPE_PRICE_BI</code> (ou só <code>STRIPE_PRICE_ID</code> para preço único).</p>
         <p class="muted">Webhook no Stripe: <code class="url">${esc(location.origin)}/api/saas/webhook</code> (eventos de assinatura e fatura).</p></div></div>
@@ -1695,7 +1695,7 @@ async function viewAssinantes(v) {
       <thead><tr><th>Assinante</th><th>Plano</th><th>Situação</th><th>Teste até / Período até</th><th>Chaves</th><th>Campanhas</th><th>Última atividade</th><th></th></tr></thead>
       <tbody>${l.length ? l.map((a) => { const [t, c] = rot[a.situacao.codigo] || [a.situacao.codigo, '']; return `<tr>
         <td><b>${esc(a.nome || '')}</b><br><span class="muted">${esc(a.email)}${a.empresa ? ' · ' + esc(a.empresa) : ''}</span></td>
-        <td><select data-plano="${a.id}"><option value="solo"${a.plano === 'solo' ? ' selected' : ''}>Solo · 1</option><option value="agencia"${a.plano === 'agencia' ? ' selected' : ''}>Agência · 3</option><option value="escala"${a.plano === 'escala' ? ' selected' : ''}>Escala · 5</option></select><br><span class="muted">${a.clientes}/${a.clientes_max} clientes</span><br><label class="muted"><input type="checkbox" data-bi="${a.id}"${a.bi ? ' checked' : ''}> BI + relatórios</label></td>
+        <td><select data-plano="${a.id}"><option value="gratis"${a.plano === 'gratis' ? ' selected' : ''}>Grátis · 1</option><option value="solo"${a.plano === 'solo' ? ' selected' : ''}>Solo · 1</option><option value="agencia"${a.plano === 'agencia' ? ' selected' : ''}>Agência · 3</option><option value="escala"${a.plano === 'escala' ? ' selected' : ''}>Escala · 5</option></select><br><span class="muted">${a.clientes}/${a.clientes_max} clientes</span><br><label class="muted"><input type="checkbox" data-bi="${a.id}"${a.bi ? ' checked' : ''}> BI + relatórios</label></td>
         <td><span class="pill ${c}">${t}</span></td>
         <td>${a.tem_assinatura || (a.status === 'ativa' && a.periodo_fim) ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
         <td>${a.meta_ok ? '<span class="pill ok">Meta</span>' : '<span class="pill">Meta</span>'} ${a.google_ok ? '<span class="pill ok">Google</span>' : '<span class="pill">Google</span>'}</td>

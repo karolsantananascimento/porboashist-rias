@@ -54,7 +54,7 @@ async function iniciar() {
   if (quer) { history.replaceState(null, '', '/assinante#assinatura'); S.aba = 'assinatura'; }
   render();
   // Veio do botão "Assinar agora" da página de vendas: segue direto para o pagamento seguro, se a conta ainda não tem assinatura
-  if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada') assinar();
+  if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada' && S.eu.conta.plano !== 'gratis') assinar();
 }
 
 const ABAS_BASE = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
@@ -152,7 +152,8 @@ async function viewInicio(v) {
     [metaOk || googleOk, 'Cole as chaves do Meta e/ou do Google em <a class="link" data-ir="chaves">Chaves de API</a>'],
     [S.testes.meta?.ok || S.testes.google?.ok, 'Clique em "Testar conexão" para confirmar que as chaves funcionam'],
     [S.campanhas.length > 0 || false, 'Crie a sua primeira campanha em <a class="link" data-ir="campanhas">Campanhas</a>'],
-    [c.situacao.codigo === 'ativa' || c.situacao.codigo === 'cortesia', 'Assine em <a class="link" data-ir="assinatura">Assinatura</a> antes de o teste acabar'],
+    c.plano === 'gratis' ? [false, 'Precisa de mais campanhas por mês? Conheça os planos em <a class="link" data-ir="assinatura">Assinatura</a>']
+      : [c.situacao.codigo === 'ativa' || c.situacao.codigo === 'cortesia', 'Assine em <a class="link" data-ir="assinatura">Assinatura</a> antes de o teste acabar'],
   ];
   secao(v, `<div class="view-head"><div><h2>Olá, ${esc((c.nome || '').split(' ')[0] || 'tudo bem')}</h2><p>Comece por aqui. Nada vai ao ar sem a sua confirmação.</p></div></div>
     <div class="sa-intro">
@@ -657,14 +658,14 @@ function abrirGoogle() {
 
 // ---------------- Pagamento por Pix (QR Code + copia e cola) ----------------
 const cnpjTxt = (d) => String(d).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-async function abrirPix(tipo, qtd = 1) {
-  let p; try { p = await api(`/api/saas/pix?tipo=${tipo}&qtd=${qtd}`); } catch (e) { return falha(e); }
+async function abrirPix(tipo, qtd = 1, plano = '') {
+  let p; try { p = await api(`/api/saas/pix?tipo=${tipo}&qtd=${qtd}${plano ? `&plano=${plano}` : ''}`); } catch (e) { return falha(e); }
   modal(`<div class="modal-head"><h3>Pagar com Pix</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
     <div class="modal-body pix-box">
       <div class="pix-qr"><img src="${p.qr}" alt="QR Code do Pix" width="240" height="240"></div>
       <div class="pix-info">
         <p class="pix-valor">${brl(p.valor)}</p>
-        <p class="muted">${tipo === 'mensalidade' ? `Mensalidade do plano ${esc(S.eu.conta.plano_nome)}${S.eu.conta.bi ? ' + BI' : ''}` : `${p.qtd} campanha${p.qtd > 1 ? 's' : ''} avulsa${p.qtd > 1 ? 's' : ''}`}</p>
+        <p class="muted">${tipo === 'mensalidade' ? `Mensalidade do plano ${esc((S.eu.planos || []).find((x) => x.id === p.plano)?.nome || S.eu.conta.plano_nome)}${S.eu.conta.bi ? ' + BI' : ''}` : `${p.qtd} campanha${p.qtd > 1 ? 's' : ''} avulsa${p.qtd > 1 ? 's' : ''}`}</p>
         <label>Pix copia e cola</label>
         <textarea id="pixCola" rows="4" readonly>${esc(p.payload)}</textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn primary" id="pixCopiar">Copiar código</button></div>
@@ -677,41 +678,43 @@ async function abrirPix(tipo, qtd = 1) {
   $('#pixCopiar').addEventListener('click', async () => { try { await navigator.clipboard.writeText(p.payload); } catch { $('#pixCola').select(); document.execCommand('copy'); } aviso('Código Pix copiado.'); });
   $('#pixPaguei').addEventListener('click', async (ev) => {
     const b = ev.currentTarget; b.disabled = true;
-    try { await api('/api/saas/pix/informar', { method: 'POST', corpo: { tipo, qtd } }); fechar(); aviso('Aviso enviado! Vamos conferir o pagamento e liberar.'); if (S.aba === 'assinatura') render(); }
+    try { await api('/api/saas/pix/informar', { method: 'POST', corpo: { tipo, qtd, plano: p.plano } }); fechar(); aviso('Aviso enviado! Vamos conferir o pagamento e liberar.'); if (S.aba === 'assinatura') render(); }
     catch (e) { falha(e); b.disabled = false; }
   });
 }
 
 // ---------------- Assinatura ----------------
-async function assinar() {
-  try { const r = await api('/api/saas/assinar', { method: 'POST' }); location.href = r.url; } catch (e) { falha(e); }
+async function assinar(plano) {
+  try { const r = await api('/api/saas/assinar', { method: 'POST', corpo: typeof plano === 'string' ? { plano } : undefined }); location.href = r.url; } catch (e) { falha(e); }
 }
 
 async function viewAssinatura(v) {
   await carregarEu();
   const c = S.eu.conta; const sit = c.situacao;
   const pagaCartao = c.status === 'ativa' && c.tem_assinatura;
+  const gratis = c.plano === 'gratis'; const podeTrocar = !pagaCartao && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada';
   const planos = S.eu.planos || []; const precoAtual = (planos.find((x) => x.id === c.plano)?.preco || 0) + (c.bi ? S.eu.bi_preco || 0 : 0);
   let pixPend = []; try { pixPend = (await api('/api/saas/pix/pedidos')).pedidos.filter((x) => x.status === 'informado'); } catch { /* sem a lista, só não mostra o aviso */ }
   secao(v, `<div class="view-head"><div><h2>Assinatura</h2><p>${esc(sit.texto)}</p></div></div>
     <div class="card"><h3>Mensalidade</h3>
-      <p style="font-size:24px;margin:8px 0">${esc(S.eu.preco || '') || `${brl(precoAtual)}<small class="muted" style="font-size:14px"> / mês · plano ${esc(c.plano_nome)}${c.bi ? ' + BI' : ''}</small>`}</p>
+      <p style="font-size:24px;margin:8px 0">${c.plano === 'gratis' ? 'Grátis<small class="muted" style="font-size:14px"> · R$ 0 por mês, sempre ativo</small>' : (esc(S.eu.preco || '') || `${brl(precoAtual)}<small class="muted" style="font-size:14px"> / mês · plano ${esc(c.plano_nome)}${c.bi ? ' + BI' : ''}</small>`)}</p>
       ${sit.codigo === 'trial' ? `<p class="muted">Seu período de teste vai até ${dataBr(c.trial_ate)}.</p>` : ''}
       ${c.periodo_fim && c.tem_assinatura ? `<p class="muted">Período atual até ${dataBr(c.periodo_fim)}.</p>` : ''}
       <p class="muted">No cartão, os dados são digitados na página segura do Stripe e este sistema não os guarda. No Pix, você paga por QR Code e a liberação é conferida manualmente.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-        ${S.eu.cobranca && !(c.status === 'ativa' && c.tem_assinatura) && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bAssinar2">Assinar e cadastrar cartão</button>' : ''}
-        ${!pagaCartao && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bPix">Pagar com Pix</button>' : ''}
+        ${S.eu.cobranca && !gratis && !(c.status === 'ativa' && c.tem_assinatura) && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bAssinar2">Assinar e cadastrar cartão</button>' : ''}
+        ${!pagaCartao && !gratis && sit.codigo !== 'cortesia' && sit.codigo !== 'bloqueada' ? '<button class="btn primary" id="bPix">Pagar com Pix</button>' : ''}
         ${S.eu.cobranca && c.tem_assinatura ? '<button class="btn" id="bPortal">Gerenciar pagamento (cartão, faturas, cancelar)</button>' : ''}
-        ${!S.eu.cobranca ? '<span class="muted">Cartão ainda não disponível. Use o Pix.</span>' : ''}</div>
+        ${gratis ? '<span class="muted">Você está no plano Grátis. Para ter mais campanhas por mês, escolha um plano abaixo.</span>' : (!S.eu.cobranca ? '<span class="muted">Cartão ainda não disponível. Use o Pix.</span>' : '')}</div>
       ${pixPend.length ? `<div class="sa-pend" style="margin-top:12px">Pagamento por Pix em conferência: ${pixPend.map((x) => `${x.tipo === 'mensalidade' ? 'mensalidade' : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`} (${brl(x.valor)})`).join(' · ')}. Assim que for conferido no banco, é liberado.</div>` : ''}</div>
     <div class="card"><h3>Planos</h3>
       <p class="muted" style="margin:4px 0 12px">Assinatura mensal, sem fidelidade. O plano muda conforme o número de clientes que você atende. Para trocar de plano, fale com o suporte.</p>
       <div class="planos-app">${planos.map((p) => `<article class="plano-app ${p.id === c.plano ? 'atual' : ''}">
         ${p.id === c.plano ? '<span class="plano-tag">Seu plano</span>' : ''}
-        <h4>${esc(p.nome)}</h4><p class="plano-valor">${brl(p.preco)}<small>/mês</small></p>
-        <p class="muted">${p.clientes === 1 ? '1 cliente' : `Até ${p.clientes} clientes`} · ${p.campanhas} campanhas novas por mês</p>
-        <ul>${p.acoes.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></article>`).join('')}</div>
+        <h4>${esc(p.nome)}</h4><p class="plano-valor">${p.preco ? brl(p.preco) : 'R$ 0'}<small>/mês</small></p>
+        <p class="muted">${p.clientes === 1 ? '1 cliente' : `Até ${p.clientes} clientes`} · ${p.campanhas === 1 ? '1 campanha nova por mês' : `${p.campanhas} campanhas novas por mês`}</p>
+        <ul>${p.acoes.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
+        ${podeTrocar && p.id !== c.plano && p.preco > 0 ? `<div class="plano-acoes">${S.eu.cobranca ? `<button class="btn primary small" data-assinar="${p.id}">Assinar no cartão</button>` : ''}<button class="btn small" data-pixplano="${p.id}">Pagar com Pix</button></div>` : ''}</article>`).join('')}</div>
       <div class="plano-extras">
         <div><b>Pacote BI + relatórios</b> <span class="muted">+ ${brl(S.eu.bi_preco || 0)}/mês</span><br><span class="muted">Adicional que pode ser incluído em qualquer plano${c.bi ? ' (já incluído no seu)' : ''}.</span></div>
         <div><b>Campanha avulsa</b> <span class="muted">${brl(S.eu.preco_avulsa || 0)} cada</span><br><span class="muted">Para criar além do limite do mês. Não vence e pode ser paga no cartão ou no Pix.</span></div></div></div>
@@ -722,6 +725,8 @@ async function viewAssinatura(v) {
       <div class="sa-linha" style="margin-top:8px"><input id="senhaExc" type="password" placeholder="Digite a sua senha para confirmar" autocomplete="current-password"><button class="btn danger" id="bExcluirConta">Excluir conta</button></div></div>`);
   const b = $('#bAssinar2'); if (b) b.addEventListener('click', assinar);
   const bx = $('#bPix'); if (bx) bx.addEventListener('click', () => abrirPix('mensalidade'));
+  v.querySelectorAll('[data-assinar]').forEach((b) => b.addEventListener('click', () => assinar(b.dataset.assinar)));
+  v.querySelectorAll('[data-pixplano]').forEach((b) => b.addEventListener('click', () => abrirPix('mensalidade', 1, b.dataset.pixplano)));
   const p = $('#bPortal'); if (p) p.addEventListener('click', async () => { try { const r = await api('/api/saas/portal', { method: 'POST' }); location.href = r.url; } catch (e) { falha(e); } });
   $('#bEmpresa').addEventListener('click', async () => { try { await api('/api/saas/conta', { method: 'PUT', corpo: { empresa: $('#empresa').value } }); aviso('Salvo.'); } catch (e) { falha(e); } });
   $('#bExcluirConta').addEventListener('click', async () => {
