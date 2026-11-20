@@ -1382,7 +1382,7 @@ async function viewUsuarios(v) {
     $('#uSenha').innerHTML = `<div style="margin-top:14px"><p style="margin:0 0 8px">Link de acesso de <b>${esc(email)}</b>. Envie para a pessoa: ao abrir, ela cria a própria senha. O link vale por 7 dias e só funciona uma vez.</p>
       <div class="senha-box" style="font-size:13px"><span style="word-break:break-all">${esc(link)}</span><button type="button" class="btn small" id="copiarSenha">Copiar convite</button></div></div>`;
     $('#copiarSenha').addEventListener('click', () => {
-      navigator.clipboard.writeText(`Olá! Este é seu acesso ao sistema da Por Boas Histórias.\nAbra o link para criar sua senha (vale por 7 dias):\n${link}\n\nDepois, entre em ${location.origin} com o e-mail ${email}.`);
+      navigator.clipboard.writeText(`Olá! Este é seu acesso ao sistema da Por Boas Histórias.\nAbra o link para criar sua senha (vale por 7 dias):\n${link}\n\nDepois, entre em ${location.origin}/entrar com o e-mail ${email}.`);
       toast('Convite copiado');
     });
   };

@@ -668,11 +668,14 @@ require('./blog').registrarPublico(app, { pool, wrap });
 // A página de vendas sai com endereços absolutos (canonical, og:url, og:image) e o FAQ também em dados estruturados, para o Google e as redes sociais
 const htmlVendas = fs.readFileSync(path.join(__dirname, 'public', 'midiaut.html'), 'utf8');
 const faqVendas = [...htmlVendas.matchAll(/<details><summary>(.*?)<\/summary><p>(.*?)<\/p><\/details>/g)].map((m) => ({ '@type': 'Question', name: m[1].replace(/<[^>]+>/g, ''), acceptedAnswer: { '@type': 'Answer', text: m[2].replace(/<[^>]+>/g, '') } }));
-app.get(['/midiaut'], (req, res) => {
+const paginaVendas = (req, res) => {
   const base = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
   const dados = [{ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqVendas }, { '@context': 'https://schema.org', '@type': 'Organization', name: 'MidIAut', url: `${base}/midiaut`, logo: `${base}/brand/midiaut/icone-512.png` }, { '@context': 'https://schema.org', '@type': 'WebSite', name: 'MidIAut', url: `${base}/midiaut`, inLanguage: 'pt-BR' }];
   res.type('html').send(htmlVendas.replaceAll('{{BASE}}', base).replace('</head>', `<script type="application/ld+json">${JSON.stringify(dados).replace(/</g, '\\u003c')}</script>\n</head>`));
-});
+};
+app.get('/midiaut', paginaVendas);
+// A raiz do site é a página de vendas; o painel interno fica em /sistema (convites antigos com ?convite= continuam abrindo o painel)
+app.get('/', (req, res, next) => (req.query.convite ? res.sendFile(path.join(__dirname, 'public', 'index.html')) : paginaVendas(req, res, next)));
 app.get(['/midiaut.html', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.redirect(301, '/midiaut'));
 app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));

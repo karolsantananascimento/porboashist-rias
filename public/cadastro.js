@@ -109,7 +109,7 @@ $('#fLogin').addEventListener('submit', async (e) => {
   ocupado(f, true);
   try {
     const r = await chamar('/api/login', { email, senha });
-    location.href = r.usuario.papel === 'assinante' ? (explicita === 'assinar' ? destino() : DESTINO) : '/';
+    location.href = r.usuario.papel === 'assinante' ? (explicita === 'assinar' ? destino() : DESTINO) : '/sistema';
   } catch (er) { erro.textContent = er.message; ocupado(f, false); }
 });
 
