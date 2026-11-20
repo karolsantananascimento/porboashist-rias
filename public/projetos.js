@@ -1,4 +1,4 @@
-// A Melhor Mídia do Brasil — telas de projetos, Criar, Mensagens, Empregos e Integrações
+// MidIAut · sistema interno — telas de projetos, Criar, Mensagens, Empregos e Integrações
 // Usa as funções globais de app.js (S, api, esc, $, $$, toast, render, abrirProjeto, carregarProjetos).
 
 let AGENTES = [];
