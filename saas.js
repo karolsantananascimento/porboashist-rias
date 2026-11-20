@@ -183,6 +183,8 @@ function contextoMeta(cliente) {
     },
   };
 }
+const ga4 = require('./ga4');
+const contextoGa4 = (cliente) => ga4.contexto((k) => config.cfgProprio(k, escopoCliente(cliente)));
 const contextoGoogle = (cliente) => gads.contexto((k) => config.cfgProprio(k, escopoCliente(cliente)));
 
 // Apaga os arquivos enviados ao Meta há mais de 1 hora (o Meta já guarda a cópia dele), exceto os que ainda estão em rascunho
@@ -544,6 +546,17 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   app.post('/api/saas/testar/google', assinante, wrap(async (req, res) => {
     try { res.json({ ok: true, ...(await gads.testar(contextoGoogle(req.cliente))) }); }
     catch (e) { res.json({ ok: false, erro: e.message }); }
+  }));
+
+  app.post('/api/saas/testar/ga4', assinante, wrap(async (req, res) => {
+    try { res.json({ ok: true, ...(await ga4.testar(contextoGa4(req.cliente))) }); }
+    catch (e) { res.json({ ok: false, erro: e.message }); }
+  }));
+
+  // Dados do Google Analytics 4 do cliente (somente leitura)
+  app.get('/api/saas/analytics', assinante, wrap(async (req, res) => {
+    const dias = [7, 14, 30, 90].includes(Number(req.query.dias)) ? Number(req.query.dias) : 7;
+    res.json(await ga4.resumo(contextoGa4(req.cliente), dias));
   }));
 
   // ----- Campanhas (rascunhos e histórico, Meta e Google) -----
@@ -942,7 +955,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
 
   // A administradora cria o próprio perfil de assinante (acesso liberado, plano Escala + BI) e traz para ele as APIs padrão já instaladas.
   const CHAVES_PERFIL = ['META_ADS_TOKEN', 'META_AD_ACCOUNT_ID', 'META_PAGE_ID', 'META_IG_ID', 'META_PIXEL_ID', 'META_MAX_DAILY_BUDGET_BRL',
-    'GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID', 'GOOGLE_ADS_LOGIN_CUSTOMER_ID', 'GOOGLE_ADS_MAX_DAILY_BUDGET_BRL'];
+    'GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_CUSTOMER_ID', 'GOOGLE_ADS_LOGIN_CUSTOMER_ID', 'GOOGLE_ADS_MAX_DAILY_BUDGET_BRL', 'GA4_PROPERTY_ID', 'GA4_REFRESH_TOKEN'];
   app.post('/api/saas/admin/meu-perfil', soAdmin, wrap(async (req, res) => {
     let { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE user_id=$1', [req.user.id]);
     const criada = !c;

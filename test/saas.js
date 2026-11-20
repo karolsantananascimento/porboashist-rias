@@ -116,7 +116,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     console.log('Chaves de API');
     r = await req('a', 'GET', '/api/saas/chaves');
     const campos = r.corpo.grupos.flatMap((g) => g.campos);
-    ok(r.status === 200 && r.corpo.grupos.length === 2 && campos.every((c) => c.ajuda && c.ajuda.passos.length), 'todo campo tem o "?" com passo a passo');
+    ok(r.status === 200 && r.corpo.grupos.length === 3 && campos.every((c) => c.ajuda && c.ajuda.passos.length), 'todo campo tem o "?" com passo a passo');
     ok(campos.every((c) => c.definido === false), 'assinante novo não herda as chaves do administrador (mesmo com variável de ambiente)');
     r = await req('a', 'PUT', '/api/saas/chaves', { chave: 'ANTHROPIC_API_KEY', valor: 'x'.repeat(30) });
     ok(r.status === 400, 'só as chaves do catálogo podem ser gravadas');
@@ -529,6 +529,17 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(gc.length && gc.every((c) => c.dev === 'devtoken-bruno-1234567890' && c.auth === 'Bearer gat-1//refresh-token-do-bruno-123456' && /customers\/1234567890\//.test(c.u)), 'Google recebeu só as credenciais do Bruno e a conta dele');
     r = await req('b', 'GET', '/api/saas/google/campanhas?periodo=LAST_30_DAYS');
     ok(r.status === 200 && r.corpo[0].gasto_brl === 12 && r.corpo[0].conversoes === 2, 'lista campanhas com métricas');
+    console.log('Google Analytics 4');
+    r = await req('b', 'GET', '/api/saas/analytics'); ok(r.status === 400 && /Faltam/.test(r.corpo.erro), 'sem as chaves do Analytics a tela explica o que falta');
+    r = await req('b', 'PUT', '/api/saas/chaves', { chave: 'GA4_PROPERTY_ID', valor: 'G-ABC123' }); ok(r.status === 400, 'ID do GA4 precisa ser numérico');
+    r = await req('b', 'PUT', '/api/saas/chaves', { chave: 'GA4_PROPERTY_ID', valor: 'properties/4455667' }); ok(r.status === 200, 'salva o ID da propriedade');
+    r = await req('b', 'PUT', '/api/saas/chaves', { chave: 'GA4_REFRESH_TOKEN', valor: '1//refresh-analytics-do-bruno-12345' }); ok(r.status === 200, 'salva o refresh token do Analytics');
+    limparLog();
+    r = await req('b', 'POST', '/api/saas/testar/ga4'); ok(r.corpo.ok === true && r.corpo.sessoes_7d === 100, 'teste do Analytics mostra as sessões');
+    r = await req('b', 'GET', '/api/saas/analytics?dias=30');
+    ok(r.status === 200 && r.corpo.dias === 30 && r.corpo.totais.sessoes === 100 && r.corpo.totais.conversoes === 8 && r.corpo.serie.length === 2 && r.corpo.origens[0].origem === 'google / cpc' && r.corpo.paginas[0].pagina === '/', 'traz totais, série, origens e páginas');
+    ok(chamadas().filter((c) => c.alvo === 'ga4').every((c) => /properties\/4455667:runReport/.test(c.u) && c.auth === 'Bearer gat-1//refresh-analytics-do-bruno-12345'), 'Analytics usa só as credenciais e a propriedade do Bruno');
+    r = await req('a', 'GET', '/api/saas/analytics'); ok(r.status === 400, 'outro assinante não enxerga os dados do Bruno');
     r = await req('b', 'GET', '/api/saas/google/campanhas?periodo=INVENTADO');
     ok(r.status === 400, 'período inválido é recusado');
     const spec = { nome: 'Pesquisa Bruno', orcamento_diario_brl: 30, estrategia: 'MAXIMIZE_CLICKS', titulos: ['Título um', 'Título dois', 'Título três'], descricoes: ['Descrição número um da campanha', 'Descrição número dois da campanha'], url_final: 'https://loja.exemplo/oferta', palavras_exatas: 'loja de sapatos\nsapato feminino' };

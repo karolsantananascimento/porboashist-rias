@@ -165,6 +165,41 @@ const GRUPOS = [
       },
     ],
   },
+  {
+    id: 'analytics',
+    titulo: 'Google Analytics 4',
+    intro: 'Para trazer visitas, origens e conversões do seu site para o painel (somente leitura).',
+    campos: [
+      {
+        chave: 'GA4_PROPERTY_ID', rotulo: 'ID da propriedade do GA4', obrigatorio: true, exemplo: '123456789',
+        ajuda: {
+          titulo: 'Onde achar o ID da propriedade',
+          passos: [
+            'Abra analytics.google.com e entre na conta do seu site.',
+            'Clique em Administrador (engrenagem, canto inferior esquerdo) → Configurações da propriedade.',
+            'Copie o "ID da propriedade" (só números). Não é o ID de métricas que começa com G-.',
+          ],
+          links: [['Google Analytics', 'https://analytics.google.com']],
+          nota: GOOGLE_AVISO,
+        },
+      },
+      {
+        chave: 'GA4_REFRESH_TOKEN', rotulo: 'Refresh token do Analytics', obrigatorio: true, secreto: true,
+        ajuda: {
+          titulo: 'Como gerar o refresh token com acesso ao Analytics',
+          passos: [
+            'Use o mesmo Client ID e Client secret preenchidos no grupo Google Ads (a tela de consentimento OAuth do mesmo projeto).',
+            'No projeto do Google Cloud, ative a API "Google Analytics Data API".',
+            'No OAuth Playground (developers.google.com/oauthplayground), clique na engrenagem, marque "Use your own OAuth credentials" e cole o Client ID e o Client secret.',
+            'Na lista de escopos, informe https://www.googleapis.com/auth/analytics.readonly, autorize com o login que tem acesso ao Analytics e clique em "Exchange authorization code for tokens".',
+            'Copie o Refresh token e cole aqui.',
+          ],
+          links: [['OAuth Playground', 'https://developers.google.com/oauthplayground'], ['Ativar a API de dados do GA4', 'https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com']],
+          nota: GOOGLE_AVISO,
+        },
+      },
+    ],
+  },
 ];
 
 const PERMITIDAS = new Set(GRUPOS.flatMap((g) => g.campos.map((c) => c.chave)));
@@ -194,7 +229,11 @@ function normalizarValor(chave, bruto) {
       return String(n);
     }
     case 'META_ADS_TOKEN': if (v.length < 20) falha('Este token parece curto demais. Copie o token inteiro.'); return v;
-    case 'GOOGLE_ADS_REFRESH_TOKEN': if (v.length < 20) falha('Este token parece curto demais. Copie o token inteiro.'); return v;
+    case 'GA4_PROPERTY_ID':
+      v = v.replace(/^properties\//i, '');
+      if (!/^\d{5,15}$/.test(v)) falha('O ID da propriedade tem só números (não é o código G-XXXX).');
+      return v;
+    case 'GA4_REFRESH_TOKEN': case 'GOOGLE_ADS_REFRESH_TOKEN': if (v.length < 20) falha('Este token parece curto demais. Copie o token inteiro.'); return v;
     case 'GOOGLE_ADS_CLIENT_ID': if (!/\.apps\.googleusercontent\.com$/.test(v)) falha('O Client ID termina com .apps.googleusercontent.com.'); return v;
     default: return v;
   }
