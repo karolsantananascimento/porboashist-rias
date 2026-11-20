@@ -1671,7 +1671,7 @@ async function viewAssinantes(v) {
       <button class="btn small" data-a="${x.conta_id}" data-acao="suporte">Entrar na conta</button> <button class="btn small" data-ch="${x.id}" data-chacao="concluir">Concluir</button> <button class="btn small danger" data-ch="${x.id}" data-chacao="cancelar">Cancelar</button></div>` : ''}</td></tr>`;
   const brlPix = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const linhaPx = (x) => `<tr><td><b>${esc(x.nome || '')}</b><br><span class="muted">${esc(x.email)}${x.empresa ? ' · ' + esc(x.empresa) : ''}</span></td>
-    <td>${x.tipo === 'mensalidade' ? `Mensalidade (${esc(x.plano || x.plano_atual)})` : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`}<br><span class="muted">Código ${esc(x.txid)}</span></td>
+    <td>${x.tipo === 'mensalidade' ? `Mensalidade (${esc(x.plano || x.plano_atual)})` : x.tipo === 'bi' ? 'Pacote BI + relatórios (30 dias)' : `${x.qtd} campanha${x.qtd > 1 ? 's' : ''} avulsa${x.qtd > 1 ? 's' : ''}`}<br><span class="muted">Código ${esc(x.txid)}</span></td>
     <td><b>${brlPix(x.valor)}</b><br><span class="muted">${new Date(x.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span></td>
     <td>${x.status === 'informado' ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small primary" data-px="${x.id}" data-pxacao="confirmar">Conferi no banco: liberar</button> <button class="btn small danger" data-px="${x.id}" data-pxacao="recusar">Recusar</button></div>` : `<span class="pill ${x.status === 'confirmado' ? 'ok' : ''}">${x.status === 'confirmado' ? 'Liberado' : 'Recusado'}</span>`}</td></tr>`;
   const cont = (cod) => l.filter((a) => a.situacao.codigo === cod).length;

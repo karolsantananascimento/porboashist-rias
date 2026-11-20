@@ -57,7 +57,7 @@ async function iniciar() {
   if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada' && S.eu.conta.plano !== 'gratis') assinar();
 }
 
-const ABAS_BASE = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['analytics', 'Analytics'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
+const ABAS_BASE = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['dashboard', 'Dashboard'], ['analytics', 'Analytics'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
 // Quem tem plano com mais de um cliente ganha a aba Clientes
 const abas = () => (S.eu?.conta.clientes_max > 1 ? [ABAS_BASE[0], ['clientes', 'Clientes'], ...ABAS_BASE.slice(1)] : ABAS_BASE);
 // A aba fica no endereço (/assinante#chaves): recarregar, voltar e compartilhar o link mantêm o lugar
@@ -96,7 +96,7 @@ function render() {
   // Cada tela monta o conteúdo num bloco à parte; o "Carregando…" some quando ela termina
   const aba = S.aba;
   const tela = document.createElement('div'); tela.style.display = 'contents'; v.append(tela); // as telas usam $('#id') no documento, então o bloco já entra na página
-  ({ inicio: viewInicio, clientes: viewClientes, campanhas: viewCampanhas, analytics: viewAnalytics, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
+  ({ inicio: viewInicio, clientes: viewClientes, campanhas: viewCampanhas, dashboard: viewDashboard, analytics: viewAnalytics, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
     .catch((e) => { falha(e); tela.innerHTML = '<div class="card"><p class="muted">Não consegui carregar esta tela. Tente de novo em instantes.</p><button class="btn" data-recarregar>Tentar de novo</button></div>'; })
     .finally(() => {
       if (!v.isConnected) return;
@@ -177,6 +177,59 @@ async function viewInicio(v) {
     const t = rows.reduce((a, r) => ({ gasto: a.gasto + r.gasto_brl, cliques: a.cliques + r.cliques, conv: a.conv + r.conversoes }), { gasto: 0, cliques: 0, conv: 0 });
     d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Google Ads · últimos 7 dias</h3><p style="font-size:24px;margin:8px 0 2px">${brl(t.gasto)}</p><p class="muted">${t.cliques.toLocaleString('pt-BR')} cliques · ${t.conv.toLocaleString('pt-BR')} conversões</p></div>`);
   }).catch((e) => d.insertAdjacentHTML('beforeend', `<div class="card"><h3>Google Ads</h3><p class="muted">Não consegui ler o desempenho: ${esc(e.message)}</p></div>`));
+}
+
+
+// ---------------- Dashboard (pacote BI + relatórios) ----------------
+const pintar = (v, html) => { v.innerHTML = ''; secao(v, html); };
+const nPt = (n, c = 0) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }));
+const pct = (n) => (n === null || n === undefined ? '—' : `${nPt(n, 2)}%`);
+const brlOuTraco = (n) => (n === null || n === undefined ? '—' : brl(n));
+
+function dashBloqueado(v) {
+  pintar(v, `<div class="view-head"><div><h2>Dashboard</h2><p>Os principais números das suas campanhas do Meta e do Google, em um lugar só.</p></div></div>
+    <div class="card dash-lock"><h3>Disponível no pacote BI + relatórios</h3>
+      <p class="muted">Por ${brl(S.eu.bi_preco || 50)} por mês, em qualquer plano, você acompanha o resultado de todas as campanhas sem abrir cada plataforma.</p>
+      <ul class="plano-lista"><li>Investimento, impressões, cliques e conversões</li><li>CTR, custo por clique (CPC), custo por mil impressões (CPM) e taxa de conversão</li><li>Custo por conversão, total e por plataforma</li><li>Ranking das campanhas e comparação Meta × Google</li><li>Períodos de 7, 14 e 30 dias, este mês e o mês passado</li><li>Download dos números em planilha (CSV)</li></ul>
+      <div class="plano-acoes"><button class="btn primary" id="bBi">Assinar o BI por ${brl(S.eu.bi_preco || 50)}/mês (Pix)</button><button class="btn" data-ir="assinatura">Ver planos</button></div>
+      <p class="muted" style="margin-top:10px">O Pix libera o BI por 30 dias, assim que o pagamento é conferido. Depois é só renovar.</p></div>`);
+  $('#bBi').addEventListener('click', () => abrirPix('bi'));
+  v.querySelectorAll('[data-ir]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.ir)));
+}
+
+function csvDash(d) {
+  const cab = ['Plataforma', 'Campanha', 'Investimento (R$)', 'Impressões', 'Cliques', 'CTR (%)', 'CPC (R$)', 'Conversões', 'Custo por conversão (R$)'];
+  const lin = (x) => [x.plataforma === 'meta' ? 'Meta' : 'Google', x.nome, x.gasto, x.impressoes, x.cliques, x.ctr ?? '', x.cpc ?? '', x.conversoes, x.custo_conversao ?? ''];
+  const cel = (c) => { let t = String(c); if (/^[=+\-@]/.test(t)) t = `'${t}`; return `"${t.replace(/"/g, '""')}"`; }; // aspas e proteção contra fórmula em planilha
+  return '﻿' + [cab, ...d.campanhas.map(lin)].map((l) => l.map(cel).join(';')).join('\r\n');
+}
+
+async function viewDashboard(v) {
+  await carregarEu();
+  if (!S.eu.conta.bi) return dashBloqueado(v);
+  const periodo = S.dashPeriodo || 'last_7d';
+  pintar(v, `<div class="view-head"><div><h2>Dashboard</h2><p>Meta e Google juntos. Atualizado a cada abertura.</p></div></div><div class="card"><p class="muted">Carregando os números…</p></div>`);
+  let d; try { d = await api(`/api/saas/dashboard?periodo=${periodo}`); } catch (e) { if (e.status === 402) { await carregarEu(); return dashBloqueado(v); } return pintar(v, `<div class="card"><p class="muted">Não consegui carregar: ${esc(e.message)}</p></div>`); }
+  const t = d.total; const m = d.plataformas.meta; const g = d.plataformas.google;
+  const kpi = (nome, valor, dica) => `<div class="kpi"><span class="kpi-n">${nome}</span><b>${valor}</b>${dica ? `<small>${dica}</small>` : ''}</div>`;
+  const gastoTot = (m.gasto + g.gasto) || 0;
+  const barra = (nome, x, cor) => `<div class="dash-plat"><div class="dash-plat-top"><b>${nome}</b><span>${brl(x.gasto)} · ${gastoTot ? nPt((x.gasto / gastoTot) * 100) : 0}% do investimento</span></div>
+    <div class="dash-barra"><i style="width:${gastoTot ? (x.gasto / gastoTot) * 100 : 0}%;background:${cor}"></i></div>
+    <p class="muted">${nPt(x.cliques)} cliques · ${nPt(x.conversoes, 1)} conversões · CPC ${brlOuTraco(x.cpc)} · custo/conv. ${brlOuTraco(x.custo_conversao)}</p></div>`;
+  const aviso2 = ['meta', 'google'].filter((k) => !d.conectado[k].ok).map((k) => `<p class="muted"><b>${k === 'meta' ? 'Meta Ads' : 'Google Ads'}:</b> ${esc(d.conectado[k].erro)}</p>`).join('');
+  const linhas = d.campanhas.map((c) => `<tr><td><span class="tag ${c.plataforma}">${c.plataforma === 'meta' ? 'Meta' : 'Google'}</span></td><td>${esc(c.nome)}</td><td class="num">${brl(c.gasto)}</td><td class="num">${nPt(c.cliques)}</td><td class="num">${pct(c.ctr)}</td><td class="num">${brlOuTraco(c.cpc)}</td><td class="num">${nPt(c.conversoes, 1)}</td><td class="num">${brlOuTraco(c.custo_conversao)}</td></tr>`).join('');
+  pintar(v, `<div class="view-head"><div><h2>Dashboard</h2><p>${esc(d.periodo_nome)} · Meta e Google juntos${S.eu.conta.bi_ate ? ` · BI ativo até ${dataBr(S.eu.conta.bi_ate)}` : ''}</p></div>
+      <div class="dash-ctl"><select id="dashPer" aria-label="Período">${d.periodos.map((p) => `<option value="${p.id}" ${p.id === d.periodo ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}</select><button class="btn" id="dashCsv" ${d.campanhas.length ? '' : 'disabled'}>Baixar planilha</button></div></div>
+    ${aviso2 ? `<div class="card">${aviso2}</div>` : ''}
+    <div class="kpis">${kpi('Investimento', brl(t.gasto))}${kpi('Conversões', nPt(t.conversoes, 1), 'compras, contatos e conversas')}${kpi('Custo por conversão', brlOuTraco(t.custo_conversao))}${kpi('Cliques', nPt(t.cliques), `CTR ${pct(t.ctr)}`)}${kpi('Impressões', nPt(t.impressoes), `CPM ${brlOuTraco(t.cpm)}`)}${kpi('CPC médio', brlOuTraco(t.cpc))}${kpi('Taxa de conversão', pct(t.taxa_conversao), 'conversões por clique')}</div>
+    <div class="card"><h3>Meta × Google</h3>${barra('Meta Ads', m, '#B6FF45')}${barra('Google Ads', g, '#7AA7FF')}</div>
+    <div class="card"><h3>Campanhas</h3>${d.campanhas.length ? `<div class="tabela-rolar"><table class="dash-tab"><thead><tr><th></th><th>Campanha</th><th class="num">Investimento</th><th class="num">Cliques</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">Conv.</th><th class="num">Custo/conv.</th></tr></thead><tbody>${linhas}</tbody></table></div>` : '<p class="muted">Ainda não há campanhas com dados neste período.</p>'}
+      <p class="muted" style="margin-top:10px">Conversões do Meta somam compras, contatos (leads) e conversas iniciadas; as do Google vêm do que você configurou como conversão na conta.</p></div>`);
+  $('#dashPer').addEventListener('change', (e) => { S.dashPeriodo = e.target.value; viewDashboard(v); });
+  $('#dashCsv').addEventListener('click', () => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csvDash(d)], { type: 'text/csv;charset=utf-8' }));
+    a.download = `midiaut-kpis-${d.periodo}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
 }
 
 // ---------------- Analytics (GA4) ----------------
@@ -687,13 +740,13 @@ async function abrirPix(tipo, qtd = 1, plano = '') {
       <div class="pix-qr"><img src="${p.qr}" alt="QR Code do Pix" width="240" height="240"></div>
       <div class="pix-info">
         <p class="pix-valor">${brl(p.valor)}</p>
-        <p class="muted">${tipo === 'mensalidade' ? `Mensalidade do plano ${esc((S.eu.planos || []).find((x) => x.id === p.plano)?.nome || S.eu.conta.plano_nome)}${S.eu.conta.bi ? ' + BI' : ''}` : `${p.qtd} campanha${p.qtd > 1 ? 's' : ''} avulsa${p.qtd > 1 ? 's' : ''}`}</p>
+        <p class="muted">${tipo === 'mensalidade' ? `Mensalidade do plano ${esc((S.eu.planos || []).find((x) => x.id === p.plano)?.nome || S.eu.conta.plano_nome)}${S.eu.conta.bi ? ' + BI' : ''}` : tipo === 'bi' ? 'Pacote BI + relatórios: dashboard de KPIs por 30 dias' : `${p.qtd} campanha${p.qtd > 1 ? 's' : ''} avulsa${p.qtd > 1 ? 's' : ''}`}</p>
         <label>Pix copia e cola</label>
         <textarea id="pixCola" rows="4" readonly>${esc(p.payload)}</textarea>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn primary" id="pixCopiar">Copiar código</button></div>
         <p class="muted" style="margin-top:10px">Chave Pix (CNPJ): <b>${cnpjTxt(p.chave)}</b></p>
       </div>
-      <ol class="pix-passos"><li>No app do seu banco, escolha <b>Pix</b> e leia o QR Code ou cole o código.</li><li>Confira o valor de <b>${brl(p.valor)}</b> e pague.</li><li>Volte aqui e clique em <b>Já paguei</b>. A liberação é manual: assim que o pagamento for conferido no banco, ${tipo === 'mensalidade' ? 'sua assinatura é ativada por 30 dias' : 'as campanhas avulsas entram na sua conta'}.</li></ol>
+      <ol class="pix-passos"><li>No app do seu banco, escolha <b>Pix</b> e leia o QR Code ou cole o código.</li><li>Confira o valor de <b>${brl(p.valor)}</b> e pague.</li><li>Volte aqui e clique em <b>Já paguei</b>. A liberação é manual: assim que o pagamento for conferido no banco, ${tipo === 'mensalidade' ? 'sua assinatura é ativada por 30 dias' : tipo === 'bi' ? 'o Dashboard é liberado por 30 dias' : 'as campanhas avulsas entram na sua conta'}.</li></ol>
     </div>
     <div class="modal-foot"><button class="btn primary" id="pixPaguei">Já paguei</button></div>`);
   $('.sa-modal-box').classList.add('pix');
@@ -738,7 +791,7 @@ async function viewAssinatura(v) {
         <ul>${p.acoes.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
         ${podeTrocar && p.id !== c.plano && p.preco > 0 ? `<div class="plano-acoes">${S.eu.cobranca ? `<button class="btn primary small" data-assinar="${p.id}">Assinar no cartão</button>` : ''}<button class="btn small" data-pixplano="${p.id}">Pagar com Pix</button></div>` : ''}</article>`).join('')}</div>
       <div class="plano-extras">
-        <div><b>Pacote BI + relatórios</b> <span class="muted">+ ${brl(S.eu.bi_preco || 0)}/mês</span><br><span class="muted">Adicional que pode ser incluído em qualquer plano${c.bi ? ' (já incluído no seu)' : ''}.</span></div>
+        <div><b>Pacote BI + relatórios</b> <span class="muted">+ ${brl(S.eu.bi_preco || 0)}/mês</span><br><span class="muted">Dashboard com os KPIs das campanhas do Meta e do Google e download em planilha. Pode ser incluído em qualquer plano${c.bi ? (c.bi_ate ? ` (ativo até ${dataBr(c.bi_ate)})` : ' (já incluído no seu)') : ''}.</span>${!c.bi || c.bi_ate ? `<br><button class="btn small" id="bBiPix" style="margin-top:6px">${c.bi ? 'Renovar' : 'Assinar'} por Pix</button>` : ''}</div>
         <div><b>Campanha avulsa</b> <span class="muted">${brl(S.eu.preco_avulsa || 0)} cada</span><br><span class="muted">Para criar além do limite do mês. Não vence e pode ser paga no cartão ou no Pix.</span></div></div></div>
     <div class="card"><h3>Seus dados</h3>
       <div class="sa-linha" style="margin-top:8px"><input id="empresa" value="${esc(c.empresa || '')}" placeholder="Empresa ou marca"><button class="btn" id="bEmpresa">Salvar</button></div>
@@ -746,6 +799,7 @@ async function viewAssinatura(v) {
     <div class="card"><h3>Excluir minha conta</h3><p class="muted">Apaga a sua conta, as campanhas guardadas aqui e todas as chaves de API. As campanhas que já existem no Meta e no Google não são apagadas por lá.</p>
       <div class="sa-linha" style="margin-top:8px"><input id="senhaExc" type="password" placeholder="Digite a sua senha para confirmar" autocomplete="current-password"><button class="btn danger" id="bExcluirConta">Excluir conta</button></div></div>`);
   const b = $('#bAssinar2'); if (b) b.addEventListener('click', assinar);
+  const bb = $('#bBiPix'); if (bb) bb.addEventListener('click', () => abrirPix('bi'));
   const bx = $('#bPix'); if (bx) bx.addEventListener('click', () => abrirPix('mensalidade'));
   v.querySelectorAll('[data-assinar]').forEach((b) => b.addEventListener('click', () => assinar(b.dataset.assinar)));
   v.querySelectorAll('[data-pixplano]').forEach((b) => b.addEventListener('click', () => abrirPix('mensalidade', 1, b.dataset.pixplano)));

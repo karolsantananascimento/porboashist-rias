@@ -26,6 +26,10 @@ global.fetch = async (url, init = {}) => {
       if (fim === 'ads') return j({ id: 'ad1' });
       return j({ success: true });
     }
+    if (/\/insights/.test(u)) return j({ data: [
+      { campaign_id: 'c1', campaign_name: 'Meta Vendas', spend: '100.50', impressions: '10000', clicks: '250', actions: [{ action_type: 'purchase', value: '4' }, { action_type: 'omni_purchase', value: '4' }, { action_type: 'lead', value: '6' }, { action_type: 'link_click', value: '250' }] },
+      { campaign_id: 'c2', campaign_name: 'Meta Leads', spend: '50', impressions: '5000', clicks: '100', actions: [{ action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '5' }] },
+    ] });
     if (/adgeolocation/.test(u)) return j({ data: [{ type: 'city', key: '2500', name: 'Recife', region: 'Pernambuco', country_code: 'BR' }] });
     if (/adinterest/.test(u)) return j({ data: [{ id: '6003', name: 'Estética facial' }] });
     if (/\/act_\d+\?/.test(u)) return j({ name: 'Conta do Assinante', account_status: 1, currency: 'BRL' });

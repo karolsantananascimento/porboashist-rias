@@ -376,6 +376,7 @@ CREATE INDEX IF NOT EXISTS saas_contas_stripe ON saas_contas (stripe_customer_id
 ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS plano TEXT NOT NULL DEFAULT 'solo';   -- solo | agencia | escala
 ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS cpf TEXT;   -- só dígitos; único (evita várias contas Grátis da mesma pessoa)
 CREATE UNIQUE INDEX IF NOT EXISTS saas_contas_cpf_uni ON saas_contas (cpf) WHERE cpf IS NOT NULL;
+ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS bi_ate TIMESTAMPTZ;   -- BI pago por Pix vale 30 dias; vazio = incluído na assinatura ou liberado pela administradora
 ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS bi BOOLEAN NOT NULL DEFAULT false;     -- pacote BI + relatórios
 -- Clientes do assinante (planos Agência e Escala gerenciam vários). Cada cliente tem as próprias chaves de API:
 -- "escopo" é o client_id usado em configuracoes. O cliente principal usa 1000000 + id da conta (como antes); os outros, 2000000 + id do cliente.
