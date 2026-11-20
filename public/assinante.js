@@ -24,8 +24,8 @@ const falha = (e) => { if (!e.tratado) aviso(e.message, true); if (e.status === 
 const dataBr = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '');
 const brl = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-// ---------------- Entrada: a página pública /assinar cuida de criar conta e entrar ----------------
-function entrada(modo = 'criar') { location.replace(modo === 'entrar' ? '/assinar?modo=entrar' : '/assinar'); }
+// ---------------- Entrada: a página /cadastro (e /entrar) cuida de criar conta e entrar ----------------
+function entrada(modo = 'criar') { location.replace(modo === 'entrar' ? '/entrar' : '/cadastro'); }
 
 // ---------------- Estrutura do app ----------------
 async function carregarEu() { S.eu = await api('/api/saas/eu'); }

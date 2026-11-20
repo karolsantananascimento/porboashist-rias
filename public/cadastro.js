@@ -1,9 +1,10 @@
-// Página pública de cadastro e acesso do Agente de Tráfego (SaaS).
+// Página de cadastro e acesso do Agente de Tráfego (SaaS), aberta pelos botões do site de vendas (/assinar).
 // Fala só com /api/saas/publico, /api/saas/cadastro, /api/login e /api/sessao. Depois de entrar, vai para /assinante.
 const $ = (s) => document.querySelector(s);
 const DESTINO = '/assinante';
 // Intenção do visitante: "assinar" leva ao pagamento logo depois de criar a conta ou entrar; "testar" só abre a conta com o teste
-let intencao = new URLSearchParams(location.search).get('plano') === 'testar' ? 'testar' : 'assinar';
+const explicita = new URLSearchParams(location.search).get('plano'); // só 'assinar' vindo do site leva quem já tem conta ao pagamento
+let intencao = explicita === 'testar' ? 'testar' : 'assinar';
 const destino = () => (intencao === 'assinar' ? '/assinante?assinar=1#assinatura' : DESTINO);
 function aplicarIntencao() {
   const a = intencao === 'assinar';
@@ -11,13 +12,6 @@ function aplicarIntencao() {
   $('#pCadastro').textContent = a ? 'Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.' : 'Crie a conta e teste sem cartão. Você assina quando quiser.';
   $('#bCadastro').firstElementChild.textContent = a ? 'Criar conta e assinar' : 'Criar conta e testar';
   delete $('#bCadastro').firstElementChild.dataset.t;
-}
-
-function irAoForm(m, i) {
-  if (i) { intencao = i; aplicarIntencao(); }
-  modo(m, false);
-  $('#cadastro').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
-  setTimeout(() => $(m === 'entrar' ? '#lEmail' : '#cNome').focus({ preventScroll: true }), 450);
 }
 
 function modo(m, foco = true) {
@@ -28,7 +22,7 @@ function modo(m, foco = true) {
   $('#abaEntrar').setAttribute('aria-selected', String(!criar));
   $('#abaCriar').tabIndex = criar ? 0 : -1;
   $('#abaEntrar').tabIndex = criar ? -1 : 0;
-  history.replaceState(null, '', (criar ? '/assinar' : '/assinar?modo=entrar') + (intencao === 'testar' ? (criar ? '?plano=testar' : '&plano=testar') : ''));
+  history.replaceState(null, '', (criar ? '/cadastro' : '/cadastro?modo=entrar') + (intencao === 'testar' ? (criar ? '?plano=testar' : '&plano=testar') : ''));
   if (foco) ($(criar ? '#cNome' : '#lEmail')).focus();
 }
 
@@ -55,14 +49,6 @@ const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 $('#abaCriar').addEventListener('click', () => modo('criar'));
 $('#abaEntrar').addEventListener('click', () => modo('entrar'));
-document.querySelectorAll('[data-ir-form]').forEach((b) => b.addEventListener('click', () => irAoForm(b.dataset.irForm, b.dataset.intencao)));
-document.querySelectorAll('.capitulos button').forEach((b) => b.addEventListener('click', () => {
-  const v = $('#demo'); v.currentTime = Number(b.dataset.t); v.play().catch(() => {});
-}));
-(() => { // destaca o capítulo em exibição
-  const v = $('#demo'); const bs = [...document.querySelectorAll('.capitulos button')]; const ts = bs.map((b) => Number(b.dataset.t));
-  v.addEventListener('timeupdate', () => { let a = -1; ts.forEach((t, i) => { if (v.currentTime >= t) a = i; }); bs.forEach((b, i) => b.classList.toggle('on', i === a)); });
-})();
 document.querySelectorAll('[data-ir]').forEach((b) => b.addEventListener('click', () => modo(b.dataset.ir)));
 document.querySelector('.abas').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const entrar = $('#abaCriar').getAttribute('aria-selected') === 'true'; modo(entrar ? 'entrar' : 'criar'); }
@@ -108,19 +94,17 @@ $('#fLogin').addEventListener('submit', async (e) => {
   ocupado(f, true);
   try {
     const r = await chamar('/api/login', { email, senha });
-    location.href = r.usuario.papel === 'assinante' ? destino() : '/';
+    location.href = r.usuario.papel === 'assinante' ? (explicita === 'assinar' ? destino() : DESTINO) : '/';
   } catch (er) { erro.textContent = er.message; ocupado(f, false); }
 });
 
 (async () => {
   aplicarIntencao();
-  modo(new URLSearchParams(location.search).get('modo') === 'entrar' ? 'entrar' : 'criar', false);
+  modo(new URLSearchParams(location.search).get('modo') === 'entrar' || location.pathname === '/entrar' ? 'entrar' : 'criar', false);
   // Preço, dias de teste e termos vêm do servidor (variáveis SAAS_PRECO_TEXTO, SAAS_TRIAL_DIAS, SAAS_TERMOS_URL)
   try {
     const p = await fetch('/api/saas/publico').then((r) => r.json());
     if (p.preco) { $('#preco').textContent = p.preco; $('#preco').classList.remove('hidden'); }
-    if (p.preco) { $('#planoValor').textContent = p.preco; $('#planoValor').classList.remove('hidden'); }
-    if (p.trial_dias) $('#planoSub').textContent = `${p.trial_dias} dias para testar, sem cartão.`;
     if (p.trial_dias) { $('#teste').textContent = `${p.trial_dias} dias para testar, sem cartão`; $('#teste').classList.remove('hidden'); }
     if (p.termos_url) $('#termos').href = p.termos_url; else $('#termos').replaceWith(document.createTextNode('termos de uso'));
   } catch { $('#termos').replaceWith(document.createTextNode('termos de uso')); }

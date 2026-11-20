@@ -166,3 +166,63 @@ main { position: relative; z-index: 1; }
 .testar.escuro { color: #3a332d; margin: 14px 0 0; text-align: center; }
 .link.claro { color: var(--creme); }
 .bloco.final .testar { margin-top: 18px; }
+
+/* ---------- Site de vendas (/assinar) ---------- */
+.topo-acoes { display: flex; gap: 10px; align-items: center; }
+a.entrar { text-decoration: none; display: inline-block; }
+.entrar.cheio { background: var(--vermelho); border-color: var(--vermelho); color: var(--creme); }
+.entrar.cheio:hover { background: var(--creme); border-color: var(--creme); color: var(--preto); }
+.voltar { color: var(--creme); font-size: 10px; text-decoration: none; letter-spacing: .2em; }
+.voltar:hover { text-decoration: underline; }
+@media (max-width: 560px) { .topo-acoes .entrar:not(.cheio) { display: none; } }
+
+.heroi { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: .95fr 1.05fr; gap: clamp(28px, 5vw, 72px);
+  align-items: center; padding: clamp(36px, 7vw, 88px) clamp(20px, 5vw, 48px) clamp(44px, 7vw, 88px); scroll-margin-top: 80px; }
+.heroi h1.boldo { font-size: clamp(30px, 4.6vw, 58px); line-height: 1.12; overflow-wrap: anywhere; }
+.moldura { margin: 0; background: #fff; border: 2px solid var(--creme); box-shadow: 12px 12px 0 var(--vermelho); line-height: 0; }
+.moldura img { width: 100%; height: auto; display: block; }
+.moldura-barra { display: flex; gap: 6px; padding: 9px 12px; background: var(--preto); border-bottom: 2px solid var(--creme); }
+.moldura-barra i { width: 9px; height: 9px; border-radius: 50%; background: var(--creme); opacity: .55; }
+.moldura-barra i:first-child { background: var(--vermelho); opacity: 1; }
+.moldura figcaption { line-height: 1.4; font-size: 11px; color: var(--prata); background: var(--preto); padding: 8px 12px; }
+
+.faixa { position: relative; z-index: 1; display: flex; gap: 26px; white-space: nowrap; overflow: hidden; padding: 16px 0; background: var(--vermelho); color: var(--creme); font-size: 11px; letter-spacing: .3em; justify-content: center; }
+.faixa b { color: var(--preto); font-weight: 400; }
+.centro-cta { text-align: center; margin-top: clamp(28px, 4vw, 44px); }
+.centro-cta .botao { display: inline-block; padding: 16px 30px; }
+
+.telas { display: grid; gap: clamp(36px, 6vw, 72px); }
+.tela-linha { display: grid; grid-template-columns: 1.2fr .8fr; gap: clamp(22px, 4vw, 52px); align-items: center; }
+.tela-linha.inverte { grid-template-columns: .8fr 1.2fr; }
+.tela-linha.inverte .moldura { order: 2; }
+.tela-linha h3 { font: 400 clamp(16px, 1.8vw, 21px)/1.3 Boldonse, Anton, Impact, sans-serif; text-transform: uppercase; margin: 0 0 12px; overflow-wrap: anywhere; }
+.tela-linha p { margin: 0; font-size: 16px; color: #3a332d; }
+.moldura.pequena { box-shadow: 8px 8px 0 var(--vermelho); border-color: var(--preto); }
+.claro-bg .moldura-barra { border-color: var(--preto); }
+
+.quem { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 22px; }
+.quem li { border: 2px solid var(--creme); padding: 22px; }
+.quem h3 { margin: 0 0 8px; font-size: 17px; }
+.quem p { margin: 0; color: var(--prata); font-size: 15px; }
+
+.passos.claros li > b { color: var(--preto); }
+.passos.claros p { color: #3a332d; }
+
+.rodape-site { position: relative; z-index: 1; display: grid; gap: 16px; justify-items: center; text-align: center; padding: 40px 20px 90px; border-top: 1px solid rgba(192,192,192,.18); }
+.rodape-site .marca { justify-content: center; }
+.rodape-site .marca img { border-radius: 50%; }
+.rodape-site .marca span { font-size: 9px; letter-spacing: .3em; }
+.rodape-site nav { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; font-size: 10px; letter-spacing: .2em; }
+.rodape-site nav a { color: var(--creme); text-decoration: none; }
+.rodape-site nav a:hover { text-decoration: underline; }
+.rodape-site p { font-size: 9px; color: var(--prata); letter-spacing: .28em; margin: 0; }
+
+.barra-mobile { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--vermelho); color: var(--creme); text-align: center; text-decoration: none; padding: 16px; font-size: 11px; font-weight: 700; letter-spacing: .2em; box-shadow: 0 -4px 18px rgba(0,0,0,.45); }
+
+@media (max-width: 900px) {
+  .heroi { grid-template-columns: 1fr; }
+  .tela-linha, .tela-linha.inverte { grid-template-columns: 1fr; }
+  .tela-linha.inverte .moldura { order: 0; }
+  .barra-mobile { display: block; }
+  .faixa { justify-content: flex-start; }
+}

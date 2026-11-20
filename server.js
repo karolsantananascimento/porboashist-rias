@@ -640,7 +640,9 @@ app.use((err, req, res, next) => {
 });
 
 // ---------- Interface ----------
+// Site de vendas do Agente de Tráfego; os botões levam a /cadastro (criar conta) e /entrar (login)
 app.get(['/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinar.html')));
+app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
