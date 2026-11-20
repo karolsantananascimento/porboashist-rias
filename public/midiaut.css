@@ -223,3 +223,8 @@ form > .dica { margin: 0; }
 .troca { font-size: 14px; text-align: center; color: var(--texto-2); }
 .rodape { text-align: center; font-size: 13px; color: var(--cinza); padding: 18px 12px 30px; }
 @media (max-width: 860px) { .pg { grid-template-columns: 1fr; padding-top: 16px; } }
+
+.topo-links { display: flex; align-items: center; gap: 18px; }
+.admin-link { color: var(--lima, #B6FF45); text-decoration: none; font-weight: 700; font-size: 14px; border: 1px solid currentColor; border-radius: 999px; padding: 8px 14px; }
+.admin-link:hover { background: rgba(182,255,69,.12); }
+@media (max-width: 560px) { .topo-links { gap: 10px; } .topo-links .voltar { display: none; } }
