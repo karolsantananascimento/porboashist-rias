@@ -5,7 +5,10 @@
 const crypto = require('crypto');
 
 const API = process.env.STRIPE_API_URL || 'https://api.stripe.com/v1';
-const configurado = () => !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_ID);
+// Preço de cada plano: STRIPE_PRICE_SOLO, STRIPE_PRICE_AGENCIA, STRIPE_PRICE_ESCALA (e STRIPE_PRICE_BI para o pacote BI + relatórios).
+// Sem o preço do plano, cai no STRIPE_PRICE_ID (preço único).
+const precoDoPlano = (plano) => process.env[`STRIPE_PRICE_${String(plano || '').toUpperCase()}`] || process.env.STRIPE_PRICE_ID || '';
+const configurado = () => !!(process.env.STRIPE_SECRET_KEY && (process.env.STRIPE_PRICE_ID || process.env.STRIPE_PRICE_SOLO || process.env.STRIPE_PRICE_AGENCIA || process.env.STRIPE_PRICE_ESCALA));
 const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
 
 // Stripe usa corpo form-encoded com chaves aninhadas: a[b][0]=c
@@ -34,10 +37,13 @@ async function stripe(caminho, corpo) {
 }
 
 async function criarCheckout({ conta, email, base }) {
-  if (!process.env.STRIPE_PRICE_ID) throw erro('A cobrança ainda não está configurada. Fale com o administrador.', 503);
+  const preco = precoDoPlano(conta.plano);
+  if (!preco) throw erro('A cobrança ainda não está configurada. Fale com o administrador.', 503);
+  const itens = [{ price: preco, quantity: 1 }];
+  if (conta.bi && process.env.STRIPE_PRICE_BI) itens.push({ price: process.env.STRIPE_PRICE_BI, quantity: 1 });
   const corpo = {
     mode: 'subscription', locale: 'pt-BR',
-    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+    line_items: itens,
     success_url: `${base}/assinante?assinatura=ok`, cancel_url: `${base}/assinante?assinatura=cancelada`,
     client_reference_id: String(conta.id), allow_promotion_codes: 'true',
     subscription_data: { metadata: { conta_id: String(conta.id) } },

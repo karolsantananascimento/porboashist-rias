@@ -375,6 +375,21 @@ CREATE TABLE IF NOT EXISTS saas_contas (
 CREATE INDEX IF NOT EXISTS saas_contas_stripe ON saas_contas (stripe_customer_id);
 ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS plano TEXT NOT NULL DEFAULT 'solo';   -- solo | agencia | escala
 ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS bi BOOLEAN NOT NULL DEFAULT false;     -- pacote BI + relatórios
+-- Clientes do assinante (planos Agência e Escala gerenciam vários). Cada cliente tem as próprias chaves de API:
+-- "escopo" é o client_id usado em configuracoes. O cliente principal usa 1000000 + id da conta (como antes); os outros, 2000000 + id do cliente.
+CREATE TABLE IF NOT EXISTS saas_clientes (
+  id SERIAL PRIMARY KEY,
+  conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
+  nome TEXT NOT NULL,
+  escopo INT NOT NULL UNIQUE,
+  principal BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS saas_clientes_conta ON saas_clientes (conta_id);
+CREATE UNIQUE INDEX IF NOT EXISTS saas_clientes_principal ON saas_clientes (conta_id) WHERE principal;
+INSERT INTO saas_clientes (conta_id, nome, escopo, principal)
+  SELECT c.id, COALESCE(NULLIF(c.empresa, ''), 'Meu cliente'), 1000000 + c.id, true FROM saas_contas c
+  WHERE NOT EXISTS (SELECT 1 FROM saas_clientes k WHERE k.conta_id = c.id AND k.principal);
 CREATE TABLE IF NOT EXISTS saas_campanhas (
   id SERIAL PRIMARY KEY,
   conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
@@ -391,6 +406,9 @@ CREATE TABLE IF NOT EXISTS saas_campanhas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saas_campanhas_conta ON saas_campanhas (conta_id, id DESC);
+ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS cliente_id INT REFERENCES saas_clientes(id) ON DELETE CASCADE;
+UPDATE saas_campanhas x SET cliente_id = (SELECT k.id FROM saas_clientes k WHERE k.conta_id = x.conta_id AND k.principal) WHERE x.cliente_id IS NULL;
+CREATE INDEX IF NOT EXISTS saas_campanhas_cliente ON saas_campanhas (cliente_id, id DESC);
 CREATE TABLE IF NOT EXISTS saas_eventos (
   id SERIAL PRIMARY KEY,
   conta_id INT REFERENCES saas_contas(id) ON DELETE CASCADE,

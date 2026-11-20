@@ -17,7 +17,9 @@ const { GRUPOS, PERMITIDAS, normalizarValor } = require('./saas-chaves');
 const { hashSenha, conferirSenha } = require('./db');
 
 const ESCOPO_BASE = 1_000_000;
-const escopoDe = (conta) => ESCOPO_BASE + conta.id;
+const escopoDe = (conta) => ESCOPO_BASE + conta.id; // escopo do cliente principal da conta
+const ESCOPO_CLIENTE_BASE = 2_000_000;
+const escopoCliente = (cliente) => cliente.escopo;
 // Planos de venda (/gestoragent). O plano é um rótulo administrado por você; o limite de clientes ainda não é aplicado pelo sistema.
 const PLANOS = { solo: { nome: 'Solo', clientes: 1, preco: 370 }, agencia: { nome: 'Agência', clientes: 3, preco: 760 }, escala: { nome: 'Escala', clientes: 5, preco: 950 } };
 const PRECO_BI = 50;
@@ -52,6 +54,7 @@ const publicoConta = (c, u) => {
     ia: { usados: c.ia_mes === mesAtual() ? c.ia_usos : 0, limite: IA_LIMITE_MES },
   };
 };
+const clientePublico = (k) => ({ id: k.id, nome: k.nome, principal: k.principal });
 const mesAtual = () => new Date().toISOString().slice(0, 7);
 
 async function evento(pool, contaId, tipo, detalhe) {
@@ -59,8 +62,8 @@ async function evento(pool, contaId, tipo, detalhe) {
 }
 
 // ---------- Contextos de cada plataforma (só chaves do próprio assinante) ----------
-function contextoMeta(conta) {
-  const e = escopoDe(conta); const le = (k) => config.cfgProprio(k, e);
+function contextoMeta(cliente) {
+  const e = escopoCliente(cliente); const le = (k) => config.cfgProprio(k, e);
   const token = le('META_ADS_TOKEN');
   if (!token) throw erro('O Meta Ads ainda não está configurado: cole o token de acesso em Chaves de API.');
   const idc = String(le('META_AD_ACCOUNT_ID') || '').trim();
@@ -69,7 +72,7 @@ function contextoMeta(conta) {
     teto: Number(le('META_MAX_DAILY_BUDGET_BRL')) || meta.TETO_PADRAO_BRL, page: le('META_PAGE_ID') || '', ig: le('META_IG_ID') || '', pageNome: '',
   };
 }
-const contextoGoogle = (conta) => gads.contexto((k) => config.cfgProprio(k, escopoDe(conta)));
+const contextoGoogle = (cliente) => gads.contexto((k) => config.cfgProprio(k, escopoCliente(cliente)));
 
 // ---------- Rascunho por IA (cota mensal por assinante) ----------
 async function reservarIa(pool, conta) {
@@ -134,6 +137,7 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
       ({ rows: [conta] } = await c.query(
         `INSERT INTO saas_contas (user_id, empresa, status, trial_ate, plano, bi) VALUES ($1,$2,'trial', now() + ($3 || ' days')::interval, $4, $5) RETURNING *`,
         [user.id, empresa || null, String(TRIAL_DIAS), plano, bi]));
+      await c.query('INSERT INTO saas_clientes (conta_id, nome, escopo, principal) VALUES ($1,$2,$3,true)', [conta.id, empresa || nome || 'Meu cliente', escopoDe(conta)]);
       await c.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [conta.id, 'cadastro', 'Conta criada']);
       await c.query('COMMIT');
     } catch (e) {
@@ -165,6 +169,17 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const { rows: [c] } = await pool.query('SELECT * FROM saas_contas WHERE user_id=$1', [req.user.id]);
     if (!c) return res.status(403).json({ erro: 'Conta de assinante não encontrada.' });
     req.conta = c;
+    let { rows: cls } = await pool.query('SELECT * FROM saas_clientes WHERE conta_id=$1 ORDER BY principal DESC, id', [c.id]);
+    if (!cls.length) { // conta antiga ou criada por fora: garante o cliente principal
+      ({ rows: cls } = await pool.query(
+        `INSERT INTO saas_clientes (conta_id, nome, escopo, principal) VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING RETURNING *`,
+        [c.id, c.empresa || 'Meu cliente', escopoDe(c)]));
+      if (!cls.length) ({ rows: cls } = await pool.query('SELECT * FROM saas_clientes WHERE conta_id=$1 ORDER BY principal DESC, id', [c.id]));
+    }
+    const pedido = req.headers['x-cliente'];
+    const cl = pedido ? cls.find((x) => String(x.id) === String(pedido)) : cls[0];
+    if (!cl) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+    req.clientes = cls; req.cliente = cl;
     next();
   });
   // Rotas que gastam ou criam: exigem assinatura em dia (ou período de teste)
@@ -175,7 +190,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   };
   const idDe = (req) => { const n = Number(req.params.id); if (!Number.isInteger(n) || n <= 0) throw erro('Identificador inválido'); return n; };
   const carregar = async (req) => {
-    const { rows: [c] } = await pool.query('SELECT * FROM saas_campanhas WHERE id=$1 AND conta_id=$2', [idDe(req), req.conta.id]);
+    const { rows: [c] } = await pool.query('SELECT * FROM saas_campanhas WHERE id=$1 AND conta_id=$2 AND cliente_id=$3', [idDe(req), req.conta.id, req.cliente.id]);
     if (!c) throw erro('Campanha não encontrada', 404);
     return c;
   };
@@ -186,7 +201,53 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
 
   // ----- Perfil e situação da conta -----
   app.get('/api/saas/eu', assinante, wrap(async (req, res) => {
-    res.json({ conta: publicoConta(req.conta, req.user), cobranca: billing.configurado(), preco: process.env.SAAS_PRECO_TEXTO || '' });
+    res.json({
+      conta: publicoConta(req.conta, req.user), cobranca: billing.configurado(), preco: process.env.SAAS_PRECO_TEXTO || '',
+      clientes: req.clientes.map(clientePublico), cliente_atual: req.cliente.id,
+    });
+  }));
+
+  // ----- Clientes do assinante (cada um com as próprias chaves e campanhas) -----
+  const limiteClientes = (conta) => PLANOS[conta.plano]?.clientes ?? 1;
+  app.get('/api/saas/clientes', assinante, wrap(async (req, res) => {
+    res.json({ clientes: req.clientes.map(clientePublico), atual: req.cliente.id, max: limiteClientes(req.conta) });
+  }));
+  app.post('/api/saas/clientes', assinante, wrap(async (req, res) => {
+    const nome = String(req.body?.nome || '').trim().slice(0, 120);
+    if (!nome) throw erro('Informe o nome do cliente.');
+    const max = limiteClientes(req.conta);
+    const { rows: [n] } = await pool.query(
+      `WITH novo AS (SELECT nextval('saas_clientes_id_seq')::int AS id)
+       INSERT INTO saas_clientes (id, conta_id, nome, escopo)
+       SELECT novo.id, $1, $2, $3 + novo.id FROM novo
+        WHERE (SELECT count(*) FROM saas_clientes WHERE conta_id=$1) < $4 RETURNING *`,
+      [req.conta.id, nome, ESCOPO_CLIENTE_BASE, max]);
+    if (!n) throw erro(`O plano ${PLANOS[req.conta.plano]?.nome || ''} permite ${max} cliente${max > 1 ? 's' : ''}. Para gerenciar mais, fale com o suporte e mude de plano.`, 403);
+    await evento(pool, req.conta.id, 'cliente_criado', nome);
+    res.json({ cliente: clientePublico(n) });
+  }));
+  app.put('/api/saas/clientes/:id', assinante, wrap(async (req, res) => {
+    const nome = String(req.body?.nome || '').trim().slice(0, 120);
+    if (!nome) throw erro('Informe o nome do cliente.');
+    const { rows: [n] } = await pool.query('UPDATE saas_clientes SET nome=$3 WHERE id=$1 AND conta_id=$2 RETURNING *', [idDe(req), req.conta.id, nome]);
+    if (!n) throw erro('Cliente não encontrado.', 404);
+    res.json({ cliente: clientePublico(n) });
+  }));
+  app.delete('/api/saas/clientes/:id', assinante, wrap(async (req, res) => {
+    const cl = req.clientes.find((x) => x.id === idDe(req));
+    if (!cl) throw erro('Cliente não encontrado.', 404);
+    if (cl.principal) throw erro('O cliente principal não pode ser excluído. Renomeie-o, se quiser.');
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query('DELETE FROM configuracoes WHERE client_id=$1', [cl.escopo]);
+      await c.query('DELETE FROM conexoes WHERE client_id=$1', [cl.escopo]);
+      await c.query('DELETE FROM saas_clientes WHERE id=$1', [cl.id]); // apaga as campanhas guardadas em cascata
+      await c.query('COMMIT');
+    } catch (err) { await c.query('ROLLBACK'); throw err; } finally { c.release(); }
+    await config.carregar(pool);
+    await evento(pool, req.conta.id, 'cliente_excluido', cl.nome);
+    res.json({ ok: true });
   }));
 
   app.put('/api/saas/conta', assinante, wrap(async (req, res) => {
@@ -208,7 +269,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
 
   // ----- Chaves de API -----
   app.get('/api/saas/chaves', assinante, wrap(async (req, res) => {
-    const e = escopoDe(req.conta);
+    const e = escopoCliente(req.cliente);
     const lista = config.listarProprio(e, [...PERMITIDAS]);
     const por = Object.fromEntries(lista.map((x) => [x.chave, x]));
     res.json({
@@ -223,14 +284,14 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const chave = String(req.body?.chave || '');
     if (!PERMITIDAS.has(chave)) throw erro('Chave desconhecida.');
     const valor = normalizarValor(chave, req.body?.valor);
-    await config.definir(pool, chave, valor, escopoDe(req.conta));
+    await config.definir(pool, chave, valor, escopoCliente(req.cliente));
     await evento(pool, req.conta.id, 'chave_salva', chave);
     res.json({ ok: true });
   }));
 
   app.delete('/api/saas/chaves/:chave', assinante, wrap(async (req, res) => {
     if (!PERMITIDAS.has(req.params.chave)) throw erro('Chave desconhecida.');
-    await config.remover(pool, req.params.chave, escopoDe(req.conta));
+    await config.remover(pool, req.params.chave, escopoCliente(req.cliente));
     await evento(pool, req.conta.id, 'chave_removida', req.params.chave);
     res.json({ ok: true });
   }));
@@ -238,7 +299,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   // Testes de conexão (só leituras). Respondem 200 com ok:true/false para a tela mostrar verde ou vermelho.
   app.post('/api/saas/testar/meta', assinante, wrap(async (req, res) => {
     try {
-      const ctx = contextoMeta(req.conta);
+      const ctx = contextoMeta(req.cliente);
       if (!ctx.conta) throw erro('Falta o ID da conta de anúncios.');
       const ct = await meta.get(ctx, ctx.conta, { fields: 'name,account_status,currency' });
       const out = { conta: ct.name || ctx.conta, moeda: ct.currency || null, ativa: ct.account_status === 1 };
@@ -249,13 +310,13 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   }));
 
   app.post('/api/saas/testar/google', assinante, wrap(async (req, res) => {
-    try { res.json({ ok: true, ...(await gads.testar(contextoGoogle(req.conta))) }); }
+    try { res.json({ ok: true, ...(await gads.testar(contextoGoogle(req.cliente))) }); }
     catch (e) { res.json({ ok: false, erro: e.message }); }
   }));
 
   // ----- Campanhas (rascunhos e histórico, Meta e Google) -----
   app.get('/api/saas/campanhas', assinante, wrap(async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM saas_campanhas WHERE conta_id=$1 ORDER BY id DESC LIMIT 100', [req.conta.id]);
+    const { rows } = await pool.query('SELECT * FROM saas_campanhas WHERE conta_id=$1 AND cliente_id=$2 ORDER BY id DESC LIMIT 100', [req.conta.id, req.cliente.id]);
     res.json(rows);
   }));
 
@@ -266,7 +327,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const spec = meta.normalizar(req.body?.spec || {});
     const pend = []; const falta = meta.faltando(spec); if (falta.length) pend.push(`Falta preencher: ${falta.join(', ')}.`);
     const { rows: [c] } = await pool.query(
-      `INSERT INTO saas_campanhas (conta_id, plataforma, spec, pendencias) VALUES ($1,'meta',$2,$3) RETURNING *`, [req.conta.id, spec, JSON.stringify(pend)]);
+      `INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, pendencias) VALUES ($1,$4,'meta',$2,$3) RETURNING *`, [req.conta.id, spec, JSON.stringify(pend), req.cliente.id]);
     res.json({ campanha: c });
   }));
 
@@ -277,10 +338,10 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     if (await contarCampanhas(req.conta.id) >= MAX_CAMPANHAS) throw erro('Você chegou ao limite de campanhas guardadas. Exclua rascunhos antigos.');
     await reservarIa(pool, req.conta);
     let r;
-    try { r = await rascunhoIa(pool, req.conta, req.conta.empresa, briefing); } catch (e) { await devolverIa(pool, req.conta); throw e; }
+    try { r = await rascunhoIa(pool, req.conta, req.cliente.nome || req.conta.empresa, briefing); } catch (e) { await devolverIa(pool, req.conta); throw e; }
     const { rows: [c] } = await pool.query(
-      `INSERT INTO saas_campanhas (conta_id, plataforma, spec, pendencias, briefing) VALUES ($1,'meta',$2,$3,$4) RETURNING *`,
-      [req.conta.id, r.spec, JSON.stringify(r.pend), briefing.slice(0, 6000)]);
+      `INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, pendencias, briefing) VALUES ($1,$5,'meta',$2,$3,$4) RETURNING *`,
+      [req.conta.id, r.spec, JSON.stringify(r.pend), briefing.slice(0, 6000), req.cliente.id]);
     res.json({ campanha: c });
   }));
 
@@ -289,7 +350,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     if (c.plataforma !== 'meta') throw erro('Só rascunhos do Meta podem ser editados aqui.');
     if (!['rascunho', 'erro'].includes(c.status)) throw erro('Esta campanha já foi criada no Meta e não pode mais ser editada aqui.', 409);
     const spec = meta.normalizar(req.body?.spec || {});
-    let teto = meta.TETO_PADRAO_BRL; try { teto = contextoMeta(req.conta).teto; } catch { /* usa o padrão */ }
+    let teto = meta.TETO_PADRAO_BRL; try { teto = contextoMeta(req.cliente).teto; } catch { /* usa o padrão */ }
     const pend = []; const falta = meta.faltando(spec, { teto }); if (falta.length) pend.push(`Falta preencher: ${falta.join(', ')}.`);
     const { rows: [n] } = await pool.query(
       `UPDATE saas_campanhas SET spec=$1, pendencias=$2, status='rascunho', erro=NULL, updated_at=now() WHERE id=$3 AND status IN ('rascunho','erro') RETURNING *`,
@@ -309,7 +370,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   // Só leituras no Meta: confere o rascunho e mostra o que vai ser criado
   app.post('/api/saas/campanhas/:id/conferir', assinante, emDia, wrap(async (req, res) => {
     const c = await carregar(req);
-    const ctx = contextoMeta(req.conta);
+    const ctx = contextoMeta(req.cliente);
     try { res.json({ ok: true, ...(await meta.conferir(ctx, c.spec)) }); } catch (e) { res.json({ ok: false, erro: e.message }); }
   }));
 
@@ -317,7 +378,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   app.post('/api/saas/campanhas/:id/subir', assinante, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a criação da campanha.');
     const c0 = await carregar(req);
-    const ctx = contextoMeta(req.conta);
+    const ctx = contextoMeta(req.cliente);
     const prob = meta.validar(c0.spec, ctx); if (prob) throw erro(prob);
     const { rows: [c] } = await pool.query(
       `UPDATE saas_campanhas SET status='criando', erro=NULL, updated_at=now() WHERE id=$1 AND status IN ('rascunho','erro') RETURNING *`, [c0.id]);
@@ -341,7 +402,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     const c0 = await carregar(req);
     if (c0.status !== 'criada_pausada') throw erro('Só dá para ativar uma campanha criada e pausada.', 409);
     if (await ativacoesHoje(req.conta.id) >= ATIVACOES_DIA) throw erro(`Limite de ${ATIVACOES_DIA} ativações por dia atingido. Tente amanhã ou ative pelo Gerenciador de Anúncios.`, 429);
-    const ctx = contextoMeta(req.conta);
+    const ctx = contextoMeta(req.cliente);
     const { rows: [c] } = await pool.query(`UPDATE saas_campanhas SET status='ativando', erro=NULL, ativada_em=now(), updated_at=now() WHERE id=$1 AND status='criada_pausada' RETURNING *`, [c0.id]);
     if (!c) throw erro('Esta campanha já está sendo ativada.', 409);
     try {
@@ -360,14 +421,14 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   app.post('/api/saas/campanhas/:id/pausar', assinante, wrap(async (req, res) => {
     const c0 = await carregar(req);
     if (c0.status !== 'ativada') throw erro('Só dá para pausar uma campanha ativada.', 409);
-    await meta.pausar(contextoMeta(req.conta), c0.ids.campanha_id);
+    await meta.pausar(contextoMeta(req.cliente), c0.ids.campanha_id);
     const { rows: [n] } = await pool.query(`UPDATE saas_campanhas SET status='criada_pausada', erro=NULL, updated_at=now() WHERE id=$1 RETURNING *`, [c0.id]);
     await evento(pool, req.conta.id, 'campanha_pausada', `Meta ${c0.ids.campanha_id}`);
     res.json({ campanha: n });
   }));
 
   // ----- Leituras do Meta (sempre com as chaves do assinante) -----
-  const leituraMeta = (fn) => [assinante, wrap(async (req, res) => res.json(await fn(contextoMeta(req.conta), req)))];
+  const leituraMeta = (fn) => [assinante, wrap(async (req, res) => res.json(await fn(contextoMeta(req.cliente), req)))];
   const q = (req) => String(req.query.q || '').trim().slice(0, 80);
   app.get('/api/saas/meta/desempenho', ...leituraMeta((ctx, req) => meta.desempenho(ctx, { nivel: req.query.nivel || 'campaign', periodo: req.query.periodo || 'last_7d' })));
   app.get('/api/saas/meta/campanhas', ...leituraMeta((ctx) => meta.listarCampanhas(ctx)));
@@ -377,13 +438,13 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
 
   // ----- Google Ads -----
   app.get('/api/saas/google/campanhas', assinante, wrap(async (req, res) => {
-    res.json(await gads.listarCampanhas(contextoGoogle(req.conta), String(req.query.periodo || 'LAST_7_DAYS')));
+    res.json(await gads.listarCampanhas(contextoGoogle(req.cliente), String(req.query.periodo || 'LAST_7_DAYS')));
   }));
 
   app.post('/api/saas/google/campanhas', assinante, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a criação da campanha (ela nasce pausada).');
     if (await contarCampanhas(req.conta.id) >= MAX_CAMPANHAS) throw erro('Você chegou ao limite de campanhas guardadas. Exclua rascunhos antigos.');
-    const ctx = contextoGoogle(req.conta);
+    const ctx = contextoGoogle(req.cliente);
     const b = req.body?.spec || {};
     const lista = (v, n) => (Array.isArray(v) ? v : String(v || '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, n);
     const spec = {
@@ -395,7 +456,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
     try {
       const ids = await gads.criarPesquisa(ctx, spec);
       const { rows: [n] } = await pool.query(
-        `INSERT INTO saas_campanhas (conta_id, plataforma, spec, status, ids, criada_em) VALUES ($1,'google',$2,'criada_pausada',$3,now()) RETURNING *`, [req.conta.id, spec, ids]);
+        `INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, status, ids, criada_em) VALUES ($1,$4,'google',$2,'criada_pausada',$3,now()) RETURNING *`, [req.conta.id, spec, ids, req.cliente.id]);
       await evento(pool, req.conta.id, 'campanha_criada', `Google ${ids.campanha_id}`);
       res.json({ campanha: n });
     } catch (e) {
@@ -414,7 +475,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
       confirmar(req, 'Confirme a ativação: a campanha começa a gastar.');
       if (await ativacoesHoje(req.conta.id) >= ATIVACOES_DIA) throw erro(`Limite de ${ATIVACOES_DIA} ativações por dia atingido. Tente amanhã.`, 429);
     }
-    const r = await gads.mudarStatus(contextoGoogle(req.conta), req.params.gid, status);
+    const r = await gads.mudarStatus(contextoGoogle(req.cliente), req.params.gid, status);
     await atualizarGoogle(req.conta.id, req.params.gid, status === 'ENABLED' ? 'ativada' : 'criada_pausada');
     await evento(pool, req.conta.id, status === 'ENABLED' ? 'campanha_ativada' : 'campanha_pausada', `Google ${req.params.gid}`);
     res.json(r);
@@ -422,7 +483,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
 
   app.post('/api/saas/google/campanhas/:gid/orcamento', assinante, emDia, wrap(async (req, res) => {
     confirmar(req, 'Confirme a alteração do orçamento.');
-    const r = await gads.ajustarOrcamento(contextoGoogle(req.conta), req.params.gid, req.body?.valor);
+    const r = await gads.ajustarOrcamento(contextoGoogle(req.cliente), req.params.gid, req.body?.valor);
     await evento(pool, req.conta.id, 'orcamento_google', `Google ${req.params.gid}: R$ ${r.de_brl} -> R$ ${r.para_brl}`);
     res.json(r);
   }));
@@ -442,6 +503,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
   app.get('/api/saas/admin/assinantes', soAdmin, wrap(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT c.*, u.email, u.nome, u.ativo AS usuario_ativo, u.created_at AS usuario_criado,
+         (SELECT count(*)::int FROM saas_clientes k WHERE k.conta_id=c.id) AS clientes,
          (SELECT count(*)::int FROM saas_campanhas x WHERE x.conta_id=c.id) AS campanhas,
          (SELECT count(*)::int FROM saas_campanhas x WHERE x.conta_id=c.id AND x.status='ativada') AS campanhas_ativas,
          (SELECT max(created_at) FROM saas_eventos e WHERE e.conta_id=c.id) AS ultima_atividade
@@ -450,7 +512,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
       const e = escopoDe(r); const tem = (k) => !!config.cfgProprio(k, e);
       return {
         id: r.id, email: r.email, nome: r.nome, empresa: r.empresa, status: r.status, situacao: situacao(r), cortesia: r.cortesia,
-        plano: r.plano, bi: !!r.bi, trial_ate: r.trial_ate, periodo_fim: r.periodo_fim, tem_assinatura: !!r.stripe_subscription_id, campanhas: r.campanhas, campanhas_ativas: r.campanhas_ativas,
+        plano: r.plano, bi: !!r.bi, clientes: r.clientes, clientes_max: PLANOS[r.plano]?.clientes ?? 1, trial_ate: r.trial_ate, periodo_fim: r.periodo_fim, tem_assinatura: !!r.stripe_subscription_id, campanhas: r.campanhas, campanhas_ativas: r.campanhas_ativas,
         ultima_atividade: r.ultima_atividade, criado_em: r.created_at,
         meta_ok: tem('META_ADS_TOKEN') && tem('META_AD_ACCOUNT_ID') && tem('META_PAGE_ID'),
         google_ok: tem('GOOGLE_ADS_DEVELOPER_TOKEN') && tem('GOOGLE_ADS_REFRESH_TOKEN') && tem('GOOGLE_ADS_CUSTOMER_ID'),
@@ -499,16 +561,16 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite }) {
 
 // Apaga usuário, conta, campanhas e todas as chaves guardadas daquele escopo
 async function excluirConta(pool, conta) {
-  const e = escopoDe(conta);
+  const escopos = [escopoDe(conta), ...(await pool.query('SELECT escopo FROM saas_clientes WHERE conta_id=$1', [conta.id])).rows.map((x) => x.escopo)];
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
-    await c.query('DELETE FROM configuracoes WHERE client_id=$1', [e]);
-    await c.query('DELETE FROM conexoes WHERE client_id=$1', [e]);
+    await c.query('DELETE FROM configuracoes WHERE client_id = ANY($1::int[])', [escopos]);
+    await c.query('DELETE FROM conexoes WHERE client_id = ANY($1::int[])', [escopos]);
     await c.query('DELETE FROM users WHERE id=$1 AND papel=\'assinante\'', [conta.user_id]); // apaga a conta em cascata
     await c.query('COMMIT');
   } catch (err) { await c.query('ROLLBACK'); throw err; } finally { c.release(); }
   await config.carregar(pool);
 }
 
-module.exports = { registrar, registrarPublico, situacao, escopoDe, contextoMeta, contextoGoogle, ESCOPO_BASE };
+module.exports = { registrar, registrarPublico, situacao, escopoDe, escopoCliente, contextoMeta, contextoGoogle, ESCOPO_BASE, ESCOPO_CLIENTE_BASE, PLANOS };
