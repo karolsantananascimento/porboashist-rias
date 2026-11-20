@@ -251,15 +251,17 @@ async function pintarSuporte() {
   try { lista = (await api('/api/saas/chamados')).chamados; } catch (e) { box.innerHTML = `<h3>Ajuda para integrar</h3><p class="muted">${esc(e.message)}</p>`; return; }
   const at = lista.find((c) => ['aberto', 'agendado'].includes(c.status));
   const quando = (d) => new Date(d).toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short' });
+  const btnIntegrar = S.eu.suporte ? '' : '<button class="btn primary" id="bIntegrar" style="width:100%">Integrar para anunciar</button><p class="muted" style="margin:6px 0 0;font-size:12px">Conecte o Meta Ads e o Google Ads em poucos passos guiados.</p>';
   const ult = !at && lista[0] && lista[0].status === 'concluido' ? '<p class="muted" style="margin-top:8px">Seu último pedido foi concluído. Se precisar de novo, é só solicitar.</p>' : '';
   box.innerHTML = at
-    ? `<h3>Ajuda para integrar <span class="pill ${at.status === 'agendado' ? 'ok' : ''}">${at.status === 'agendado' ? 'Agendado' : 'Pedido recebido'}</span></h3>
-       <p>${at.status === 'agendado' ? `Sua configuração está marcada para <b>${esc(quando(at.agendado_para))}</b>.` : 'Recebemos o seu pedido. Vamos entrar em contato para marcar o horário.'}</p>
+    ? `<h3>Conectar para anunciar <span class="pill ${at.status === 'agendado' ? 'ok' : ''}">${at.status === 'agendado' ? 'Suporte agendado' : 'Suporte pedido'}</span></h3>
+       ${btnIntegrar}<p style="margin-top:12px">${at.status === 'agendado' ? `Sua configuração está marcada para <b>${esc(quando(at.agendado_para))}</b>.` : 'Recebemos o seu pedido. Vamos entrar em contato para marcar o horário.'}</p>
        <p class="muted">Integrar: ${at.plataformas.map((x) => (x === 'meta' ? 'Meta Ads' : 'Google Ads')).join(' e ')} · Contato: ${esc(at.contato)}</p>
        ${S.eu.suporte ? '' : '<button class="btn small" id="bCancSup">Cancelar pedido</button>'}`
-    : `<h3>Ajuda para integrar</h3><p class="muted">Não quer colar as chaves sozinho? Nossa equipe agenda um horário e configura o Meta Ads e o Google Ads com você.</p>${ult}
-       ${S.eu.suporte ? '' : '<div style="margin-top:10px"><button class="btn primary" id="bPedirSup">Solicitar suporte para integração</button></div>'}`;
+    : `<h3>Conectar para anunciar</h3>${btnIntegrar}<p class="muted" style="margin-top:12px">Não quer colar as chaves sozinho? Nossa equipe agenda um horário e configura o Meta Ads e o Google Ads com você.</p>${ult}
+       ${S.eu.suporte ? '' : '<div style="margin-top:10px"><button class="btn" id="bPedirSup" style="width:100%">Solicitar suporte para integração</button></div>'}`;
   const canc = $('#bCancSup'); if (canc) canc.addEventListener('click', async () => { if (!confirm('Cancelar o pedido de suporte?')) return; try { await api(`/api/saas/chamados/${at.id}/cancelar`, { method: 'POST' }); aviso('Pedido cancelado.'); pintarSuporte(); } catch (e) { falha(e); } });
+  const ig = $('#bIntegrar'); if (ig) ig.addEventListener('click', () => abrirIntegrar());
   const ped = $('#bPedirSup'); if (ped) ped.addEventListener('click', () => abrirPedidoSuporte());
 }
 function abrirPedidoSuporte() {
@@ -300,6 +302,44 @@ function pintarCota() {
     catch (e) { falha(e); b.disabled = false; }
   });
 }
+// Assistente "Integrar para anunciar": guia a colagem das chaves do Meta e/ou do Google e já testa a conexão
+async function abrirIntegrar(plat = 'meta') {
+  try { await carregarChaves(); } catch (e) { return falha(e); }
+  const grupo = (id) => S.chaves.grupos.find((g) => g.id === id);
+  const g = grupo(plat) || S.chaves.grupos[0]; const qual = g.id === 'meta' ? 'meta' : 'google';
+  const tudo = g.campos.filter((c) => c.obrigatorio).every((c) => c.definido);
+  const t = S.testes[qual];
+  modal(`<div class="modal-head"><h3>Integrar para anunciar</h3><button class="btn ghost small" data-fechar>Fechar</button></div>
+    <div class="modal-body">
+      <div class="sa-abas-int">${S.chaves.grupos.map((x) => `<button type="button" class="${x.id === g.id ? 'on' : ''}" data-plat="${x.id}">${esc(x.titulo.split(' (')[0])} ${x.campos.filter((c) => c.obrigatorio).every((c) => c.definido) ? '✓' : ''}</button>`).join('')}</div>
+      <p class="muted">${esc(g.intro)} Cole cada item abaixo (use o <b>?</b> para ver onde achar). Os dados ficam criptografados e só você os usa.</p>
+      ${g.campos.map((c) => `<div class="sa-campo"><div class="sa-campo-top"><label for="ig-${c.chave}">${esc(c.rotulo)}</label>${c.obrigatorio ? '' : '<span class="muted" style="font-size:12px">opcional</span>'}
+        <button class="sa-ajuda-btn" type="button" data-k="${c.chave}" aria-expanded="false" title="Como conseguir">?</button>${c.definido ? '<span class="pill ok">salvo</span>' : '<span class="pill">falta</span>'}</div>
+        <div class="sa-ajuda hidden" id="ajig-${c.chave}"><h4>${esc(c.ajuda.titulo)}</h4><ol>${c.ajuda.passos.map((p) => `<li>${esc(p)}</li>`).join('')}</ol>
+          ${c.ajuda.links?.length ? `<div class="links">${c.ajuda.links.map(([tt, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(tt)} ↗</a>`).join('')}</div>` : ''}${c.ajuda.nota ? `<div class="sa-nota">${esc(c.ajuda.nota)}</div>` : ''}</div>
+        <input id="ig-${c.chave}" type="${c.secreto ? 'password' : 'text'}" autocomplete="off" spellcheck="false" placeholder="${c.definido ? esc(c.previa) + ' (deixe vazio para manter)' : esc(c.exemplo || 'Cole aqui')}"></div>`).join('')}
+      <div id="ig_res" class="sa-res ${t ? (t.ok ? 'ok' : 'ruim') : 'hidden'}" style="margin-top:10px">${t ? esc(textoTeste(t)) : ''}</div>
+    </div>
+    <div class="modal-foot"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="ig_salvar">Salvar e testar conexão</button>
+      ${t?.ok ? '<button class="btn" id="ig_campanha">Criar minha primeira campanha</button>' : ''}</div>
+      <button class="btn ghost small" id="ig_suporte">Prefiro ajuda da equipe</button></div>`);
+  document.querySelectorAll('#modal [data-plat]').forEach((b) => b.addEventListener('click', () => abrirIntegrar(b.dataset.plat)));
+  document.querySelectorAll('#modal .sa-ajuda-btn').forEach((b) => b.addEventListener('click', () => { const p = $(`#ajig-${b.dataset.k}`); const abre = p.classList.contains('hidden'); p.classList.toggle('hidden', !abre); b.setAttribute('aria-expanded', abre); }));
+  $('#ig_suporte').addEventListener('click', () => { fechar(); abrirPedidoSuporte(); });
+  const cm = $('#ig_campanha'); if (cm) cm.addEventListener('click', () => { fechar(); irPara('campanhas'); });
+  $('#ig_salvar').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget; b.disabled = true; b.textContent = 'Salvando e testando...';
+    try {
+      for (const c of g.campos) { const v = $(`#ig-${c.chave}`).value.trim(); if (v) await api('/api/saas/chaves', { method: 'PUT', corpo: { chave: c.chave, valor: v } }); }
+      await carregarChaves();
+      const faltam = grupo(g.id).campos.filter((c) => c.obrigatorio && !c.definido);
+      if (faltam.length) { S.testes[qual] = { ok: false, erro: `faltam: ${faltam.map((c) => c.rotulo).join(', ')}.` }; }
+      else { try { S.testes[qual] = await api(`/api/saas/testar/${qual}`, { method: 'POST' }); } catch (e) { S.testes[qual] = { ok: false, erro: e.message }; } }
+    } catch (e) { S.testes[qual] = { ok: false, erro: e.message }; }
+    await abrirIntegrar(plat); if (S.aba === 'inicio') render();
+  });
+}
+
 async function viewCampanhas(v) {
   await carregarCampanhas();
   secao(v, `<div class="view-head"><div><h2>Campanhas</h2><p>Descreva o que quer anunciar e a IA monta o rascunho. Você revisa, cria pausada e só então ativa.</p></div>
