@@ -37,11 +37,16 @@ async function iniciar() {
   if (s.usuario.papel !== 'assinante') { location.href = '/'; return; }
   await carregarEu();
   const q = new URLSearchParams(location.search).get('assinatura');
-  if (q) { history.replaceState(null, '', '/assinante'); aviso(q === 'ok' ? 'Pagamento recebido! Sua assinatura será ativada em instantes.' : 'Assinatura não concluída. Você pode tentar de novo quando quiser.', q !== 'ok'); S.aba = 'assinatura'; }
+  S.aba = abaDoEndereco() || S.aba;
+  if (q) { history.replaceState(null, '', '/assinante#assinatura'); aviso(q === 'ok' ? 'Pagamento recebido! Sua assinatura será ativada em instantes.' : 'Assinatura não concluída. Você pode tentar de novo quando quiser.', q !== 'ok'); S.aba = 'assinatura'; }
   render();
 }
 
 const ABAS = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];
+// A aba fica no endereço (/assinante#chaves): recarregar, voltar e compartilhar o link mantêm o lugar
+const abaDoEndereco = () => { const h = location.hash.slice(1); return ABAS.some(([k]) => k === h) ? h : null; };
+function irPara(aba) { S.aba = aba; if (location.hash.slice(1) !== aba) history.pushState(null, '', '/assinante#' + aba); render(); window.scrollTo(0, 0); }
+window.addEventListener('popstate', () => { if (S.eu) { S.aba = abaDoEndereco() || 'inicio'; render(); } });
 
 function render() {
   const c = S.eu.conta; const sit = c.situacao;
@@ -49,19 +54,35 @@ function render() {
     : sit.ativa ? `<span class="pill ok">${esc(sit.texto)}</span>` : `<span class="pill ruim">${esc(sit.codigo === 'bloqueada' ? 'Bloqueada' : 'Sem assinatura ativa')}</span>`;
   raiz.innerHTML = `
     <header class="sa-top">
-      <div class="sa-brand"><div class="brand-mark">M</div>Gestor de Tráfego</div>
-      <nav class="sa-nav" aria-label="Seções">${ABAS.map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}">${n}</button>`).join('')}</nav>
+      <a class="sa-brand" href="/assinante#inicio" aria-label="Agente de Tráfego, início"><img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="34" height="34">Agente de Tráfego</a>
+      <nav class="sa-nav" aria-label="Seções">${ABAS.map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
       <div class="sa-me">${pill}<span>${esc(c.nome || c.email)}</span><button class="btn ghost small" id="sair">Sair</button></div>
     </header>
     <main class="sa-main" id="conteudo"></main>`;
-  raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => { S.aba = b.dataset.aba; render(); }));
+  raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
   $('#sair').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
+  document.title = `${ABAS.find(([k]) => k === S.aba)[1]} · Agente de Tráfego · A Melhor Mídia do Brasil`;
   const v = $('#conteudo');
+  v.setAttribute('aria-busy', 'true');
+  v.innerHTML = '<p class="sa-carregando" role="status">Carregando…</p>';
+  if (sit.codigo === 'trial' && sit.dias_trial <= 3) {
+    v.insertAdjacentHTML('beforeend', `<div class="sa-banner"><span>Seu teste termina em ${sit.dias_trial} dia${sit.dias_trial > 1 ? 's' : ''}. Assine para não perder o acesso às campanhas.</span><button class="btn primary small" id="bAssinarT">Assinar agora</button></div>`);
+    $('#bAssinarT').addEventListener('click', assinar);
+  }
   if (!sit.ativa) {
     v.insertAdjacentHTML('beforeend', `<div class="sa-banner ${sit.codigo === 'bloqueada' ? 'erro-b' : ''}"><span>${esc(sit.texto)}</span>${sit.codigo !== 'bloqueada' ? '<button class="btn primary small" id="bAssinar">Assinar agora</button>' : ''}</div>`);
     const b = $('#bAssinar'); if (b) b.addEventListener('click', assinar);
   }
-  ({ inicio: viewInicio, campanhas: viewCampanhas, chaves: viewChaves, assinatura: viewAssinatura })[S.aba](v).catch(falha);
+  // Cada tela monta o conteúdo num bloco à parte; o "Carregando…" some quando ela termina
+  const aba = S.aba;
+  const tela = document.createElement('div'); tela.style.display = 'contents'; v.append(tela); // as telas usam $('#id') no documento, então o bloco já entra na página
+  ({ inicio: viewInicio, campanhas: viewCampanhas, chaves: viewChaves, assinatura: viewAssinatura })[aba](tela)
+    .catch((e) => { falha(e); tela.innerHTML = '<div class="card"><p class="muted">Não consegui carregar esta tela. Tente de novo em instantes.</p><button class="btn" data-recarregar>Tentar de novo</button></div>'; })
+    .finally(() => {
+      if (!v.isConnected) return;
+      v.querySelector('.sa-carregando')?.remove(); v.removeAttribute('aria-busy');
+      tela.querySelectorAll('[data-recarregar]').forEach((b) => b.addEventListener('click', render));
+    });
 }
 
 const secao = (v, html) => v.insertAdjacentHTML('beforeend', html);
@@ -83,7 +104,7 @@ async function viewInicio(v) {
   secao(v, `<div class="view-head"><div><h2>Olá, ${esc((c.nome || '').split(' ')[0] || 'tudo bem')}</h2><p>Comece por aqui. Nada vai ao ar sem a sua confirmação.</p></div></div>
     <div class="card"><h3>Primeiros passos</h3><ul class="sa-passos">${passos.map(([f, t]) => `<li class="${f ? 'feito' : ''}"><div class="bola">${f ? '✓' : ''}</div><span>${t}</span></li>`).join('')}</ul></div>
     <div class="sa-grid" id="desemp"></div>`);
-  v.querySelectorAll('[data-ir]').forEach((a) => a.addEventListener('click', () => { S.aba = a.dataset.ir; render(); }));
+  v.querySelectorAll('[data-ir]').forEach((a) => { a.setAttribute('role', 'link'); a.tabIndex = 0; const ir = () => irPara(a.dataset.ir); a.addEventListener('click', ir); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') ir(); }); });
   carregarCampanhas().then(() => { /* atualiza o passo 3 */ const li = v.querySelectorAll('.sa-passos li')[2]; if (S.campanhas.length && li) { li.classList.add('feito'); li.querySelector('.bola').textContent = '✓'; } }).catch(() => {});
   const d = $('#desemp');
   if (metaOk) api('/api/saas/meta/desempenho?nivel=campaign&periodo=last_7d').then((rows) => {
