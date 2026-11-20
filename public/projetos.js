@@ -1679,6 +1679,9 @@ async function viewAssinantes(v) {
   const dia = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '—');
   v.innerHTML = `
     <div class="view-head"><div><h2>Assinantes (SaaS)</h2><p>Quem assinou o Gestor de Tráfego. Cada assinante usa as próprias chaves e só enxerga os próprios dados.</p></div></div>
+    <div class="card" style="margin-bottom:16px"><h3>Meu perfil de assinante</h3>
+      <p class="muted">Cria o seu próprio perfil na área do assinante (acesso liberado, plano Escala com BI) e traz para ele as APIs padrão já instaladas do Meta Ads e do Google Ads. O que já estiver preenchido lá não é sobrescrito.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn primary" id="bMeuPerfil">Criar meu perfil / trazer as APIs</button><a class="btn" href="/assinante">Abrir minha área de assinante</a></div></div>
     <div class="grid cols-2" style="margin-bottom:16px">
       <div class="card"><h3>Página de assinatura</h3>
         <p><code class="url">${esc(location.origin)}/gestoragent</code> <span class="muted">(página de vendas)</span></p>
@@ -1713,6 +1716,14 @@ async function viewAssinantes(v) {
     const ac = b.dataset.pxacao;
     if (!confirm(ac === 'confirmar' ? 'Você conferiu este valor no extrato do banco? Isso libera a mensalidade ou as campanhas.' : 'Recusar este aviso de pagamento?')) return;
     try { await api(`/api/saas/admin/pix/${b.dataset.px}/${ac}`, { method: 'POST' }); toast(ac === 'confirmar' ? 'Pagamento liberado' : 'Aviso recusado'); viewAssinantes(v); } catch (e) { toast(e.message); }
+  });
+  const bmp = v.querySelector('#bMeuPerfil'); if (bmp) bmp.addEventListener('click', async () => {
+    bmp.disabled = true;
+    try {
+      const r = await api('/api/saas/admin/meu-perfil', { method: 'POST', body: {} });
+      toast(r.trazidas.length ? `Perfil pronto. APIs trazidas: ${r.trazidas.length}${r.ja_tinha.length ? ` (já tinha ${r.ja_tinha.length})` : ''}.` : (r.ja_tinha.length ? 'Perfil pronto. As APIs já estavam lá.' : 'Perfil criado, mas não achei APIs padrão para trazer. Cole as chaves em Chaves de API.'));
+      viewAssinantes(v);
+    } catch (e) { toast(e.message); bmp.disabled = false; }
   });
   v.querySelectorAll('[data-chacao]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.ch; const ac = b.dataset.chacao; const url = `/api/saas/admin/chamados/${id}`;
