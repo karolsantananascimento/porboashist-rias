@@ -27,6 +27,9 @@ const TRIAL_DIAS = Number(process.env.SAAS_TRIAL_DIAS ?? 7);
 const IA_LIMITE_MES = Number(process.env.SAAS_IA_MES || 30);
 const ATIVACOES_DIA = Number(process.env.SAAS_ATIVACOES_DIA || 10);
 const MAX_CAMPANHAS = 300;
+const MAX_MIDIAS = 200;
+const MAX_MIDIA_BYTES = 8 * 1024 * 1024;
+let poolRef = null;
 const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
 const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 200;
 
@@ -61,6 +64,25 @@ async function evento(pool, contaId, tipo, detalhe) {
   await pool.query('INSERT INTO saas_eventos (conta_id, tipo, detalhe) VALUES ($1,$2,$3)', [contaId, tipo, String(detalhe || '').slice(0, 400)]).catch(() => {});
 }
 
+
+// ---------- Criativos enviados (imagens JPG/PNG guardadas por cliente) ----------
+function inspecionarImagem(b) {
+  if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { mime: 'image/png', largura: b.readUInt32BE(16), altura: b.readUInt32BE(20) };
+  if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const m = b[i + 1];
+      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+      const len = b.readUInt16BE(i + 2);
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { mime: 'image/jpeg', altura: b.readUInt16BE(i + 5), largura: b.readUInt16BE(i + 7) };
+      i += 2 + len;
+    }
+    return { mime: 'image/jpeg', largura: 0, altura: 0 };
+  }
+  return null;
+}
+
 // ---------- Contextos de cada plataforma (só chaves do próprio assinante) ----------
 function contextoMeta(cliente) {
   const e = escopoCliente(cliente); const le = (k) => config.cfgProprio(k, e);
@@ -70,6 +92,12 @@ function contextoMeta(cliente) {
   return {
     token, conta: idc ? (idc.startsWith('act_') ? idc : `act_${idc}`) : '', pixel: le('META_PIXEL_ID') || '',
     teto: Number(le('META_MAX_DAILY_BUDGET_BRL')) || meta.TETO_PADRAO_BRL, page: le('META_PAGE_ID') || '', ig: le('META_IG_ID') || '', pageNome: '',
+    // criativos enviados pelo assinante: só lê imagem do próprio cliente
+    carregarMidia: async (id) => {
+      if (!poolRef) return null;
+      const { rows: [m] } = await poolRef.query('SELECT id, nome, mime, dados FROM saas_midias WHERE id=$1 AND cliente_id=$2', [Number(id), cliente.id]);
+      return m || null;
+    },
   };
 }
 const contextoGoogle = (cliente) => gads.contexto((k) => config.cfgProprio(k, escopoCliente(cliente)));
@@ -161,6 +189,7 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
 
 // ---------- Rotas autenticadas ----------
 function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
+  poolRef = pool;
   const base = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
   // Todas as rotas do assinante partem daqui: a conta vem da sessão
@@ -331,6 +360,42 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   app.get('/api/saas/campanhas', assinante, wrap(async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM saas_campanhas WHERE conta_id=$1 AND cliente_id=$2 ORDER BY id DESC LIMIT 100', [req.conta.id, req.cliente.id]);
     res.json(rows);
+  }));
+
+
+  // ----- Criativos (imagens) do cliente: enviadas aqui e subidas ao Meta junto com a campanha -----
+  const metaMidia = (m) => ({ id: m.id, nome: m.nome, mime: m.mime, tamanho: m.tamanho, largura: m.largura, altura: m.altura, url: `/api/saas/midias/${m.id}/arquivo`, token: `midia:${m.id}` });
+  app.get('/api/saas/midias', assinante, wrap(async (req, res) => {
+    const { rows } = await pool.query('SELECT id, nome, mime, tamanho, largura, altura FROM saas_midias WHERE cliente_id=$1 ORDER BY id DESC LIMIT 100', [req.cliente.id]);
+    res.json({ midias: rows.map(metaMidia) });
+  }));
+  app.post('/api/saas/midias', assinante, emDia, semSuporte, require('express').raw({ type: ['image/*', 'application/octet-stream'], limit: MAX_MIDIA_BYTES }), wrap(async (req, res) => {
+    const b = req.body;
+    if (!Buffer.isBuffer(b) || !b.length) throw erro('Envie uma imagem JPG ou PNG de até 8 MB.');
+    const info = inspecionarImagem(b);
+    if (!info) throw erro('Formato não aceito. Envie imagem JPG ou PNG.');
+    if (info.largura && (info.largura < 200 || info.altura < 200)) throw erro('Imagem muito pequena: use pelo menos 200 px de largura e altura (ideal 1080 px).');
+    const { rows: [{ n }] } = await pool.query('SELECT count(*)::int n FROM saas_midias WHERE cliente_id=$1', [req.cliente.id]);
+    if (n >= MAX_MIDIAS) throw erro('Você chegou ao limite de imagens guardadas deste cliente. Exclua as que não usa mais.');
+    let nome = ''; try { nome = decodeURIComponent(String(req.headers['x-nome-arquivo'] || '')); } catch { /* nome ilegível */ }
+    nome = nome.replace(/[\u0000-\u001f/\\]/g, '').slice(0, 120) || 'imagem';
+    const { rows: [m] } = await pool.query(
+      'INSERT INTO saas_midias (conta_id, cliente_id, nome, mime, tamanho, largura, altura, dados) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, nome, mime, tamanho, largura, altura',
+      [req.conta.id, req.cliente.id, nome, info.mime, b.length, info.largura || null, info.altura || null, b]);
+    res.json({ midia: metaMidia(m) });
+  }));
+  app.get('/api/saas/midias/:id/arquivo', assinante, wrap(async (req, res) => {
+    const { rows: [m] } = await pool.query('SELECT mime, dados FROM saas_midias WHERE id=$1 AND cliente_id=$2', [Number(req.params.id) || 0, req.cliente.id]);
+    if (!m) throw erro('Imagem não encontrada.', 404);
+    res.set({ 'Content-Type': m.mime, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' }).send(m.dados);
+  }));
+  app.delete('/api/saas/midias/:id', assinante, semSuporte, wrap(async (req, res) => {
+    const id = Number(req.params.id) || 0;
+    const { rows: [uso] } = await pool.query(`SELECT 1 FROM saas_campanhas WHERE cliente_id=$1 AND status IN ('rascunho','erro') AND (spec->>'imagem_url'=$2 OR spec->'imagens_urls' ? $2) LIMIT 1`, [req.cliente.id, `midia:${id}`]);
+    if (uso) throw erro('Esta imagem está em um rascunho de campanha. Troque a imagem no rascunho antes de excluir.', 409);
+    const r = await pool.query('DELETE FROM saas_midias WHERE id=$1 AND cliente_id=$2', [id, req.cliente.id]);
+    if (!r.rowCount) throw erro('Imagem não encontrada.', 404);
+    res.json({ ok: true });
   }));
 
   const contarCampanhas = async (contaId) => (await pool.query('SELECT count(*)::int n FROM saas_campanhas WHERE conta_id=$1', [contaId])).rows[0].n;
