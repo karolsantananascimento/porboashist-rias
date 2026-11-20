@@ -74,7 +74,7 @@ function render() {
     <header class="sa-top">
       <a class="sa-brand" href="/assinante#inicio" aria-label="MidIAut, início"><img src="/brand/midiaut/simbolo.svg" alt="" width="34" height="30"><span class="sa-wm">Mid<i>IA</i>ut</span></a>
       <nav class="sa-nav" aria-label="Seções">${abas().map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
-      <div class="sa-me">${seletorCliente()}${pill}<span>${esc(c.nome || c.email)}</span>${c.admin && !S.eu.suporte ? '<a class="btn ghost small" href="/sistema">Painel admin</a>' : ''}${S.eu.suporte ? '' : '<button class="btn ghost small" id="sair">Sair</button>'}</div>
+      <div class="sa-me">${seletorCliente()}${pill}<span>${esc(c.nome || c.email)}</span>${c.admin && !S.eu.suporte ? '<a class="btn ghost small" href="/sistema">Painel admin</a>' : ''}${window.pwa?.instalado() ? '' : '<button class="btn ghost small" data-instalar>Instalar app</button>'}${S.eu.suporte ? '' : '<button class="btn ghost small" id="sair">Sair</button>'}</div>
     </header>
     <main class="sa-main" id="conteudo"></main>`;
   raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
