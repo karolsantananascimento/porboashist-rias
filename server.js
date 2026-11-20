@@ -11,7 +11,7 @@ app.use(express.json({ limit: '5mb', verify: (req, res, buf) => { req.rawBody = 
 
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch((e) => {
   console.error(e);
-  res.status(e.status || 500).json({ erro: e.message });
+  res.status(e.status || 500).json({ erro: e.message, ...(e.codigo ? { codigo: e.codigo } : {}) });
 });
 
 // ---------- Sessão por usuário (cookie assinado) ----------

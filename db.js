@@ -437,6 +437,17 @@ CREATE TABLE IF NOT EXISTS saas_midias (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saas_midias_cliente ON saas_midias (cliente_id, id DESC);
+ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS campanhas_extras INT NOT NULL DEFAULT 0;   -- campanhas avulsas compradas e ainda não usadas
+ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS cota_mes TEXT;                             -- AAAA-MM do plano que esta campanha consumiu
+ALTER TABLE saas_campanhas ADD COLUMN IF NOT EXISTS usou_extra BOOLEAN NOT NULL DEFAULT false; -- consumiu uma campanha avulsa
+UPDATE saas_campanhas SET cota_mes = to_char(criada_em AT TIME ZONE 'America/Recife', 'YYYY-MM') WHERE criada_em IS NOT NULL AND cota_mes IS NULL AND NOT usou_extra;
+CREATE TABLE IF NOT EXISTS saas_compras (
+  session_id TEXT PRIMARY KEY,
+  conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,
+  quantidade INT NOT NULL,
+  valor_centavos INT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS saas_eventos (
   id SERIAL PRIMARY KEY,
   conta_id INT REFERENCES saas_contas(id) ON DELETE CASCADE,

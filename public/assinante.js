@@ -47,6 +47,8 @@ async function iniciar() {
   try { await carregarEu(); } catch (e) { if (s.usuario.papel === 'admin') { location.href = '/'; return; } throw e; }
   const q = new URLSearchParams(location.search).get('assinatura');
   S.aba = abaDoEndereco() || S.aba;
+  const av = new URLSearchParams(location.search).get('avulsas');
+  if (av) { history.replaceState(null, '', '/assinante'); aviso(av === 'ok' ? 'Pagamento recebido! As campanhas avulsas aparecem em instantes.' : 'Compra não concluída.', av !== 'ok'); }
   if (q) { history.replaceState(null, '', '/assinante#assinatura'); aviso(q === 'ok' ? 'Pagamento recebido! Sua assinatura será ativada em instantes.' : 'Assinatura não concluída. Você pode tentar de novo quando quiser.', q !== 'ok'); S.aba = 'assinatura'; }
   const quer = new URLSearchParams(location.search).get('assinar') === '1';
   if (quer) { history.replaceState(null, '', '/assinante#assinatura'); S.aba = 'assinatura'; }
@@ -235,6 +237,24 @@ const DEST_ROT = { site: 'Site (link)', whatsapp: 'WhatsApp', post: 'Engajamento
 const CTAS = ['LEARN_MORE', 'SIGN_UP', 'SHOP_NOW', 'CONTACT_US', 'GET_QUOTE', 'SUBSCRIBE', 'DOWNLOAD', 'APPLY_NOW', 'BOOK_TRAVEL'];
 const CTA_ROT = { LEARN_MORE: 'Saiba mais', SIGN_UP: 'Cadastre-se', SHOP_NOW: 'Comprar', CONTACT_US: 'Fale conosco', GET_QUOTE: 'Pedir orçamento', SUBSCRIBE: 'Inscrever-se', DOWNLOAD: 'Baixar', APPLY_NOW: 'Candidate-se', BOOK_TRAVEL: 'Reservar' };
 
+// Limite mensal de campanhas do plano + compra de campanhas avulsas
+function pintarCota() {
+  const box = $('#cotaBox'); if (!box || !S.eu) return;
+  const k = S.eu.conta.campanhas; const pct = Math.min(100, Math.round((k.usadas / k.limite) * 100)); const cheio = k.usadas >= k.limite;
+  box.innerHTML = `<h3>Campanhas deste mês</h3>
+    <div class="cota-barra"><i style="width:${pct}%" class="${cheio ? 'cheia' : ''}"></i></div>
+    <p class="muted" style="margin:6px 0 0"><b>${k.usadas}/${k.limite}</b> campanhas do plano ${esc(S.eu.conta.plano_nome)} usadas${k.extras ? ` · <b>${k.extras}</b> avulsa${k.extras > 1 ? 's' : ''} disponível${k.extras > 1 ? 'is' : ''}` : ''}. O limite volta no início de cada mês.</p>
+    ${cheio && !k.extras ? '<div class="sa-pend" style="margin-top:10px">Você usou todas as campanhas do mês. Para criar mais agora, compre campanhas avulsas.</div>' : ''}
+    <div class="cota-compra"><label>Campanhas avulsas (${brl(k.preco_avulsa)} cada, não vencem)</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input id="qAvulsa" type="number" min="1" max="50" value="${cheio ? 5 : 1}" style="width:90px"><span class="muted" id="totAvulsa"></span><button class="btn ${cheio ? 'primary' : ''}" id="bAvulsa">Comprar</button></div></div>`;
+  const tot = () => { $('#totAvulsa').textContent = `Total: ${brl(Math.max(1, Number($('#qAvulsa').value) || 1) * k.preco_avulsa)}`; };
+  $('#qAvulsa').addEventListener('input', tot); tot();
+  $('#bAvulsa').addEventListener('click', async (ev) => {
+    const b = ev.currentTarget; b.disabled = true;
+    try { const r = await api('/api/saas/campanhas-avulsas', { method: 'POST', corpo: { quantidade: Number($('#qAvulsa').value) } }); location.href = r.url; }
+    catch (e) { falha(e); b.disabled = false; }
+  });
+}
 async function viewCampanhas(v) {
   await carregarCampanhas();
   secao(v, `<div class="view-head"><div><h2>Campanhas</h2><p>Descreva o que quer anunciar e a IA monta o rascunho. Você revisa, cria pausada e só então ativa.</p></div>
@@ -243,8 +263,10 @@ async function viewCampanhas(v) {
       <p class="muted" style="margin:4px 0 10px">Conte: o que anuncia, objetivo, quanto quer gastar por dia, cidades, público e para onde levar o clique. Usos neste mês: ${S.eu.conta.ia.usados}/${S.eu.conta.ia.limite}.</p>
       <textarea id="briefing" rows="4" placeholder="Ex.: Clínica de estética em Recife. Quero agendamentos de limpeza de pele. R$ 40 por dia, mulheres de 25 a 55 anos em Recife e Olinda, levar para https://minhaclinica.com.br/agendar"></textarea>
       <div style="margin-top:10px"><button class="btn primary" id="bIA">Gerar rascunho com IA</button></div></div>
+    <div class="card" id="cotaBox"></div>
     <div class="sa-lista" id="lista"></div>
     <div class="card" id="googleBox"></div>`);
+  pintarCota();
   $('#bManual').addEventListener('click', async () => { try { const r = await api('/api/saas/campanhas', { method: 'POST', corpo: { spec: {} } }); await carregarCampanhas(); abrirEditor(r.campanha.id); } catch (e) { falha(e); } });
   $('#bGoogle').addEventListener('click', abrirGoogle);
   $('#bIA').addEventListener('click', async (e) => {
@@ -427,7 +449,7 @@ function abrirEditor(id) {
   ligar('#bSubir', async () => {
     const sp = await salvar();
     if (!confirm(`Criar no Meta, PAUSADA (não gasta nada ainda)?\n\n${sp.spec.nome || ''}\nOrçamento: ${brl(sp.spec.orcamento_diario_brl)} por dia`)) return;
-    try { const r = await api(`/api/saas/campanhas/${id}/subir`, { method: 'POST', corpo: { confirmado: true } }); upd(r.campanha); aviso('Campanha criada pausada no Meta.'); abrirEditor(id); }
+    try { const r = await api(`/api/saas/campanhas/${id}/subir`, { method: 'POST', corpo: { confirmado: true } }); upd(r.campanha); aviso('Campanha criada pausada no Meta.'); carregarEu().then(pintarCota).catch(() => {}); abrirEditor(id); }
     catch (e) { if (e.dados?.campanha) upd(e.dados.campanha); falha(e); abrirEditor(id); }
   });
   ligar('#bAtivar', async () => {
