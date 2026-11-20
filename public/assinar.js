@@ -2,8 +2,19 @@
 // Fala só com /api/saas/publico, /api/saas/cadastro, /api/login e /api/sessao. Depois de entrar, vai para /assinante.
 const $ = (s) => document.querySelector(s);
 const DESTINO = '/assinante';
+// Intenção do visitante: "assinar" leva ao pagamento logo depois de criar a conta ou entrar; "testar" só abre a conta com o teste
+let intencao = new URLSearchParams(location.search).get('plano') === 'testar' ? 'testar' : 'assinar';
+const destino = () => (intencao === 'assinar' ? '/assinante?assinar=1#assinatura' : DESTINO);
+function aplicarIntencao() {
+  const a = intencao === 'assinar';
+  $('#tCadastro').textContent = a ? 'Assine agora.' : 'Comece o teste.';
+  $('#pCadastro').textContent = a ? 'Crie a conta e siga para o pagamento seguro. O cartão é digitado no Stripe.' : 'Crie a conta e teste sem cartão. Você assina quando quiser.';
+  $('#bCadastro').firstElementChild.textContent = a ? 'Criar conta e assinar' : 'Criar conta e testar';
+  delete $('#bCadastro').firstElementChild.dataset.t;
+}
 
-function irAoForm(m) {
+function irAoForm(m, i) {
+  if (i) { intencao = i; aplicarIntencao(); }
   modo(m, false);
   $('#cadastro').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
   setTimeout(() => $(m === 'entrar' ? '#lEmail' : '#cNome').focus({ preventScroll: true }), 450);
@@ -17,7 +28,7 @@ function modo(m, foco = true) {
   $('#abaEntrar').setAttribute('aria-selected', String(!criar));
   $('#abaCriar').tabIndex = criar ? 0 : -1;
   $('#abaEntrar').tabIndex = criar ? -1 : 0;
-  history.replaceState(null, '', criar ? '/assinar' : '/assinar?modo=entrar');
+  history.replaceState(null, '', (criar ? '/assinar' : '/assinar?modo=entrar') + (intencao === 'testar' ? (criar ? '?plano=testar' : '&plano=testar') : ''));
   if (foco) ($(criar ? '#cNome' : '#lEmail')).focus();
 }
 
@@ -44,7 +55,7 @@ const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 $('#abaCriar').addEventListener('click', () => modo('criar'));
 $('#abaEntrar').addEventListener('click', () => modo('entrar'));
-document.querySelectorAll('[data-ir-form]').forEach((b) => b.addEventListener('click', () => irAoForm(b.dataset.irForm)));
+document.querySelectorAll('[data-ir-form]').forEach((b) => b.addEventListener('click', () => irAoForm(b.dataset.irForm, b.dataset.intencao)));
 document.querySelectorAll('.capitulos button').forEach((b) => b.addEventListener('click', () => {
   const v = $('#demo'); v.currentTime = Number(b.dataset.t); v.play().catch(() => {});
 }));
@@ -81,7 +92,7 @@ $('#fCadastro').addEventListener('submit', async (e) => {
   ocupado(f, true);
   try {
     await chamar('/api/saas/cadastro', { nome, empresa: $('#cEmpresa').value.trim(), email, senha, aceite: true });
-    location.href = DESTINO;
+    location.href = destino();
   } catch (er) {
     erro.textContent = er.message; ocupado(f, false);
     if (er.status === 409) { $('#lEmail').value = email; }
@@ -97,11 +108,12 @@ $('#fLogin').addEventListener('submit', async (e) => {
   ocupado(f, true);
   try {
     const r = await chamar('/api/login', { email, senha });
-    location.href = r.usuario.papel === 'assinante' ? DESTINO : '/';
+    location.href = r.usuario.papel === 'assinante' ? destino() : '/';
   } catch (er) { erro.textContent = er.message; ocupado(f, false); }
 });
 
 (async () => {
+  aplicarIntencao();
   modo(new URLSearchParams(location.search).get('modo') === 'entrar' ? 'entrar' : 'criar', false);
   // Preço, dias de teste e termos vêm do servidor (variáveis SAAS_PRECO_TEXTO, SAAS_TRIAL_DIAS, SAAS_TERMOS_URL)
   try {

@@ -39,7 +39,11 @@ async function iniciar() {
   const q = new URLSearchParams(location.search).get('assinatura');
   S.aba = abaDoEndereco() || S.aba;
   if (q) { history.replaceState(null, '', '/assinante#assinatura'); aviso(q === 'ok' ? 'Pagamento recebido! Sua assinatura será ativada em instantes.' : 'Assinatura não concluída. Você pode tentar de novo quando quiser.', q !== 'ok'); S.aba = 'assinatura'; }
+  const quer = new URLSearchParams(location.search).get('assinar') === '1';
+  if (quer) { history.replaceState(null, '', '/assinante#assinatura'); S.aba = 'assinatura'; }
   render();
+  // Veio do botão "Assinar agora" da página de vendas: segue direto para o pagamento seguro, se a conta ainda não tem assinatura
+  if (quer && S.eu.cobranca && !S.eu.conta.tem_assinatura && S.eu.conta.situacao.codigo !== 'cortesia' && S.eu.conta.situacao.codigo !== 'bloqueada') assinar();
 }
 
 const ABAS = [['inicio', 'Início'], ['campanhas', 'Campanhas'], ['chaves', 'Chaves de API'], ['assinatura', 'Assinatura']];

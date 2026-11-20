@@ -161,3 +161,8 @@ main { position: relative; z-index: 1; }
 .bloco.final .lead { margin-bottom: 26px; }
 .rodape { z-index: 1; }
 @media (max-width: 860px) { .topo .marca span { display: none; } }
+
+.testar { margin: 0 0 22px; font-size: 14px; color: var(--prata); }
+.testar.escuro { color: #3a332d; margin: 14px 0 0; text-align: center; }
+.link.claro { color: var(--creme); }
+.bloco.final .testar { margin-top: 18px; }
