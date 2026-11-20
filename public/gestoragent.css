@@ -20,3 +20,6 @@
 .adicional .rotulo { margin-bottom: 12px; }
 .adicional .valor { color: var(--creme); }
 .adicional .valor small { color: var(--prata); }
+
+.marcar-bi { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-weight: 600; cursor: pointer; }
+.marcar-bi input { width: 18px; height: 18px; accent-color: var(--vermelho); }

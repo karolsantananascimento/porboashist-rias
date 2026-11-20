@@ -1667,15 +1667,17 @@ async function viewAssinantes(v) {
     <div class="view-head"><div><h2>Assinantes (SaaS)</h2><p>Quem assinou o Gestor de Tráfego. Cada assinante usa as próprias chaves e só enxerga os próprios dados.</p></div></div>
     <div class="grid cols-2" style="margin-bottom:16px">
       <div class="card"><h3>Página de assinatura</h3>
-        <p><code class="url">${esc(location.origin)}/assinante</code> <button class="btn small" id="cpSaas">Copiar</button></p>
+        <p><code class="url">${esc(location.origin)}/gestoragent</code> <span class="muted">(página de vendas)</span></p>
+        <p><code class="url">${esc(location.origin)}/assinante</code> <button class="btn small" id="cpSaas">Copiar</button> <span class="muted">(área do assinante)</span></p>
         <p class="muted">Pagando: <b>${cont('ativa')}</b> · Cortesia: <b>${cont('cortesia')}</b> · Em teste: <b>${cont('trial')}</b> · Inadimplentes: <b>${cont('inadimplente')}</b></p></div>
       <div class="card"><h3>Cobrança (Stripe) ${r.cobranca ? '<span class="pill ok">Ligada</span>' : '<span class="pill warn">Não configurada</span>'}</h3>
         <p class="muted">Variáveis no Render: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PRICE_ID</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>SAAS_PRECO_TEXTO</code>.</p>
         <p class="muted">Webhook no Stripe: <code class="url">${esc(location.origin)}/api/saas/webhook</code> (eventos de assinatura e fatura).</p></div></div>
     <div class="card" style="padding:0;overflow-x:auto"><table>
-      <thead><tr><th>Assinante</th><th>Situação</th><th>Teste até / Período até</th><th>Chaves</th><th>Campanhas</th><th>Última atividade</th><th></th></tr></thead>
+      <thead><tr><th>Assinante</th><th>Plano</th><th>Situação</th><th>Teste até / Período até</th><th>Chaves</th><th>Campanhas</th><th>Última atividade</th><th></th></tr></thead>
       <tbody>${l.length ? l.map((a) => { const [t, c] = rot[a.situacao.codigo] || [a.situacao.codigo, '']; return `<tr>
         <td><b>${esc(a.nome || '')}</b><br><span class="muted">${esc(a.email)}${a.empresa ? ' · ' + esc(a.empresa) : ''}</span></td>
+        <td><select data-plano="${a.id}"><option value="solo"${a.plano === 'solo' ? ' selected' : ''}>Solo · 1</option><option value="agencia"${a.plano === 'agencia' ? ' selected' : ''}>Agência · 3</option><option value="escala"${a.plano === 'escala' ? ' selected' : ''}>Escala · 5</option></select><br><label class="muted"><input type="checkbox" data-bi="${a.id}"${a.bi ? ' checked' : ''}> BI + relatórios</label></td>
         <td><span class="pill ${c}">${t}</span></td>
         <td>${a.tem_assinatura ? dia(a.periodo_fim) : dia(a.trial_ate)}</td>
         <td>${a.meta_ok ? '<span class="pill ok">Meta</span>' : '<span class="pill">Meta</span>'} ${a.google_ok ? '<span class="pill ok">Google</span>' : '<span class="pill">Google</span>'}</td>
@@ -1684,8 +1686,10 @@ async function viewAssinantes(v) {
           <button class="btn small" data-a="${a.id}" data-acao="cortesia" data-v="${a.cortesia ? 0 : 1}">${a.cortesia ? 'Tirar cortesia' : 'Cortesia'}</button>
           <button class="btn small" data-a="${a.id}" data-acao="bloqueio" data-v="${a.status === 'bloqueada' ? 0 : 1}">${a.status === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}</button>
           <button class="btn small" data-a="${a.id}" data-acao="senha">Link de senha</button>
-          <button class="btn small danger" data-a="${a.id}" data-acao="excluir">Excluir</button></td></tr>`; }).join('') : '<tr><td colspan="7" class="muted">Nenhum assinante ainda.</td></tr>'}</tbody></table></div>`;
+          <button class="btn small danger" data-a="${a.id}" data-acao="excluir">Excluir</button></td></tr>`; }).join('') : '<tr><td colspan="8" class="muted">Nenhum assinante ainda.</td></tr>'}</tbody></table></div>`;
   $('#cpSaas', v).onclick = () => copiar(location.origin + '/assinante');
+  v.querySelectorAll('[data-plano]').forEach((s) => s.onchange = async () => { try { await api(`/api/saas/admin/assinantes/${s.dataset.plano}`, { method: 'PUT', body: { plano: s.value } }); toast('Plano atualizado'); } catch (e) { toast(e.message); viewAssinantes(v); } });
+  v.querySelectorAll('[data-bi]').forEach((s) => s.onchange = async () => { try { await api(`/api/saas/admin/assinantes/${s.dataset.bi}`, { method: 'PUT', body: { bi: s.checked } }); toast('Atualizado'); } catch (e) { toast(e.message); viewAssinantes(v); } });
   v.querySelectorAll('[data-acao]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.a; const ac = b.dataset.acao; const url = `/api/saas/admin/assinantes/${id}`;
     try {

@@ -373,6 +373,8 @@ CREATE TABLE IF NOT EXISTS saas_contas (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS saas_contas_stripe ON saas_contas (stripe_customer_id);
+ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS plano TEXT NOT NULL DEFAULT 'solo';   -- solo | agencia | escala
+ALTER TABLE saas_contas ADD COLUMN IF NOT EXISTS bi BOOLEAN NOT NULL DEFAULT false;     -- pacote BI + relatórios
 CREATE TABLE IF NOT EXISTS saas_campanhas (
   id SERIAL PRIMARY KEY,
   conta_id INT NOT NULL REFERENCES saas_contas(id) ON DELETE CASCADE,

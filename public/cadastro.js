@@ -3,6 +3,9 @@
 const $ = (s) => document.querySelector(s);
 const DESTINO = '/assinante';
 // Intenção do visitante: "assinar" leva ao pagamento logo depois de criar a conta ou entrar; "testar" só abre a conta com o teste
+const params = new URLSearchParams(location.search);
+const planoEscolhido = ['solo', 'agencia', 'escala'].includes(params.get('p')) ? params.get('p') : undefined; // vem da landing /gestoragent
+const comBi = params.get('bi') === '1';
 const explicita = new URLSearchParams(location.search).get('plano'); // só 'assinar' vindo do site leva quem já tem conta ao pagamento
 let intencao = explicita === 'testar' ? 'testar' : 'assinar';
 const destino = () => (intencao === 'assinar' ? '/assinante?assinar=1#assinatura' : DESTINO);
@@ -77,7 +80,7 @@ $('#fCadastro').addEventListener('submit', async (e) => {
   if (!$('#cAceite').checked) { erro.textContent = 'Para criar a conta é preciso aceitar os termos de uso.'; $('#cAceite').focus(); return; }
   ocupado(f, true);
   try {
-    await chamar('/api/saas/cadastro', { nome, empresa: $('#cEmpresa').value.trim(), email, senha, aceite: true });
+    await chamar('/api/saas/cadastro', { nome, empresa: $('#cEmpresa').value.trim(), email, senha, aceite: true, plano: planoEscolhido, bi: comBi });
     location.href = destino();
   } catch (er) {
     erro.textContent = er.message; ocupado(f, false);

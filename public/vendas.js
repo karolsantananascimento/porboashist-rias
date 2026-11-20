@@ -15,3 +15,7 @@ const bs = [...document.querySelectorAll('.capitulos button')];
 const ts = bs.map((b) => Number(b.dataset.t));
 bs.forEach((b) => b.addEventListener('click', () => { v.currentTime = Number(b.dataset.t); v.play().catch(() => {}); }));
 v.addEventListener('timeupdate', () => { let a = -1; ts.forEach((t, i) => { if (v.currentTime >= t) a = i; }); bs.forEach((b, i) => b.classList.toggle('on', i === a)); });
+
+// /gestoragent: o pacote BI + relatórios vai junto no link de cadastro de cada plano
+const querBi = $('#querBi');
+if (querBi) querBi.addEventListener('change', () => document.querySelectorAll('.plano-cartao a.botao').forEach((a) => { const u = new URL(a.getAttribute('href'), location.origin); if (querBi.checked) u.searchParams.set('bi', '1'); else u.searchParams.delete('bi'); a.setAttribute('href', u.pathname + u.search); }));
