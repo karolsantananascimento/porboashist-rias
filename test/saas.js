@@ -174,7 +174,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0, 200, 1, 0x2c, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]), Buffer.alloc(30)]);
     const envia = (quem, buf, tipo = 'image/png', nome = 'Promoção ação.png') => req(quem, 'POST', '/api/saas/midias', null, { bruto: buf, headers: { 'content-type': tipo, 'x-nome-arquivo': encodeURIComponent(nome) } });
     r = await envia('a', Buffer.from('isso não é imagem'), 'image/png');
-    ok(r.status === 400 && /JPG ou PNG/.test(r.corpo.erro), 'arquivo que não é imagem é recusado');
+    ok(r.status === 400 && /JPG\/PNG/.test(r.corpo.erro), 'arquivo que não é imagem é recusado');
     r = await envia('a', Buffer.alloc(0));
     ok(r.status === 400, 'envio vazio é recusado');
     r = await envia(null, png);
@@ -223,6 +223,68 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     { const cr = chamadas().find((c) => c.alvo === 'meta' && /adcreatives$/.test(c.u.split('?')[0]));
       const dec = cr ? decodeURIComponent(cr.body) : '';
       ok(r.status === 200 && /image_hash/.test(dec) && /exemplo\.com\/b\.jpg/.test(dec), 'carrossel mistura imagem enviada (hash) e link (picture)'); }
+    // ----- vídeo -----
+    const caixa = (tipo, ...partes) => { const c = Buffer.concat(partes); const h = Buffer.alloc(8); h.writeUInt32BE(8 + c.length, 0); h.write(tipo, 4, 'latin1'); return Buffer.concat([h, c]); };
+    const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+    const mvhd = Buffer.alloc(100); mvhd.writeUInt32BE(1000, 12); mvhd.writeUInt32BE(5000, 16);
+    const tkhd = Buffer.alloc(84); tkhd.writeUInt32BE(1080 * 65536, 76); tkhd.writeUInt32BE(1920 * 65536, 80);
+    const ftyp = caixa('ftyp', Buffer.from('isom'), u32(0), Buffer.from('isommp41'));
+    const mp4 = Buffer.concat([ftyp, caixa('moov', caixa('mvhd', mvhd), caixa('trak', caixa('tkhd', tkhd))), caixa('mdat', Buffer.alloc(2000, 7))]);
+    r = await envia('a', Buffer.concat([ftyp, caixa('mdat', Buffer.alloc(500))]), 'video/mp4', 'cortado.mp4');
+    ok(r.status === 400 && /incompleto|corrompido/.test(r.corpo.erro), 'vídeo sem índice (cortado) é recusado');
+    r = await envia('a', Buffer.concat([png.subarray(0, 33), Buffer.alloc(9 * 1024 * 1024)]), 'image/png', 'enorme.png');
+    ok(r.status === 400 && /8 MB/.test(r.corpo.erro), 'imagem acima de 8 MB é recusada');
+    r = await envia('a', mp4, 'video/mp4', 'Reels do verão.mp4');
+    const v1 = r.corpo.midia;
+    ok(r.status === 200 && v1.tipo === 'video' && v1.mime === 'video/mp4' && v1.duracao === 5 && v1.largura === 1080 && v1.altura === 1920 && v1.token === `midia:${v1.id}`, 'MP4 aceito com duração e dimensões lidas');
+    r = await req('a', 'GET', '/api/saas/midias');
+    ok(r.corpo.midias.some((x) => x.id === v1.id && x.tipo === 'video') && r.corpo.midias.some((x) => x.tipo === 'imagem'), 'a biblioteca lista imagens e vídeos com o tipo');
+    { const f = await fetch(`http://127.0.0.1:${PORTA}/api/saas/midias/${v1.id}/arquivo`, { headers: { cookie: jar.a, range: 'bytes=0-9' } });
+      const pedaco = Buffer.from(await f.arrayBuffer());
+      ok(f.status === 206 && pedaco.length === 10 && f.headers.get('content-range') === `bytes 0-9/${mp4.length}` && Buffer.compare(pedaco, mp4.subarray(0, 10)) === 0, 'o vídeo é entregue em partes (Range) para tocar e avançar');
+      const g = await fetch(`http://127.0.0.1:${PORTA}/api/saas/midias/${v1.id}/arquivo?cliente=${encodeURIComponent(1e9)}`, { headers: { cookie: jar.a } });
+      ok(g.status === 404, 'cliente informado na URL que não é da conta não abre o arquivo'); }
+    r = await req('b', 'GET', `/api/saas/midias/${v1.id}/arquivo`);
+    ok(r.status === 404, 'outro assinante não baixa o vídeo da Ana');
+    r = await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Anúncio em vídeo', imagem_url: v1.token } });
+    const cVid = r.corpo.campanha;
+    r = await req('a', 'POST', `/api/saas/campanhas/${cVid.id}/conferir`);
+    ok(r.corpo.ok === true && r.corpo.avisos.some((x) => /Vídeos enviados/.test(x)) && /vídeo/.test(r.corpo.resumo), 'conferir reconhece o vídeo enviado');
+    limparLog();
+    r = await req('a', 'POST', `/api/saas/campanhas/${cVid.id}/subir`, { confirmado: true });
+    ok(r.status === 200 && r.corpo.campanha.status === 'criada_pausada', 'sobe campanha com vídeo enviado');
+    { const esc = chamadas().filter((c) => c.alvo === 'meta' && c.m === 'POST');
+      const vd = esc.find((c) => /advideos$/.test(c.u.split('?')[0]));
+      const cr = esc.find((c) => /adcreatives$/.test(c.u.split('?')[0]));
+      const dec = cr ? decodeURIComponent(cr.body) : '';
+      ok(vd && vd.auth === `Bearer ${tokA}`, 'o vídeo sobe ao Meta (advideos) com o token da Ana');
+      ok(/video_data/.test(dec) && /"video_id":"vid\d+"/.test(dec) && /thumb\.jpg/.test(dec) && !/link_data/.test(dec), 'o criativo é video_data com video_id e capa do Meta');
+      ok(esc.length === 5 && !esc.some((c) => /status=ACTIVE/.test(c.body)), 'vídeo + criativo + campanha + conjunto + anúncio, nada ativo'); }
+    r = await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Mesmo vídeo de novo', imagem_url: v1.token } });
+    limparLog();
+    r = await req('a', 'POST', `/api/saas/campanhas/${r.corpo.campanha.id}/subir`, { confirmado: true });
+    ok(r.status === 200 && !chamadas().some((c) => /advideos/.test(c.u || '')), 'vídeo já enviado a esta conta de anúncios não sobe de novo');
+    r = await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Carrossel com vídeo', imagens_urls: [m2.token, v1.token] } });
+    limparLog();
+    r = await req('a', 'POST', `/api/saas/campanhas/${r.corpo.campanha.id}/subir`, { confirmado: true });
+    { const cr = chamadas().find((c) => c.alvo === 'meta' && /adcreatives$/.test(c.u.split('?')[0]));
+      const dec = cr ? decodeURIComponent(cr.body) : '';
+      ok(r.status === 200 && /image_hash/.test(dec) && /child_attachments/.test(dec) && /"video_id":"vid\d+"/.test(dec), 'carrossel mistura imagem e vídeo'); }
+    await req('a', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Rascunho com vídeo', imagem_url: v1.token } });
+    r = await req('a', 'DELETE', `/api/saas/midias/${v1.id}`);
+    ok(r.status === 409, 'vídeo usado em rascunho não pode ser excluído');
+
+    // criativos enviados na tela de Campanhas vão para o rascunho gerado pela IA
+    r = await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Clínica de estética em Recife, R$ 40 por dia, mulheres de 25 a 55 anos, levar para https://clinica.exemplo.com/agendar', midias: [m1.token, v1.token] });
+    { const c = r.corpo.campanha; const im = c && c.spec.imagens_urls;
+      ok(r.status === 200 && im && im.join() === `${m1.token},${v1.token}` && !c.spec.imagem_url && !(c.pendencias || []).some((x) => /imagem|v[ií]deo|criativo/i.test(x)), 'rascunho da IA já nasce com os criativos enviados e sem pendência de imagem'); }
+    r = await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Clínica de estética em Recife, R$ 40 por dia, mulheres de 25 a 55 anos, levar para https://clinica.exemplo.com/agendar', midias: [m1.token] });
+    ok(r.status === 200 && r.corpo.campanha.spec.imagem_url === m1.token && !r.corpo.campanha.spec.imagens_urls, 'um criativo só vira anúncio simples');
+    r = await req('b', 'POST', '/api/saas/campanhas/ia', { briefing: 'Loja de roupas em Olinda, R$ 30 por dia, mulheres de 20 a 40 anos, levar para https://loja.exemplo.com', midias: [m1.token] });
+    ok(r.status === 400, 'criativo de outro assinante é recusado na IA');
+    r = await req('a', 'POST', '/api/saas/campanhas/ia', { briefing: 'Clínica de estética em Recife, R$ 40 por dia, mulheres de 25 a 55 anos, levar para https://clinica.exemplo.com/agendar', midias: ['https://x.com/a.jpg'] });
+    ok(r.status === 400, 'só aceita criativos enviados (midia:ID) na IA');
+
     // imagem de outro cliente não vale
     r = await req('b', 'POST', '/api/saas/campanhas', { spec: { ...base, nome: 'Roubo', imagem_url: m2.token } });
     ok(r.status === 200 && (await req('b', 'POST', `/api/saas/campanhas/${r.corpo.campanha.id}/conferir`)).corpo.ok !== true, 'imagem de outro assinante não funciona na campanha dele');

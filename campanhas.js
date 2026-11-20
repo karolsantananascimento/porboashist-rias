@@ -64,6 +64,29 @@ async function chamar(ctx, caminho, { metodo = 'GET', params = {} } = {}) {
 const get = (ctx, caminho, params) => chamar(ctx, caminho, { params });
 const post = (ctx, caminho, params) => chamar(ctx, caminho, { metodo: 'POST', params });
 
+// Envia o vídeo para a biblioteca da conta (multipart, até 60 MB) e espera o Meta terminar de processar
+async function enviarVideo(ctx, conta, m) {
+  const fd = new FormData();
+  fd.append('source', new Blob([m.dados], { type: m.mime || 'video/mp4' }), (m.nome || 'video').replace(/[^\w.\- ]+/g, '_').slice(0, 80) || 'video.mp4');
+  fd.append('name', String(m.nome || 'video').slice(0, 100));
+  let r;
+  try { r = await fetch(`${BASE}/${conta}/advideos`, { method: 'POST', headers: { authorization: `Bearer ${ctx.token}` }, body: fd, signal: AbortSignal.timeout(300000) }); }
+  catch (e) { throw erro(e.name === 'TimeoutError' ? 'O envio do vídeo ao Meta demorou demais. Tente de novo.' : 'Não consegui enviar o vídeo ao Meta agora. Tente de novo.', 504); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error || !d.id) throw erro(d.error?.error_user_msg || d.error?.message || `O Meta recusou o vídeo (HTTP ${r.status})`, 502);
+  return String(d.id);
+}
+async function esperarVideo(ctx, id, { tentativas = 40, pausaMs = 3000 } = {}) {
+  for (let i = 0; i < tentativas; i++) {
+    const v = await get(ctx, id, { fields: 'status,picture' });
+    const st = v.status?.video_status;
+    if (st === 'ready') return { picture: v.picture || '' };
+    if (st === 'error') throw erro('o Meta não aceitou o vídeo. Confira se é MP4 (H.264 + AAC) e tente de novo', 502);
+    await new Promise((ok) => setTimeout(ok, pausaMs));
+  }
+  throw erro('o Meta ainda está processando o vídeo. Espere uns minutos e clique em Criar de novo (o vídeo não será enviado outra vez)', 504);
+}
+
 // Segue a paginação (até 10 páginas) só para o próprio graph.facebook.com
 async function lerTodos(ctx, caminho, params = {}) {
   let r = await get(ctx, caminho, params); const out = [...(r.data || [])];
@@ -212,7 +235,7 @@ function faltando(s, ctx = null) {
   if (!s.objetivo) f.push('objetivo');
   if (!(s.orcamento_diario_brl > 0)) f.push('orçamento diário');
   if (!s.texto_principal) f.push('texto principal do anúncio');
-  if (!(s.imagens_urls || []).length && !s.imagem_url) f.push('imagem do anúncio (envie um arquivo ou cole um link https)');
+  if (!(s.imagens_urls || []).length && !s.imagem_url) f.push('imagem ou vídeo do anúncio (envie um arquivo ou cole um link https)');
   if (!(s.localizacoes || []).length && !(s.paises || []).length) f.push('localização do público (cidades ou estados)');
   if (s.objetivo && destinoDe(s) === 'site' && !s.url_destino) f.push('link de destino');
   if (ctx && ctx.teto && s.orcamento_diario_brl > ctx.teto) f.push(`orçamento dentro do teto de R$ ${ctx.teto}`);
@@ -229,9 +252,9 @@ function validar(s, ctx) {
   if (!txt(s.texto_principal, 2)) return 'Informe o texto principal do anúncio.';
   const tipo = criativoDe(s);
   if (tipo === 'carrossel') {
-    if (s.imagens_urls.length < 2 || s.imagens_urls.length > 10) return 'O carrossel precisa de 2 a 10 imagens.';
-    if (!s.imagens_urls.every(imagemOk)) return 'Todas as imagens do carrossel precisam ser imagens enviadas ou links https públicos (JPG/PNG).';
-  } else if (!imagemOk(s.imagem_url)) return 'A imagem do anúncio precisa ser uma imagem enviada ou um link https público (JPG/PNG).';
+    if (s.imagens_urls.length < 2 || s.imagens_urls.length > 10) return 'O carrossel precisa de 2 a 10 itens (imagens ou vídeos).';
+    if (!s.imagens_urls.every(imagemOk)) return 'Todos os itens do carrossel precisam ser arquivos enviados (imagem ou vídeo) ou links https públicos de imagem (JPG/PNG).';
+  } else if (!imagemOk(s.imagem_url)) return 'O criativo do anúncio precisa ser um arquivo enviado (imagem ou vídeo) ou um link https público de imagem (JPG/PNG).';
   const dest = destinoDe(s);
   if (!DESTINOS.includes(dest)) return `Destino inválido. Use: ${DESTINOS.join(', ')}.`;
   const whats = dest === 'whatsapp', msg = !!MSG[dest], site = dest === 'site';
@@ -263,18 +286,25 @@ async function conferir(ctx, s) {
   avisos.push(`Página: ${pg.name || ctx.page}`, ctx.ig ? 'Instagram vinculado' : 'sem Instagram vinculado (só Facebook)', `Conta de anúncios: ${ctx.conta}`);
   const pub = await resolverPublico(ctx, s); if (pub.resumo.length) avisos.push(...pub.resumo);
   const imgsConf = criativoDe(s) === 'carrossel' ? s.imagens_urls : [s.imagem_url];
-  for (const u of imgsConf.filter(ehMidia)) if (!ctx.carregarMidia || !(await ctx.carregarMidia(u.slice(6)))) throw erro('Uma das imagens enviadas não existe mais. Envie a imagem de novo no rascunho.');
-  if (imgsConf.some(ehMidia)) avisos.push(`Imagens enviadas por você: ${imgsConf.filter(ehMidia).length} (sobem direto para o Meta)`);
+  const enviados = [];
+  for (const u of imgsConf.filter(ehMidia)) {
+    const m = ctx.carregarMidia ? await ctx.carregarMidia(u.slice(6), { dados: false }) : null;
+    if (!m) throw erro('Um dos arquivos enviados não existe mais. Envie de novo no rascunho.');
+    enviados.push(m);
+  }
+  const nVid = enviados.filter((m) => String(m.mime).startsWith('video/')).length; const nImg = enviados.length - nVid;
+  if (nImg) avisos.push(`Imagens enviadas por você: ${nImg} (sobem direto para o Meta)`);
+  if (nVid) avisos.push(`Vídeos enviados por você: ${nVid} (sobem direto para o Meta; o processamento leva de segundos a alguns minutos e o fluxo com vídeo ainda não foi validado em conta real)`);
   const dest = destinoDe(s);
   if (MSG[dest]) avisos.push(`Mensagens: a página${dest !== 'messenger' ? ' e o Instagram' : ''} precisam aceitar conversas (fluxo ainda não validado em conta real)`);
   if (dest === 'whatsapp') avisos.push('WhatsApp: exige o número do WhatsApp Business conectado à página (fluxo ainda não validado em conta real)');
   if (criativoDe(s) === 'carrossel') avisos.push('Carrossel (ainda não validado em conta real)');
-  return { avisos, resumo: resumoDe(s) };
+  return { avisos, resumo: resumoDe(s, nVid) };
 }
 
-function resumoDe(s) {
+function resumoDe(s, nVideos = 0) {
   const local = s.localizacoes?.length ? s.localizacoes.join('; ') : (s.paises?.length ? s.paises : ['BR']).join(',');
-  return `"${s.nome}" · ${OBJ[s.objetivo]?.rotulo || s.objetivo} · R$ ${s.orcamento_diario_brl}/dia · ${DESTINO_ROTULO[destinoDe(s)] || 'site'} · criativo ${criativoDe(s) === 'carrossel' ? `carrossel de ${s.imagens_urls.length} imagens` : 'imagem'} · público ${local}, ${s.idade_min ?? 18}–${s.idade_max ?? 65}${s.genero && s.genero !== 'todos' ? ' ' + s.genero : ''}`;
+  return `"${s.nome}" · ${OBJ[s.objetivo]?.rotulo || s.objetivo} · R$ ${s.orcamento_diario_brl}/dia · ${DESTINO_ROTULO[destinoDe(s)] || 'site'} · criativo ${criativoDe(s) === 'carrossel' ? `carrossel de ${s.imagens_urls.length} ${nVideos ? 'itens' : 'imagens'}` : (nVideos ? 'vídeo' : 'imagem')} · público ${local}, ${s.idade_min ?? 18}–${s.idade_max ?? 65}${s.genero && s.genero !== 'todos' ? ' ' + s.genero : ''}`;
 }
 
 // ---------- Criação completa: criativo -> campanha -> conjunto -> anúncio, tudo PAUSADO ----------
@@ -298,27 +328,47 @@ async function subirCampanha(ctx, s) {
   const pub = await etapa('segmentação por interesses e públicos', () => resolverPublico(ctx, s));
   // 2) Criativo ANTES da campanha: se o Meta recusar, nada fica pela metade na conta
   const imgsOrig = tipo === 'carrossel' ? s.imagens_urls : [s.imagem_url];
-  // imagens enviadas pelo assinante sobem para a biblioteca da conta (adimages) e viram image_hash
-  const imgs = [];
+  // arquivos enviados pelo assinante: imagem vira image_hash (adimages); vídeo vira video_id (advideos) com a capa gerada pelo Meta
+  const itens = [];
   for (const u of imgsOrig) {
-    if (!ehMidia(u)) { imgs.push({ picture: u }); continue; }
-    imgs.push(await etapa('envio da imagem', async () => {
-      const m = ctx.carregarMidia ? await ctx.carregarMidia(u.slice(6)) : null;
-      if (!m) throw new Error('uma imagem enviada não foi encontrada; envie de novo no rascunho');
-      const r = await post(ctx, `${conta}/adimages`, { bytes: m.dados.toString('base64'), name: m.nome || 'imagem' });
-      const h = Object.values(r.images || {})[0]?.hash;
-      if (!h) throw new Error('o Meta não devolveu o código da imagem');
-      return { image_hash: h };
-    }));
+    if (!ehMidia(u)) { itens.push({ picture: u }); continue; }
+    const m = ctx.carregarMidia ? await ctx.carregarMidia(u.slice(6)) : null;
+    if (!m) throw erro('Um dos arquivos enviados não existe mais. Envie de novo no rascunho.');
+    if (String(m.mime).startsWith('video/')) {
+      const id = u.slice(6);
+      const v = await etapa('envio do vídeo', async () => {
+        let vid = m.meta_ids && m.meta_ids[conta];
+        if (!vid) { vid = await enviarVideo(ctx, conta, m); if (ctx.guardarVideoMeta) await ctx.guardarVideoMeta(id, conta, vid); }
+        const pr = await esperarVideo(ctx, vid);
+        return { video_id: vid, picture: pr.picture };
+      });
+      itens.push(v);
+    } else {
+      itens.push(await etapa('envio da imagem', async () => {
+        const r = await post(ctx, `${conta}/adimages`, { bytes: m.dados.toString('base64'), name: m.nome || 'imagem' });
+        const h = Object.values(r.images || {})[0]?.hash;
+        if (!h) throw new Error('o Meta não devolveu o código da imagem');
+        return { image_hash: h };
+      }));
+    }
   }
+  const temVideo = itens.some((x) => x.video_id);
   const linkPag = `https://www.facebook.com/${page}`;
   const link = whats ? 'https://api.whatsapp.com/send' : msg ? MSG_LINK : dest === 'post' ? linkPag : s.url_destino;
   const cta = whats ? { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } }
     : msg ? { type: msg.cta, value: { app_destination: msg.app } }
       : { type: dest === 'post' ? 'LEARN_MORE' : (s.cta || 'LEARN_MORE'), value: { link } };
+  const imgs = itens;
   let spec;
-  if (tipo === 'imagem' && dest === 'post') spec = { page_id: page, photo_data: { caption: s.texto_principal, ...(imgs[0].image_hash ? { image_hash: imgs[0].image_hash } : { url: imgs[0].picture }) } };
-  else if (tipo === 'carrossel') spec = { page_id: page, link_data: { message: s.texto_principal, link, child_attachments: imgs.map((im) => ({ link, ...im, ...(s.titulo ? { name: s.titulo } : {}), ...(s.descricao ? { description: s.descricao } : {}) })), multi_share_optimized: true, call_to_action: cta } };
+  if (tipo === 'imagem' && imgs[0].video_id) {
+    // anúncio de um vídeo só
+    const vd = { video_id: imgs[0].video_id, message: s.texto_principal };
+    if (imgs[0].picture) vd.image_url = imgs[0].picture;
+    if (s.titulo) vd.title = s.titulo; if (s.descricao) vd.link_description = s.descricao;
+    if (dest !== 'post') vd.call_to_action = cta;
+    spec = { page_id: page, video_data: vd };
+  } else if (tipo === 'imagem' && dest === 'post') spec = { page_id: page, photo_data: { caption: s.texto_principal, ...(imgs[0].image_hash ? { image_hash: imgs[0].image_hash } : { url: imgs[0].picture }) } };
+  else if (tipo === 'carrossel') spec = { page_id: page, link_data: { message: s.texto_principal, link, child_attachments: imgs.map((im) => ({ link, ...(im.video_id ? { video_id: im.video_id, ...(im.picture ? { picture: im.picture } : {}) } : im), ...(s.titulo ? { name: s.titulo } : {}), ...(s.descricao ? { description: s.descricao } : {}) })), multi_share_optimized: true, call_to_action: cta } };
   else { const ld = { message: s.texto_principal, link, ...imgs[0], call_to_action: cta }; if (s.titulo) ld.name = s.titulo; if (s.descricao) ld.description = s.descricao; spec = { page_id: page, link_data: ld }; }
   const criar = (sp) => post(ctx, `${conta}/adcreatives`, { name: `${s.nome} | Criativo`, object_story_spec: JSON.stringify(sp) });
   let igUsado = !!ig;
@@ -351,7 +401,7 @@ async function subirCampanha(ctx, s) {
   criado.conjunto = set.id;
   const ad = await etapa('anúncio', () => post(ctx, `${conta}/ads`, { name: `${s.nome} | Anúncio 1`, adset_id: set.id, creative: JSON.stringify({ creative_id: cri.id }), status: 'PAUSED' }));
   criado.anuncio = ad.id;
-  return { campanha_id: camp.id, conjunto_id: set.id, criativo_id: cri.id, anuncio_id: ad.id, instagram_vinculado: igUsado, tipo_criativo: tipo };
+  return { campanha_id: camp.id, conjunto_id: set.id, criativo_id: cri.id, anuncio_id: ad.id, instagram_vinculado: igUsado, tipo_criativo: tipo === 'imagem' && temVideo ? 'video' : tipo };
 }
 
 // ---------- Ativar e pausar (nunca exclui) ----------
