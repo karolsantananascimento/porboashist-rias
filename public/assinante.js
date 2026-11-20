@@ -24,65 +24,8 @@ const falha = (e) => { if (!e.tratado) aviso(e.message, true); if (e.status === 
 const dataBr = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '');
 const brl = (n) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-// ---------------- Entrada: criar conta e entrar ----------------
-function entrada(modo = 'criar') {
-  const p = S.pub || {};
-  raiz.innerHTML = `
-    <div class="sa-hero">
-      <div>
-        <div class="sa-brand"><div class="brand-mark">M</div>A Melhor Mídia do Brasil</div>
-        <h1>Gestor de Tráfego com IA para suas campanhas no Meta e no Google</h1>
-        <p class="lead">Descreva o que quer anunciar e o sistema monta a campanha. Você confere, cria pausada e só ativa quando quiser. Tudo com as suas próprias contas de anúncios.</p>
-        <ul>
-          <li>Campanhas no Facebook, Instagram e Google Ads</li>
-          <li>Suas chaves ficam criptografadas, com passo a passo para gerar cada uma</li>
-          <li>Nada é ativado sem a sua confirmação, e há teto de orçamento por campanha</li>
-        </ul>
-        ${p.preco ? `<span class="sa-price">${esc(p.preco)}</span>` : ''} ${p.trial_dias ? `<span class="muted">${p.trial_dias} dias para testar, sem cartão</span>` : ''}
-      </div>
-      <div class="sa-card">
-        <div class="sa-tabs" role="tablist">
-          <button class="${modo === 'criar' ? 'on' : ''}" data-modo="criar" role="tab">Criar conta</button>
-          <button class="${modo === 'entrar' ? 'on' : ''}" data-modo="entrar" role="tab">Entrar</button>
-        </div>
-        ${modo === 'criar' ? `
-        <form id="fCadastro" class="sa-card" style="border:0;padding:0;box-shadow:none">
-          <div><label for="cNome">Seu nome</label><input id="cNome" required autocomplete="name"></div>
-          <div><label for="cEmpresa">Empresa ou marca (opcional)</label><input id="cEmpresa" autocomplete="organization"></div>
-          <div><label for="cEmail">E-mail</label><input id="cEmail" type="email" required autocomplete="username"></div>
-          <div><label for="cSenha">Senha</label><input id="cSenha" type="password" minlength="8" required autocomplete="new-password" placeholder="Mínimo de 8 caracteres"></div>
-          <label class="sa-aceite"><input type="checkbox" id="cAceite" required><span>Li e aceito os ${p.termos_url ? `<a href="${esc(p.termos_url)}" target="_blank" rel="noopener">termos de uso</a>` : 'termos de uso'}. Autorizo o sistema a guardar, de forma criptografada, as chaves das minhas contas de anúncios para criar e acompanhar campanhas em meu nome.</span></label>
-          <button class="btn primary" type="submit">Criar conta e começar</button>
-          <p class="erro" id="cErro"></p>
-        </form>` : `
-        <form id="fLogin" class="sa-card" style="border:0;padding:0;box-shadow:none">
-          <div><label for="lEmail">E-mail</label><input id="lEmail" type="email" required autocomplete="username"></div>
-          <div><label for="lSenha">Senha</label><input id="lSenha" type="password" required autocomplete="current-password"></div>
-          <button class="btn primary" type="submit">Entrar</button>
-          <p class="erro" id="lErro"></p>
-          <p class="muted" style="font-size:12px">Esqueceu a senha? Peça ao suporte um link para criar uma nova.</p>
-        </form>`}
-      </div>
-    </div>`;
-  raiz.querySelectorAll('[data-modo]').forEach((b) => b.addEventListener('click', () => entrada(b.dataset.modo)));
-  const fc = $('#fCadastro');
-  if (fc) fc.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await api('/api/saas/cadastro', { method: 'POST', semSair: true, corpo: { nome: $('#cNome').value, empresa: $('#cEmpresa').value, email: $('#cEmail').value, senha: $('#cSenha').value, aceite: $('#cAceite').checked } });
-      await iniciar();
-    } catch (er) { $('#cErro').textContent = er.message; }
-  });
-  const fl = $('#fLogin');
-  if (fl) fl.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      const r = await api('/api/login', { method: 'POST', semSair: true, corpo: { email: $('#lEmail').value, senha: $('#lSenha').value } });
-      if (r.usuario.papel !== 'assinante') { location.href = '/'; return; }
-      await iniciar();
-    } catch (er) { $('#lErro').textContent = er.message; }
-  });
-}
+// ---------------- Entrada: a página pública /assinar cuida de criar conta e entrar ----------------
+function entrada(modo = 'criar') { location.replace(modo === 'entrar' ? '/assinar?modo=entrar' : '/assinar'); }
 
 // ---------------- Estrutura do app ----------------
 async function carregarEu() { S.eu = await api('/api/saas/eu'); }

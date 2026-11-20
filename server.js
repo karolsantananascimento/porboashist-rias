@@ -640,7 +640,8 @@ app.use((err, req, res, next) => {
 });
 
 // ---------- Interface ----------
-app.get(['/assinante', '/assinar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
+app.get('/assinar', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinar.html')));
+app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

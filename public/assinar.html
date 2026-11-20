@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agente de Tráfego · Criar conta e entrar · A Melhor Mídia do Brasil</title>
+  <meta name="description" content="Contrate o Agente de Tráfego da A Melhor Mídia do Brasil: campanhas no Meta e no Google montadas por IA, com as suas contas e a sua aprovação.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Boldonse&family=Syncopate:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assinar.css">
+  <link rel="icon" href="/brand/melhor-midia/emblema-mm.jpg">
+</head>
+<body>
+  <div class="grao" aria-hidden="true"></div>
+  <main class="pg">
+    <section class="intro" aria-labelledby="titulo">
+      <div class="marca">
+        <img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="56" height="56">
+        <span class="syn">A MELHOR MÍDIA<br>DO BRASIL</span>
+      </div>
+
+      <p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> AGENTE DE TRÁFEGO</p>
+      <h1 id="titulo" class="boldo">Tráfego com <em>intenção</em>.</h1>
+      <span class="filete" aria-hidden="true"></span>
+      <p class="lead">Descreva o que quer anunciar. O agente monta a campanha para Facebook, Instagram e Google. Você confere, cria pausada e só ativa quando quiser.</p>
+
+      <ul class="chaves syn" aria-label="Como funciona">
+        <li>ESTRATÉGIA</li>
+        <li>CAMPANHA PAUSADA</li>
+        <li>SUA APROVAÇÃO</li>
+        <li>RESULTADOS</li>
+      </ul>
+
+      <div class="selos">
+        <span id="preco" class="selo hidden"></span>
+        <span id="teste" class="selo claro hidden"></span>
+      </div>
+
+      <ul class="garantias">
+        <li>Suas chaves de API ficam criptografadas, com passo a passo para gerar cada uma.</li>
+        <li>Nada é ativado sem a sua confirmação, e há teto de orçamento por campanha.</li>
+        <li>Você usa as suas próprias contas de anúncios. Nada é excluído nas plataformas.</li>
+      </ul>
+    </section>
+
+    <section class="painel" aria-label="Criar conta ou entrar">
+      <div class="cantos" aria-hidden="true"><i>+</i><i>+</i><i>+</i><i>+</i></div>
+      <div class="abas syn" role="tablist">
+        <button type="button" role="tab" id="abaCriar" aria-controls="fCadastro" aria-selected="true">CRIAR CONTA</button>
+        <button type="button" role="tab" id="abaEntrar" aria-controls="fLogin" aria-selected="false">ENTRAR</button>
+      </div>
+
+      <form id="fCadastro" role="tabpanel" aria-labelledby="abaCriar" novalidate>
+        <h2 class="boldo">Comece agora.</h2>
+        <div class="campo"><label for="cNome">Seu nome</label><input id="cNome" name="nome" required maxlength="120" autocomplete="name"></div>
+        <div class="campo"><label for="cEmpresa">Empresa ou marca <small>(opcional)</small></label><input id="cEmpresa" name="empresa" maxlength="120" autocomplete="organization"></div>
+        <div class="campo"><label for="cEmail">E-mail</label><input id="cEmail" name="email" type="email" required maxlength="200" autocomplete="username" inputmode="email"></div>
+        <div class="campo">
+          <label for="cSenha">Senha</label>
+          <div class="senha">
+            <input id="cSenha" name="senha" type="password" minlength="8" required autocomplete="new-password" aria-describedby="dicaSenha">
+            <button type="button" class="olho" data-alvo="cSenha" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button>
+          </div>
+          <p class="dica" id="dicaSenha">Mínimo de 8 caracteres.</p>
+        </div>
+        <label class="aceite" for="cAceite">
+          <input type="checkbox" id="cAceite" required>
+          <span>Li e aceito os <a id="termos" href="#" target="_blank" rel="noopener">termos de uso</a>. Autorizo o sistema a guardar, de forma criptografada, as chaves das minhas contas de anúncios para criar e acompanhar campanhas em meu nome.</span>
+        </label>
+        <button class="botao" type="submit"><span>Criar conta e começar</span></button>
+        <p class="erro" id="cErro" role="alert" aria-live="assertive"></p>
+        <p class="troca">Já tem conta? <button type="button" class="link" data-ir="entrar">Entrar</button></p>
+      </form>
+
+      <form id="fLogin" role="tabpanel" aria-labelledby="abaEntrar" class="hidden" novalidate>
+        <h2 class="boldo">Bem-vindo de volta.</h2>
+        <div class="campo"><label for="lEmail">E-mail</label><input id="lEmail" name="email" type="email" required autocomplete="username" inputmode="email"></div>
+        <div class="campo">
+          <label for="lSenha">Senha</label>
+          <div class="senha">
+            <input id="lSenha" name="senha" type="password" required autocomplete="current-password">
+            <button type="button" class="olho" data-alvo="lSenha" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button>
+          </div>
+        </div>
+        <button class="botao" type="submit"><span>Entrar</span></button>
+        <p class="erro" id="lErro" role="alert" aria-live="assertive"></p>
+        <p class="dica">Esqueceu a senha? Peça ao suporte um link para criar uma nova.</p>
+        <p class="troca">Ainda não tem conta? <button type="button" class="link" data-ir="criar">Criar conta</button></p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="rodape syn">MARKETING · ESTRATÉGIA · TECNOLOGIA · NEGÓCIOS · IA</footer>
+  <script src="/assinar.js"></script>
+</body>
+</html>
