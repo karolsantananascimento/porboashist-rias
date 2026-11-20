@@ -42,8 +42,9 @@ async function iniciar() {
   try { S.pub = await api('/api/saas/publico', { semSair: true }); } catch { S.pub = {}; }
   const s = await fetch('/api/sessao').then((r) => r.json()).catch(() => ({}));
   if (!s.autenticado) return entrada();
-  if (s.usuario.papel !== 'assinante') { location.href = '/'; return; }
-  await carregarEu();
+  if (s.usuario.papel !== 'assinante' && s.usuario.papel !== 'admin') { location.href = '/'; return; }
+  // Administradora só entra aqui em modo suporte (botão "Entrar na conta" em Assinantes); sem isso, volta ao sistema
+  try { await carregarEu(); } catch (e) { if (s.usuario.papel === 'admin') { location.href = '/'; return; } throw e; }
   const q = new URLSearchParams(location.search).get('assinatura');
   S.aba = abaDoEndereco() || S.aba;
   if (q) { history.replaceState(null, '', '/assinante#assinatura'); aviso(q === 'ok' ? 'Pagamento recebido! Sua assinatura será ativada em instantes.' : 'Assinatura não concluída. Você pode tentar de novo quando quiser.', q !== 'ok'); S.aba = 'assinatura'; }
@@ -66,16 +67,18 @@ function render() {
   const c = S.eu.conta; const sit = c.situacao;
   const pill = sit.codigo === 'trial' ? `<span class="pill warn">Teste: ${sit.dias_trial} dia${sit.dias_trial > 1 ? 's' : ''}</span>`
     : sit.ativa ? `<span class="pill ok">${esc(sit.texto)}</span>` : `<span class="pill ruim">${esc(sit.codigo === 'bloqueada' ? 'Bloqueada' : 'Sem assinatura ativa')}</span>`;
-  raiz.innerHTML = `
+  const faixaSuporte = S.eu.suporte ? `<div class="sa-suporte" role="status"><span><b>Modo suporte.</b> Você (${esc(S.eu.suporte.admin)}) está na conta de ${esc(c.email)}. Ativar campanhas, cobrança e exclusão ficam bloqueados. O que você mudar fica registrado.</span><button class="btn small" id="sairSuporte">Sair do modo suporte</button></div>` : '';
+  raiz.innerHTML = `${faixaSuporte}
     <header class="sa-top">
       <a class="sa-brand" href="/assinante#inicio" aria-label="Agente de Tráfego, início"><img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="34" height="34">Agente de Tráfego</a>
       <nav class="sa-nav" aria-label="Seções">${abas().map(([k, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}" ${S.aba === k ? 'aria-current="page"' : ''}>${n}</button>`).join('')}</nav>
-      <div class="sa-me">${seletorCliente()}${pill}<span>${esc(c.nome || c.email)}</span><button class="btn ghost small" id="sair">Sair</button></div>
+      <div class="sa-me">${seletorCliente()}${pill}<span>${esc(c.nome || c.email)}</span>${S.eu.suporte ? '' : '<button class="btn ghost small" id="sair">Sair</button>'}</div>
     </header>
     <main class="sa-main" id="conteudo"></main>`;
   raiz.querySelectorAll('[data-aba]').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.aba)));
   const sel = $('#selCliente'); if (sel) sel.addEventListener('change', () => trocarCliente(sel.value));
-  $('#sair').addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
+  const ss = $('#sairSuporte'); if (ss) ss.addEventListener('click', async () => { try { await api('/api/saas/suporte/sair', { method: 'POST' }); location.href = '/'; } catch (e) { falha(e); } });
+  const sair = $('#sair'); if (sair) sair.addEventListener('click', async () => { await fetch('/api/logout', { method: 'POST' }); S.eu = null; entrada('entrar'); });
   document.title = `${(abas().find(([k]) => k === S.aba) || ABAS_BASE[0])[1]} · Agente de Tráfego · A Melhor Mídia do Brasil`;
   const v = $('#conteudo');
   v.setAttribute('aria-busy', 'true');
