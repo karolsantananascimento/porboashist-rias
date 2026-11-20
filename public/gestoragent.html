@@ -28,8 +28,8 @@
       <a href="#funcionalidades">Funcionalidades</a><a href="#planos">Planos</a><a href="#video">Vídeo</a><a href="#como-funciona">Como funciona</a><a href="#duvidas">Dúvidas</a>
     </nav>
     <div class="topo-acoes">
-      <a class="entrar syn" href="/entrar">ENTRAR</a>
-      <a class="entrar cheio syn" href="#planos">ASSINAR</a>
+      <a class="entrar syn" href="/entrar">ENTRAR NO SISTEMA</a>
+      <a class="entrar cheio syn" href="/cadastro?plano=testar">TESTE GRÁTIS</a>
     </div>
   </header>
 
@@ -42,10 +42,10 @@
       <p class="lead">Escreva o que quer anunciar. A IA monta a campanha para Meta Ads e Google Ads. Você confere, cria pausada e só ativa quando quiser.</p>
       <ul class="destaques syn"><li>Criar campanhas a partir do prompt</li><li>Configuração não necessita desenvolvedor</li></ul>
       <div class="ctas">
-        <a class="botao" href="#planos"><span>Ver planos</span></a>
-        <a class="botao vazado" href="#video"><span>Ver em ação</span></a>
+        <a class="botao" href="/cadastro?plano=testar"><span>Começar teste grátis</span></a>
+        <a class="botao vazado" href="#planos"><span>Ver planos</span></a>
       </div>
-      <p class="testar">Prefere conhecer antes? <a class="link claro" href="/cadastro?plano=testar" id="linkTeste">Teste sem cartão</a></p>
+      <p class="testar">Já tem conta? <a class="link claro" href="/entrar">Entrar no sistema</a></p>
       <div class="selos">
         <span class="selo">A partir de R$ 370/mês</span>
         <span id="teste" class="selo claro hidden"></span>
@@ -88,6 +88,7 @@
           <p class="quem-e">Gerencia <b>1 conta</b> no Google Ads e no Meta Ads.</p>
           <ul><li>1 conta de anúncios por plataforma</li><li>Campanhas criadas a partir do prompt</li><li>Meta Ads e Google Ads</li><li>Desempenho dos últimos 7 dias</li></ul>
           <a class="botao" href="/cadastro?plano=assinar&amp;p=solo"><span>Assinar Solo</span></a>
+          <a class="link-teste" href="/cadastro?plano=testar&amp;p=solo">ou testar grátis, sem cartão</a>
         </article>
         <article class="plano-cartao destaque">
           <span class="faixa-top syn">Mais escolhido</span>
@@ -96,6 +97,7 @@
           <p class="quem-e">Gerencia até <b>3 clientes</b> nas duas plataformas.</p>
           <ul><li>Até 3 clientes, cada um com Meta e Google</li><li>Campanhas criadas a partir do prompt</li><li>Meta Ads e Google Ads</li><li>Desempenho dos últimos 7 dias</li></ul>
           <a class="botao" href="/cadastro?plano=assinar&amp;p=agencia"><span>Assinar Agência</span></a>
+          <a class="link-teste" href="/cadastro?plano=testar&amp;p=agencia">ou testar grátis, sem cartão</a>
         </article>
         <article class="plano-cartao">
           <h3 class="syn">Escala</h3>
@@ -103,13 +105,14 @@
           <p class="quem-e">Gerencia <b>5 clientes</b> nas duas plataformas.</p>
           <ul><li>Até 5 clientes, cada um com Meta e Google</li><li>Campanhas criadas a partir do prompt</li><li>Meta Ads e Google Ads</li><li>Desempenho dos últimos 7 dias</li></ul>
           <a class="botao" href="/cadastro?plano=assinar&amp;p=escala"><span>Assinar Escala</span></a>
+          <a class="link-teste" href="/cadastro?plano=testar&amp;p=escala">ou testar grátis, sem cartão</a>
         </article>
       </div>
       <aside class="adicional" aria-label="Pacote adicional">
         <div><p class="syn rotulo"><span class="estrela" aria-hidden="true">✦</span> ADICIONAL</p><h3 class="boldo">Pacote BI + relatórios</h3><p>Acrescente análise de dados e relatórios de desempenho a qualquer plano.</p><label class="marcar-bi"><input type="checkbox" id="querBi"> Incluir no meu plano</label></div>
         <p class="valor boldo">+ R$ 50<small>/mês</small></p>
       </aside>
-      <p class="nota">O valor dos anúncios é pago direto ao Meta e ao Google, e não passa por aqui. <a class="link claro" href="/cadastro?plano=testar">Prefere conhecer antes? Teste sem cartão</a>.</p>
+      <p class="nota">O valor dos anúncios é pago direto ao Meta e ao Google, e não passa por aqui.</p>
     </div>
   </section>
 
@@ -217,19 +220,19 @@
     <div class="miolo estreito centro">
       <h2 id="t-final" class="boldo">Do prompt à <em>campanha</em>.</h2>
       <p class="lead">Crie a conta, cole as chaves e monte a primeira campanha hoje.</p>
-      <a class="botao" href="#planos"><span>Ver planos</span></a>
-      <p class="testar">Prefere conhecer antes? <a class="link claro" href="/cadastro?plano=testar">Teste sem cartão</a></p>
+      <a class="botao" href="/cadastro?plano=testar"><span>Começar teste grátis</span></a>
+      <p class="testar"><a class="link claro" href="#planos">Ver planos</a> · <a class="link claro" href="/entrar">Entrar no sistema</a></p>
     </div>
   </section>
   </main>
 
   <footer class="rodape-site">
     <a class="marca" href="/gestoragent"><img src="/brand/melhor-midia/emblema-mm.jpg" alt="" width="40" height="40"><span class="syn">A MELHOR MÍDIA<br>DO BRASIL</span></a>
-    <nav class="syn" aria-label="Rodapé"><a href="#planos">Planos</a><a href="/cadastro?plano=testar">Testar</a><a href="/entrar">Entrar</a><a id="rodTermos" href="#" class="hidden" target="_blank" rel="noopener">Termos de uso</a></nav>
+    <nav class="syn" aria-label="Rodapé"><a href="#planos">Planos</a><a href="/cadastro?plano=testar">Testar</a><a href="/entrar">Entrar no sistema</a><a id="rodTermos" href="#" class="hidden" target="_blank" rel="noopener">Termos de uso</a></nav>
     <p class="syn">MARKETING · ESTRATÉGIA · TECNOLOGIA · NEGÓCIOS · IA</p>
   </footer>
 
-  <a class="barra-mobile syn" href="#planos">VER PLANOS</a>
+  <a class="barra-mobile syn" href="/cadastro?plano=testar">TESTE GRÁTIS</a>
   <script src="/vendas.js"></script>
 </body>
 </html>

@@ -23,3 +23,6 @@
 
 .marcar-bi { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-weight: 600; cursor: pointer; }
 .marcar-bi input { width: 18px; height: 18px; accent-color: var(--vermelho); }
+
+.link-teste { display: block; margin-top: 12px; text-align: center; color: var(--preto); font-size: 14px; font-weight: 600; text-decoration: underline; }
+.link-teste:hover { color: var(--vermelho); }

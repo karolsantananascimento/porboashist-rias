@@ -18,4 +18,4 @@ v.addEventListener('timeupdate', () => { let a = -1; ts.forEach((t, i) => { if (
 
 // /gestoragent: o pacote BI + relatórios vai junto no link de cadastro de cada plano
 const querBi = $('#querBi');
-if (querBi) querBi.addEventListener('change', () => document.querySelectorAll('.plano-cartao a.botao').forEach((a) => { const u = new URL(a.getAttribute('href'), location.origin); if (querBi.checked) u.searchParams.set('bi', '1'); else u.searchParams.delete('bi'); a.setAttribute('href', u.pathname + u.search); }));
+if (querBi) querBi.addEventListener('change', () => document.querySelectorAll('.plano-cartao a[href^="/cadastro"]').forEach((a) => { const u = new URL(a.getAttribute('href'), location.origin); if (querBi.checked) u.searchParams.set('bi', '1'); else u.searchParams.delete('bi'); a.setAttribute('href', u.pathname + u.search); }));
