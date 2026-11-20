@@ -6,7 +6,7 @@ const raiz = $('#raiz');
 const S = { eu: null, aba: 'inicio', pub: null, chaves: null, campanhas: [], testes: {}, aberta: null, cliente: null };
 // Cliente selecionado (planos com vários clientes): lembrado neste navegador e enviado em todas as chamadas
 try { S.cliente = localStorage.getItem('pbh_cliente') || null; } catch { /* sem armazenamento: usa o principal */ }
-const lembrarCliente = (id) => { S.midias = null; S.cliente = id ? String(id) : null; try { if (id) localStorage.setItem('pbh_cliente', String(id)); else localStorage.removeItem('pbh_cliente'); } catch { /* ok */ } };
+const lembrarCliente = (id) => { S.midias = null; S.criativosIA = []; S.cliente = id ? String(id) : null; try { if (id) localStorage.setItem('pbh_cliente', String(id)); else localStorage.removeItem('pbh_cliente'); } catch { /* ok */ } };
 
 async function api(caminho, opts = {}) {
   const r = await fetch(caminho, {
@@ -340,6 +340,112 @@ async function abrirIntegrar(plat = 'meta') {
   });
 }
 
+// ---------------- Criativos: imagens e vídeos (tela de Campanhas e editor da campanha) ----------------
+// Cada arquivo enviado vira o token "midia:ID". Aqui ficam o envio (com progresso), as miniaturas, a ordem e a biblioteca.
+const TOKEN_MIDIA = /^midia:\d+$/;
+const infoMidia = {}; // token -> { tipo: 'imagem' | 'video', nome, duracao }
+const guardarInfo = (m) => { infoMidia[m.token] = { tipo: m.tipo, nome: m.nome, duracao: m.duracao }; };
+const urlMidia = (t) => (TOKEN_MIDIA.test(t) ? `/api/saas/midias/${t.slice(6)}/arquivo${S.cliente ? `?cliente=${encodeURIComponent(S.cliente)}` : ''}` : t);
+const tipoDe = (t) => (TOKEN_MIDIA.test(t) ? (infoMidia[t]?.tipo || 'imagem') : 'imagem');
+const duracaoTxt = (seg) => (seg ? `${Math.floor(seg / 60)}:${String(Math.round(seg % 60)).padStart(2, '0')}` : '');
+const mbTxt = (b) => `${(b / 1048576).toFixed(b >= 10485760 ? 0 : 1)} MB`;
+async function biblioteca(recarregar = false) {
+  if (!S.midias || recarregar) { S.midias = (await api('/api/saas/midias')).midias; S.midias.forEach(guardarInfo); }
+  return S.midias;
+}
+async function garantirInfo(tokens) { if (tokens.some((t) => TOKEN_MIDIA.test(t) && !infoMidia[t])) { try { await biblioteca(true); } catch { /* sem a lista, trata como imagem */ } } }
+// <img> ou <video> da miniatura (a rota aceita ?cliente= para funcionar direto no src; o vídeo mostra o primeiro quadro)
+function miniatura(t) {
+  const v = tipoDe(t) === 'video'; const el = document.createElement(v ? 'video' : 'img');
+  if (v) { el.src = `${urlMidia(t)}#t=0.1`; el.preload = 'metadata'; el.muted = true; el.playsInline = true; }
+  else { el.src = urlMidia(t); el.alt = ''; el.loading = 'lazy'; }
+  el.addEventListener('error', () => el.replaceWith(Object.assign(document.createElement('div'), { className: 'ed-quebrada', textContent: 'Arquivo indisponível' })), { once: true });
+  return el;
+}
+function enviarArquivo(f, tipo, progresso) {
+  return new Promise((ok, falhar) => {
+    const x = new XMLHttpRequest(); x.open('POST', '/api/saas/midias');
+    x.setRequestHeader('content-type', tipo); x.setRequestHeader('x-nome-arquivo', encodeURIComponent(f.name)); if (S.cliente) x.setRequestHeader('x-cliente', S.cliente);
+    x.upload.onprogress = (e) => { if (e.lengthComputable) progresso(e.loaded / e.total); };
+    x.onload = () => {
+      let d = {}; try { d = JSON.parse(x.responseText); } catch { /* resposta sem JSON */ }
+      if (x.status >= 200 && x.status < 300 && d.midia) return ok(d.midia);
+      falhar(Object.assign(new Error(d.erro || (x.status === 413 ? 'Arquivo grande demais.' : `Erro ${x.status}`)), { status: x.status }));
+    };
+    x.onerror = () => falhar(new Error('A conexão caiu durante o envio. Tente de novo.'));
+    x.send(f);
+  });
+}
+function criarUploader(host, { itens = [], editavel = true, max = 10, links = true, onMudou = () => {} } = {}) {
+  let lista = [...itens]; let seq = 0;
+  host.innerHTML = `${editavel ? `<div class="ed-drop" tabindex="0" role="button" aria-label="Enviar imagens e vídeos"><b>Arraste imagens ou vídeos aqui</b> ou <u>escolha no computador</u><br><small>Imagem JPG ou PNG até 8 MB · Vídeo MP4 ou MOV até 60 MB · Ideal: 1080×1080 (quadrado) ou 1080×1350 / 1080×1920 (vertical)</small><input type="file" accept="image/jpeg,image/png,video/mp4,video/quicktime,.mp4,.mov" multiple hidden></div><div class="ed-prog" hidden><span></span><i><b></b></i></div>` : ''}
+    <div class="ed-bandeja"></div>
+    ${editavel && links ? `<details class="ed-link"><summary>Ou usar a imagem de um link</summary><div class="ed-linha"><input class="up-link" placeholder="https://…/imagem.jpg"><button class="btn small up-add" type="button">Adicionar</button></div></details>` : ''}
+    ${editavel ? `<details class="ed-link up-det"><summary>Escolher entre arquivos já enviados</summary><div class="ed-bib"><span class="dica">Carregando…</span></div></details>` : ''}`;
+  const q = (sel) => host.querySelector(sel);
+  const adicionar = (t) => {
+    if (lista.includes(t)) return aviso('Esse arquivo já está no anúncio.', true);
+    if (lista.length >= max) return aviso(`O anúncio aceita no máximo ${max} itens (carrossel).`, true);
+    lista.push(t); return true;
+  };
+  const pintar = async () => {
+    const eu = ++seq; await garantirInfo(lista); if (eu !== seq) return;
+    const b = q('.ed-bandeja'); const nv = lista.filter((t) => tipoDe(t) === 'video').length;
+    b.innerHTML = lista.map((t, k) => `<div class="ed-mini" data-k="${k}"><span class="ed-n">${k + 1}</span>${tipoDe(t) === 'video' ? `<span class="ed-play" title="Vídeo">▶</span>${infoMidia[t]?.duracao ? `<span class="ed-dur">${duracaoTxt(infoMidia[t].duracao)}</span>` : ''}` : ''}${editavel ? `<div class="ed-mini-acoes"><button type="button" data-mv="-1" title="Mover para trás" ${k === 0 ? 'disabled' : ''}>‹</button><button type="button" data-mv="1" title="Mover para frente" ${k === lista.length - 1 ? 'disabled' : ''}>›</button><button type="button" data-rm title="Remover do anúncio">×</button></div>` : ''}</div>`).join('')
+      + (lista.length ? `<div class="ed-tipo">${lista.length === 1 ? (nv ? 'Anúncio com 1 vídeo' : 'Anúncio com 1 imagem') : `Carrossel de ${lista.length} ${nv ? 'itens' : 'imagens'}`}</div>` : '<div class="dica">Nenhum criativo ainda.</div>');
+    b.querySelectorAll('.ed-mini').forEach((m) => {
+      const k = Number(m.dataset.k); m.prepend(miniatura(lista[k]));
+      m.querySelectorAll('[data-mv]').forEach((x) => x.addEventListener('click', () => { const d = Number(x.dataset.mv); [lista[k], lista[k + d]] = [lista[k + d], lista[k]]; pintar(); }));
+      const rm = m.querySelector('[data-rm]'); if (rm) rm.addEventListener('click', () => { lista.splice(k, 1); pintar(); });
+    });
+    onMudou(lista);
+  };
+  const progresso = (txt, frac) => { const p = q('.ed-prog'); if (!p) return; p.hidden = txt === null; if (txt !== null) { p.firstElementChild.textContent = txt; p.querySelector('b').style.width = `${Math.round(frac * 100)}%`; } };
+  const enviar = async (arquivos) => {
+    const drop = q('.ed-drop'); drop.classList.add('enviando'); let mudou = false;
+    for (const f of arquivos) {
+      const tipo = f.type || (/\.mp4$/i.test(f.name) ? 'video/mp4' : /\.mov$/i.test(f.name) ? 'video/quicktime' : '');
+      const video = /^video\/(mp4|quicktime)$/.test(tipo);
+      if (!video && !/^image\/(jpeg|png)$/.test(tipo)) { aviso(`"${f.name}": envie imagem JPG/PNG ou vídeo MP4/MOV.`, true); continue; }
+      if (f.size > (video ? 60 : 8) * 1048576) { aviso(`"${f.name}" passa de ${video ? 60 : 8} MB${video ? '. Comprima o vídeo (1080 px, H.264) e envie de novo.' : '.'}`, true); continue; }
+      if (lista.length >= max) { aviso(`O anúncio aceita no máximo ${max} itens (carrossel).`, true); break; }
+      try {
+        const m = await enviarArquivo(f, tipo, (fr) => progresso(`Enviando "${f.name}" (${mbTxt(f.size)}) · ${Math.round(fr * 100)}%`, fr));
+        S.midias = null; guardarInfo(m); adicionar(m.token); mudou = true;
+      } catch (e) { if (e.status === 401) { falha(Object.assign(e, { tratado: false })); break; } aviso(`"${f.name}": ${e.message}`, true); if (e.status === 402) falha(e); }
+    }
+    progresso(null); drop.classList.remove('enviando'); if (mudou) await pintar();
+  };
+  if (editavel) {
+    const drop = q('.ed-drop'); const arq = q('input[type=file]');
+    drop.addEventListener('click', () => arq.click());
+    drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); arq.click(); } });
+    arq.addEventListener('change', () => { enviar([...arq.files]); arq.value = ''; });
+    ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('sobre'); }));
+    ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('sobre'); }));
+    drop.addEventListener('drop', (e) => enviar([...(e.dataTransfer?.files || [])]));
+    const add = q('.up-add');
+    if (add) add.addEventListener('click', () => { const i = q('.up-link'); const val = i.value.trim(); if (!/^https:\/\/\S+$/i.test(val)) return aviso('Cole um link que comece com https://', true); if (adicionar(val)) { i.value = ''; pintar(); } });
+    const pintarBib = async () => {
+      const bib = q('.ed-bib');
+      try {
+        const ms = await biblioteca(true);
+        bib.innerHTML = ms.length ? ms.map((m) => `<div class="ed-bibi" data-t="${m.token}"><button type="button" class="ed-bibb" title="${esc(m.nome)}"><span class="ed-bibm"></span>${m.tipo === 'video' ? `<span class="ed-play">▶</span>` : ''}<small>${esc(m.nome)}</small></button><button type="button" class="ed-bibx" title="Excluir da biblioteca" aria-label="Excluir ${esc(m.nome)}">×</button></div>`).join('') : '<span class="dica">Você ainda não enviou arquivos.</span>';
+        bib.querySelectorAll('.ed-bibi').forEach((x) => {
+          const t = x.dataset.t; x.querySelector('.ed-bibm').appendChild(miniatura(t));
+          x.querySelector('.ed-bibb').addEventListener('click', () => { if (adicionar(t)) pintar(); });
+          x.querySelector('.ed-bibx').addEventListener('click', async () => {
+            if (!confirm(`Excluir "${infoMidia[t]?.nome || 'este arquivo'}" da biblioteca? Ele sai de todos os lugares onde não está em rascunho.`)) return;
+            try { await api(`/api/saas/midias/${t.slice(6)}`, { method: 'DELETE' }); lista = lista.filter((y) => y !== t); S.midias = null; await pintarBib(); pintar(); } catch (er) { falha(er); }
+          });
+        });
+      } catch (er) { falha(er); }
+    };
+    q('.up-det').addEventListener('toggle', (e) => { if (e.target.open) pintarBib(); });
+  }
+  return { itens: () => [...lista], tokens: () => lista.filter((t) => TOKEN_MIDIA.test(t)), pintar };
+}
+
 async function viewCampanhas(v) {
   await carregarCampanhas();
   secao(v, `<div class="view-head"><div><h2>Campanhas</h2><p>Descreva o que quer anunciar e a IA monta o rascunho. Você revisa, cria pausada e só então ativa.</p></div>
@@ -347,6 +453,8 @@ async function viewCampanhas(v) {
     <div class="card"><h3>Nova campanha com IA (Meta)</h3>
       <p class="muted" style="margin:4px 0 10px">Conte: o que anuncia, objetivo, quanto quer gastar por dia, cidades, público e para onde levar o clique. Usos neste mês: ${S.eu.conta.ia.usados}/${S.eu.conta.ia.limite}.</p>
       <textarea id="briefing" rows="4" placeholder="Ex.: Clínica de estética em Recife. Quero agendamentos de limpeza de pele. R$ 40 por dia, mulheres de 25 a 55 anos em Recife e Olinda, levar para https://minhaclinica.com.br/agendar"></textarea>
+      <label style="display:block;margin-top:12px">Criativos do anúncio <span class="dica">(opcional) imagens e vídeos que vão no anúncio. 1 arquivo = anúncio simples; 2 a 10 = carrossel.</span></label>
+      <div id="upIA"></div>
       <div style="margin-top:10px"><button class="btn primary" id="bIA">Gerar rascunho com IA</button></div></div>
     <div class="card" id="cotaBox"></div>
     <div class="sa-lista" id="lista"></div>
@@ -354,9 +462,11 @@ async function viewCampanhas(v) {
   pintarCota();
   $('#bManual').addEventListener('click', async () => { try { const r = await api('/api/saas/campanhas', { method: 'POST', corpo: { spec: {} } }); await carregarCampanhas(); abrirEditor(r.campanha.id); } catch (e) { falha(e); } });
   $('#bGoogle').addEventListener('click', abrirGoogle);
+  const upIA = criarUploader($('#upIA'), { itens: S.criativosIA || [], links: false, max: 10, onMudou: (l) => { S.criativosIA = [...l]; } });
+  upIA.pintar();
   $('#bIA').addEventListener('click', async (e) => {
     const b = e.currentTarget; b.disabled = true; b.textContent = 'Montando o rascunho...';
-    try { const r = await api('/api/saas/campanhas/ia', { method: 'POST', corpo: { briefing: $('#briefing').value } }); await carregarEu(); await carregarCampanhas(); abrirEditor(r.campanha.id); }
+    try { const r = await api('/api/saas/campanhas/ia', { method: 'POST', corpo: { briefing: $('#briefing').value, midias: upIA.tokens() } }); S.criativosIA = []; await carregarEu(); await carregarCampanhas(); abrirEditor(r.campanha.id); }
     catch (er) { falha(er); b.disabled = false; b.textContent = 'Gerar rascunho com IA'; }
   });
   pintarLista();
@@ -402,11 +512,8 @@ function abrirEditor(id) {
       <section class="ed-sec"><h4><span>2</span> Criativo</h4>
         <div class="ed-criativo">
           <div class="ed-cform">
-            <label>Imagens do anúncio <span class="dica">JPG ou PNG, até 8 MB cada. 1 imagem = anúncio simples; 2 a 10 = carrossel.</span></label>
-            ${editavel ? `<div class="ed-drop" id="drop" tabindex="0" role="button" aria-label="Enviar imagens"><b>Arraste as imagens aqui</b> ou <u>escolha no computador</u><br><small>Formato ideal: 1080×1080 (quadrado) ou 1080×1350 (vertical)</small><input type="file" id="arq" accept="image/jpeg,image/png" multiple hidden></div>` : ''}
-            <div class="ed-bandeja" id="bandeja"></div>
-            ${editavel ? `<details class="ed-link"><summary>Ou usar a imagem de um link</summary><div class="ed-linha"><input id="e_link" placeholder="https://…/imagem.jpg"><button class="btn small" type="button" id="bLink">Adicionar</button></div></details>
-            <details class="ed-link" id="detBib"><summary>Escolher entre imagens já enviadas</summary><div class="ed-bib" id="bib"><span class="dica">Carregando…</span></div></details>` : ''}
+            <label>Criativos do anúncio <span class="dica">Imagem JPG/PNG (até 8 MB) ou vídeo MP4/MOV (até 60 MB). 1 arquivo = anúncio simples; 2 a 10 = carrossel.</span></label>
+            <div id="upHost"></div>
             <div class="row"><div><label>Texto principal ${cont('e_texto', 2000, s.texto_principal)}</label><textarea id="e_texto" rows="4" maxlength="2000" placeholder="O que a pessoa vai ler acima da imagem" ${dis}>${esc(s.texto_principal)}</textarea></div></div>
             <div class="row"><div><label>Título ${cont('e_tit', 60, s.titulo)}</label><input id="e_tit" maxlength="60" value="${esc(s.titulo)}" ${dis}></div>
               <div><label>Descrição ${cont('e_desc', 60, s.descricao)}</label><input id="e_desc" maxlength="60" value="${esc(s.descricao)}" ${dis}></div>
@@ -438,61 +545,8 @@ function abrirEditor(id) {
       ${editavel ? '<button class="btn ghost danger" id="bExcluir">Excluir rascunho</button>' : ''}</div>`);
   $('.sa-modal-box').classList.add('largo');
 
-  // ----- imagens: miniaturas, envio, ordem -----
-  const urlsBlob = {}; // token -> blob: (a rota exige o cabeçalho do cliente, então <img src> direto não serve)
-  const srcDe = async (t) => {
-    if (!/^midia:\d+$/.test(t)) return t;
-    if (urlsBlob[t]) return urlsBlob[t];
-    try { const r = await fetch(`/api/saas/midias/${t.slice(6)}/arquivo`, { headers: S.cliente ? { 'x-cliente': S.cliente } : {} }); if (!r.ok) return ''; return (urlsBlob[t] = URL.createObjectURL(await r.blob())); } catch { return ''; }
-  };
-  const pintarBandeja = async () => {
-    const b = $('#bandeja'); if (!b) return;
-    b.innerHTML = imgs.map((t, k) => `<div class="ed-mini" data-k="${k}"><img alt="Imagem ${k + 1}" data-t="${esc(t)}"><span class="ed-n">${k + 1}</span>${editavel ? `<div class="ed-mini-acoes"><button type="button" data-mv="-1" title="Mover para trás" ${k === 0 ? 'disabled' : ''}>‹</button><button type="button" data-mv="1" title="Mover para frente" ${k === imgs.length - 1 ? 'disabled' : ''}>›</button><button type="button" data-rm title="Remover do anúncio">×</button></div>` : ''}</div>`).join('')
-      + (imgs.length ? `<div class="ed-tipo">${imgs.length === 1 ? 'Anúncio com 1 imagem' : `Carrossel de ${imgs.length} imagens`}${imgs.length > 10 ? ' · máximo 10' : ''}</div>` : '<div class="dica">Nenhuma imagem ainda.</div>');
-    for (const im of b.querySelectorAll('img')) srcDe(im.dataset.t).then((u) => { if (u) im.src = u; else im.replaceWith(Object.assign(document.createElement('div'), { className: 'ed-quebrada', textContent: 'Imagem indisponível' })); });
-    b.querySelectorAll('.ed-mini').forEach((m) => {
-      const k = Number(m.dataset.k);
-      m.querySelectorAll('[data-mv]').forEach((x) => x.addEventListener('click', () => { const d = Number(x.dataset.mv); [imgs[k], imgs[k + d]] = [imgs[k + d], imgs[k]]; pintarBandeja(); }));
-      const rm = m.querySelector('[data-rm]'); if (rm) rm.addEventListener('click', () => { imgs.splice(k, 1); pintarBandeja(); });
-    });
-    pintarPrevia();
-  };
-  const adicionarImg = (t) => { if (imgs.includes(t)) return aviso('Essa imagem já está no anúncio.', true); if (imgs.length >= 10) return aviso('O carrossel aceita no máximo 10 imagens.', true); imgs.push(t); };
-  const enviar = async (arquivos) => {
-    const drop = $('#drop'); drop.classList.add('enviando');
-    for (const f of arquivos) {
-      if (!/^image\/(jpeg|png)$/.test(f.type)) { aviso(`"${f.name}": só JPG ou PNG.`, true); continue; }
-      if (f.size > 8 * 1024 * 1024) { aviso(`"${f.name}" passa de 8 MB.`, true); continue; }
-      if (imgs.length >= 10) { aviso('O carrossel aceita no máximo 10 imagens.', true); break; }
-      try {
-        const r = await fetch('/api/saas/midias', { method: 'POST', headers: { 'content-type': f.type, 'x-nome-arquivo': encodeURIComponent(f.name), ...(S.cliente ? { 'x-cliente': S.cliente } : {}) }, body: f });
-        const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erro || `Erro ${r.status}`);
-        S.midias = null; adicionarImg(d.midia.token); urlsBlob[d.midia.token] = URL.createObjectURL(f); await pintarBandeja();
-      } catch (e) { aviso(`"${f.name}": ${e.message}`, true); }
-    }
-    drop.classList.remove('enviando');
-  };
-  const drop = $('#drop');
-  if (drop) {
-    const arq = $('#arq');
-    drop.addEventListener('click', () => arq.click());
-    drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); arq.click(); } });
-    arq.addEventListener('change', () => { enviar([...arq.files]); arq.value = ''; });
-    ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('sobre'); }));
-    ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('sobre'); }));
-    drop.addEventListener('drop', (e) => enviar([...(e.dataTransfer?.files || [])]));
-    $('#bLink').addEventListener('click', () => { const v = $('#e_link').value.trim(); if (!/^https:\/\/\S+$/i.test(v)) return aviso('Cole um link que comece com https://', true); adicionarImg(v); $('#e_link').value = ''; pintarBandeja(); });
-    $('#detBib').addEventListener('toggle', async (e) => {
-      if (!e.target.open) return;
-      try {
-        if (!S.midias) S.midias = (await api('/api/saas/midias')).midias;
-        const bib = $('#bib');
-        bib.innerHTML = S.midias.length ? S.midias.map((m) => `<button type="button" class="ed-bibi" data-t="${m.token}" title="${esc(m.nome)}"><img alt="${esc(m.nome)}" data-t="${m.token}"><small>${esc(m.nome)}</small></button>`).join('') : '<span class="dica">Você ainda não enviou imagens.</span>';
-        bib.querySelectorAll('img').forEach((im) => srcDe(im.dataset.t).then((u) => { if (u) im.src = u; }));
-        bib.querySelectorAll('.ed-bibi').forEach((x) => x.addEventListener('click', () => { adicionarImg(x.dataset.t); pintarBandeja(); }));
-      } catch (er) { falha(er); }
-    });
-  }
+  // ----- criativos: imagens e vídeos (envio, miniaturas, ordem) -----
+  const up = criarUploader($('#upHost'), { itens: imgs, editavel, max: 10, onMudou: () => pintarPrevia() });
 
   // ----- prévia, contadores e dicas -----
   function pintarPrevia() {
@@ -501,9 +555,11 @@ function abrirEditor(id) {
     $('#pvTit').textContent = v('#e_tit') || ''; $('#pvDesc').textContent = v('#e_desc') || '';
     $('#pvCta').textContent = CTA_ROT[v('#e_cta')] || (v('#e_dest') && v('#e_dest') !== 'site' ? 'Enviar mensagem' : 'Saiba mais');
     const pi = $('#pvImg'); pi.innerHTML = '';
-    if (!imgs.length) { pi.textContent = 'Sem imagem'; return; }
-    const im = document.createElement('img'); im.alt = ''; pi.appendChild(im); srcDe(imgs[0]).then((u) => { if (u) im.src = u; });
-    if (imgs.length > 1) { const t = document.createElement('span'); t.className = 'ed-ad-car'; t.textContent = `1/${imgs.length}`; pi.appendChild(t); }
+    const it = up.itens();
+    if (!it.length) { pi.textContent = 'Sem criativo'; return; }
+    pi.appendChild(miniatura(it[0]));
+    if (tipoDe(it[0]) === 'video') { const pl = document.createElement('span'); pl.className = 'ed-play grande'; pl.textContent = '▶'; pi.appendChild(pl); }
+    if (it.length > 1) { const t = document.createElement('span'); t.className = 'ed-ad-car'; t.textContent = `1/${it.length}`; pi.appendChild(t); }
   }
   const dicas = () => {
     const ob = $('#e_obj').value, ds = $('#e_dest').value, orc = Number(String($('#e_orc').value).replace(',', '.'));
@@ -514,13 +570,13 @@ function abrirEditor(id) {
   };
   const contar = () => document.querySelectorAll('.ed-cont').forEach((el) => { const i = $('#' + el.dataset.de); const t = i.value.length; el.textContent = `${t}/${el.dataset.max}`; el.classList.toggle('alerta', t >= Number(el.dataset.max) * 0.95); });
   ['#e_texto', '#e_tit', '#e_desc', '#e_cta', '#e_dest', '#e_obj', '#e_orc'].forEach((sel) => $(sel).addEventListener('input', () => { contar(); dicas(); pintarPrevia(); }));
-  dicas(); contar(); pintarBandeja();
+  dicas(); contar(); up.pintar();
   const n = (x) => (x === '' ? undefined : Number(String(x).replace(',', '.')));
   const linhas = (x) => x.split('\n').map((t) => t.trim()).filter(Boolean);
   const coletar = () => ({
     nome: $('#e_nome').value, objetivo: $('#e_obj').value, orcamento_diario_brl: n($('#e_orc').value), texto_principal: $('#e_texto').value,
     titulo: $('#e_tit').value, descricao: $('#e_desc').value, cta: $('#e_cta').value, destino: $('#e_dest').value, url_destino: $('#e_url').value,
-    imagem_url: imgs.length === 1 ? imgs[0] : '', imagens_urls: imgs.length > 1 ? imgs : [], localizacoes: linhas($('#e_loc').value), interesses: linhas($('#e_int').value),
+    imagem_url: up.itens().length === 1 ? up.itens()[0] : '', imagens_urls: up.itens().length > 1 ? up.itens() : [], localizacoes: linhas($('#e_loc').value), interesses: linhas($('#e_int').value),
     raio_km: n($('#e_raio').value), idade_min: n($('#e_imin').value), idade_max: n($('#e_imax').value), genero: $('#e_gen').value,
     inicio: $('#e_ini').value ? new Date($('#e_ini').value).toISOString() : '', termina_em: $('#e_fim').value ? new Date($('#e_fim').value).toISOString() : '',
   });

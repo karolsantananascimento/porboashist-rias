@@ -19,6 +19,7 @@ global.fetch = async (url, init = {}) => {
     if (m === 'POST') {
       const fim = u.split('/').pop();
       if (fim === 'adimages') return j({ images: { img: { hash: 'hash' + (global.__h = (global.__h || 0) + 1), url: 'https://scontent.example/x.jpg' } } });
+      if (fim === 'advideos') return j({ id: 'vid' + (global.__v = (global.__v || 0) + 1) });
       if (fim === 'adcreatives') return j({ id: 'cr1' });
       if (fim === 'campaigns') return j({ id: 'camp1' });
       if (fim === 'adsets') return j({ id: 'set1' });
@@ -29,6 +30,7 @@ global.fetch = async (url, init = {}) => {
     if (/adinterest/.test(u)) return j({ data: [{ id: '6003', name: 'Estética facial' }] });
     if (/\/act_\d+\?/.test(u)) return j({ name: 'Conta do Assinante', account_status: 1, currency: 'BRL' });
     if (/\/55555\?/.test(u)) return j({ name: 'Página do Assinante' });
+    if (/\/vid\d+\?/.test(u)) return j({ status: { video_status: 'ready' }, picture: 'https://scontent.example/thumb.jpg' });
     if (/\/camp1\/adsets/.test(u)) return j({ data: [{ id: 'set1', status: 'PAUSED' }] });
     if (/\/camp1\/ads/.test(u)) return j({ data: [{ id: 'ad1', status: 'PAUSED' }] });
     if (/\/camp1\?/.test(u)) return j({ name: 'Camp', status: 'PAUSED' });

@@ -31,6 +31,9 @@ const ATIVACOES_DIA = Number(process.env.SAAS_ATIVACOES_DIA || 10);
 const MAX_CAMPANHAS = 300;
 const MAX_MIDIAS = 200;
 const MAX_MIDIA_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEOS = 20;
+const MIDIA_GUARDA_MIN = Number(process.env.SAAS_MIDIA_GUARDA_MIN || 60); // minutos que o arquivo fica depois de enviado ao Meta
+const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
 let poolRef = null;
 const erro = (msg, status = 400) => Object.assign(new Error(msg), { status });
 const emailValido = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 200;
@@ -88,6 +91,40 @@ function inspecionarImagem(b) {
   return null;
 }
 
+// Vídeo MP4/MOV (contêiner ISO BMFF): confere a assinatura "ftyp", acha a duração (moov/mvhd) e o tamanho do quadro (trak/tkhd)
+function inspecionarVideo(b) {
+  if (b.length < 32 || b.toString('latin1', 4, 8) !== 'ftyp') return null;
+  const marca = b.toString('latin1', 8, 12);
+  const filhos = (ini, fim) => {
+    const out = [];
+    for (let i = ini; i + 8 <= fim;) {
+      let tam = b.readUInt32BE(i); const tipo = b.toString('latin1', i + 4, i + 8); let cab = 8;
+      if (tam === 1) { if (i + 16 > fim) break; tam = Number(b.readBigUInt64BE(i + 8)); cab = 16; } else if (tam === 0) tam = fim - i;
+      if (tam < cab || i + tam > fim) break;
+      out.push({ tipo, ini: i + cab, fim: i + tam }); i += tam;
+    }
+    return out;
+  };
+  const moov = filhos(0, b.length).find((x) => x.tipo === 'moov');
+  if (!moov) return { incompleto: true };
+  let duracao = 0, largura = 0, altura = 0;
+  for (const bx of filhos(moov.ini, moov.fim)) {
+    if (bx.tipo === 'mvhd' && bx.fim - bx.ini >= 28) {
+      const v1 = b[bx.ini] === 1;
+      const escala = b.readUInt32BE(bx.ini + (v1 ? 20 : 12));
+      const dur = v1 ? Number(b.readBigUInt64BE(bx.ini + 24)) : b.readUInt32BE(bx.ini + 16);
+      if (escala) duracao = dur / escala;
+    } else if (bx.tipo === 'trak' && !largura) {
+      const tk = filhos(bx.ini, bx.fim).find((x) => x.tipo === 'tkhd');
+      if (tk) {
+        const v1 = b[tk.ini] === 1; const o = tk.ini + (v1 ? 88 : 76);
+        if (o + 8 <= tk.fim) { largura = Math.round(b.readUInt32BE(o) / 65536); altura = Math.round(b.readUInt32BE(o + 4) / 65536); }
+      }
+    }
+  }
+  return { mime: marca === 'qt  ' ? 'video/quicktime' : 'video/mp4', largura, altura, duracao: Math.round(duracao * 10) / 10 };
+}
+
 // ---------- Contextos de cada plataforma (só chaves do próprio assinante) ----------
 function contextoMeta(cliente) {
   const e = escopoCliente(cliente); const le = (k) => config.cfgProprio(k, e);
@@ -98,14 +135,31 @@ function contextoMeta(cliente) {
     token, conta: idc ? (idc.startsWith('act_') ? idc : `act_${idc}`) : '', pixel: le('META_PIXEL_ID') || '',
     teto: Number(le('META_MAX_DAILY_BUDGET_BRL')) || meta.TETO_PADRAO_BRL, page: le('META_PAGE_ID') || '', ig: le('META_IG_ID') || '', pageNome: '',
     // criativos enviados pelo assinante: só lê imagem do próprio cliente
-    carregarMidia: async (id) => {
+    carregarMidia: async (id, { dados = true } = {}) => {
       if (!poolRef) return null;
-      const { rows: [m] } = await poolRef.query('SELECT id, nome, mime, dados FROM saas_midias WHERE id=$1 AND cliente_id=$2', [Number(id), cliente.id]);
+      const { rows: [m] } = await poolRef.query(`SELECT id, nome, mime, tamanho, duracao, meta_ids${dados ? ', dados' : ''} FROM saas_midias WHERE id=$1 AND cliente_id=$2`, [Number(id), cliente.id]);
       return m || null;
+    },
+    // marca o momento em que o arquivo foi enviado ao Meta: 1 hora depois ele é apagado daqui
+    marcarEnviada: async (id) => { if (poolRef) await poolRef.query('UPDATE saas_midias SET enviada_em = COALESCE(enviada_em, now()) WHERE id=$1 AND cliente_id=$2', [Number(id), cliente.id]).catch(() => {}); },
+    // vídeo já enviado a esta conta de anúncios: evita subir de novo se a criação precisar ser repetida
+    guardarVideoMeta: async (id, conta, videoId) => {
+      if (poolRef) await poolRef.query(`UPDATE saas_midias SET meta_ids = meta_ids || jsonb_build_object($3::text, $4::text) WHERE id=$1 AND cliente_id=$2`, [Number(id), cliente.id, conta, String(videoId)]).catch(() => {});
     },
   };
 }
 const contextoGoogle = (cliente) => gads.contexto((k) => config.cfgProprio(k, escopoCliente(cliente)));
+
+// Apaga os arquivos enviados ao Meta há mais de 1 hora (o Meta já guarda a cópia dele), exceto os que ainda estão em rascunho
+async function purgarMidias(pool) {
+  try {
+    const r = await pool.query(
+      `DELETE FROM saas_midias m WHERE m.enviada_em IS NOT NULL AND m.enviada_em < now() - make_interval(mins => $1::int)
+       AND NOT EXISTS (SELECT 1 FROM saas_campanhas c WHERE c.cliente_id=m.cliente_id AND c.status IN ('rascunho','erro','criando')
+         AND (c.spec->>'imagem_url'='midia:'||m.id OR c.spec->'imagens_urls' ? ('midia:'||m.id)))`, [MIDIA_GUARDA_MIN]);
+    return r.rowCount;
+  } catch { return 0; }
+}
 
 // ---------- Rascunho por IA (cota mensal por assinante) ----------
 async function reservarIa(pool, conta) {
@@ -117,7 +171,7 @@ async function reservarIa(pool, conta) {
 const devolverIa = (pool, conta) => pool.query(
   `UPDATE saas_contas SET ia_usos = GREATEST(ia_usos-1,0) WHERE id=$1 AND ia_mes=$2`, [conta.id, mesAtual()]).catch(() => {});
 
-async function rascunhoIa(pool, conta, empresa, briefing) {
+async function rascunhoIa(pool, conta, empresa, briefing, anexos = []) {
   const { chamarTexto } = require('./projetos');
   const { extrairJson } = require('./comandos');
   const txt = (v, n) => String(v ?? '').trim().slice(0, n);
@@ -129,7 +183,9 @@ async function rascunhoIa(pool, conta, empresa, briefing) {
   const j = extrairJson(saida);
   if (!j || typeof j.campanha !== 'object') throw erro('Não consegui montar o rascunho. Descreva a campanha com mais detalhes e tente de novo.', 502);
   const spec = meta.normalizar(j.campanha);
-  const pend = (Array.isArray(j.pendencias) ? j.pendencias : []).map((x) => txt(x, 300)).filter(Boolean).slice(0, 12);
+  if (anexos.length) { delete spec.imagem_url; delete spec.imagens_urls; if (anexos.length === 1) spec.imagem_url = anexos[0]; else spec.imagens_urls = anexos; }
+  let pend = (Array.isArray(j.pendencias) ? j.pendencias : []).map((x) => txt(x, 300)).filter(Boolean).slice(0, 12);
+  if (anexos.length) pend = pend.filter((x) => !/imagem|imagens|arte|criativo|v[ií]deo/i.test(x));
   const falta = meta.faltando(spec); if (falta.length) pend.push(`Falta preencher: ${falta.join(', ')}.`);
   return { spec, pend };
 }
@@ -195,6 +251,7 @@ function registrarPublico(app, { pool, wrap, criarSessao }) {
 // ---------- Rotas autenticadas ----------
 function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   poolRef = pool;
+  purgarMidias(pool); setInterval(() => purgarMidias(pool), 10 * 60 * 1000).unref();
   const base = (req) => process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
   // Todas as rotas do assinante partem daqui: a conta vem da sessão
@@ -217,7 +274,7 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
         [c.id, c.empresa || 'Meu cliente', escopoDe(c)]));
       if (!cls.length) ({ rows: cls } = await pool.query('SELECT * FROM saas_clientes WHERE conta_id=$1 ORDER BY principal DESC, id', [c.id]));
     }
-    const pedido = req.headers['x-cliente'];
+    const pedido = req.headers['x-cliente'] || (req.method === 'GET' && req.path.endsWith('/arquivo') ? req.query.cliente : '');
     const cl = pedido ? cls.find((x) => String(x.id) === String(pedido)) : cls[0];
     if (!cl) return res.status(404).json({ erro: 'Cliente não encontrado.' });
     req.clientes = cls; req.cliente = cl;
@@ -445,38 +502,67 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
   }));
 
 
-  // ----- Criativos (imagens) do cliente: enviadas aqui e subidas ao Meta junto com a campanha -----
-  const metaMidia = (m) => ({ id: m.id, nome: m.nome, mime: m.mime, tamanho: m.tamanho, largura: m.largura, altura: m.altura, url: `/api/saas/midias/${m.id}/arquivo`, token: `midia:${m.id}` });
+  // ----- Criativos (imagens JPG/PNG e vídeos MP4/MOV) do cliente: enviados aqui e subidos ao Meta junto com a campanha -----
+  const metaMidia = (m) => ({
+    id: m.id, nome: m.nome, mime: m.mime, tipo: String(m.mime).startsWith('video/') ? 'video' : 'imagem', tamanho: m.tamanho, largura: m.largura, altura: m.altura,
+    duracao: m.duracao == null ? null : Number(m.duracao), url: `/api/saas/midias/${m.id}/arquivo`, token: `midia:${m.id}`,
+  });
+  const COLS_MIDIA = 'id, nome, mime, tamanho, largura, altura, duracao';
   app.get('/api/saas/midias', assinante, wrap(async (req, res) => {
-    const { rows } = await pool.query('SELECT id, nome, mime, tamanho, largura, altura FROM saas_midias WHERE cliente_id=$1 ORDER BY id DESC LIMIT 100', [req.cliente.id]);
+    await purgarMidias(pool);
+    const { rows } = await pool.query(`SELECT ${COLS_MIDIA} FROM saas_midias WHERE cliente_id=$1 ORDER BY id DESC LIMIT 100`, [req.cliente.id]);
     res.json({ midias: rows.map(metaMidia) });
   }));
-  app.post('/api/saas/midias', assinante, emDia, semSuporte, require('express').raw({ type: ['image/*', 'application/octet-stream'], limit: MAX_MIDIA_BYTES }), wrap(async (req, res) => {
+  app.post('/api/saas/midias', assinante, emDia, semSuporte, require('express').raw({ type: ['image/*', 'video/mp4', 'video/quicktime', 'application/octet-stream'], limit: MAX_VIDEO_BYTES }), wrap(async (req, res) => {
     const b = req.body;
-    if (!Buffer.isBuffer(b) || !b.length) throw erro('Envie uma imagem JPG ou PNG de até 8 MB.');
-    const info = inspecionarImagem(b);
-    if (!info) throw erro('Formato não aceito. Envie imagem JPG ou PNG.');
-    if (info.largura && (info.largura < 200 || info.altura < 200)) throw erro('Imagem muito pequena: use pelo menos 200 px de largura e altura (ideal 1080 px).');
-    const { rows: [{ n }] } = await pool.query('SELECT count(*)::int n FROM saas_midias WHERE cliente_id=$1', [req.cliente.id]);
-    if (n >= MAX_MIDIAS) throw erro('Você chegou ao limite de imagens guardadas deste cliente. Exclua as que não usa mais.');
+    if (!Buffer.isBuffer(b) || !b.length) throw erro('Envie uma imagem JPG/PNG (até 8 MB) ou um vídeo MP4/MOV (até 60 MB).');
     let nome = ''; try { nome = decodeURIComponent(String(req.headers['x-nome-arquivo'] || '')); } catch { /* nome ilegível */ }
-    nome = nome.replace(/[\u0000-\u001f/\\]/g, '').slice(0, 120) || 'imagem';
+    const info = inspecionarImagem(b);
+    let dados;
+    if (info) {
+      if (b.length > MAX_MIDIA_BYTES) throw erro('A imagem passa de 8 MB. Reduza o tamanho e envie de novo.');
+      if (info.largura && (info.largura < 200 || info.altura < 200)) throw erro('Imagem muito pequena: use pelo menos 200 px de largura e altura (ideal 1080 px).');
+      const { rows: [{ n }] } = await pool.query(`SELECT count(*)::int n FROM saas_midias WHERE cliente_id=$1 AND mime LIKE 'image/%'`, [req.cliente.id]);
+      if (n >= MAX_MIDIAS) throw erro('Você chegou ao limite de imagens guardadas deste cliente. Exclua as que não usa mais.');
+      dados = { mime: info.mime, largura: info.largura || null, altura: info.altura || null, duracao: null };
+    } else {
+      const v = inspecionarVideo(b);
+      if (!v) throw erro('Formato não aceito. Envie imagem JPG/PNG ou vídeo MP4/MOV.');
+      if (v.incompleto) throw erro('Não consegui ler este vídeo (arquivo incompleto ou corrompido). Exporte de novo em MP4.');
+      if (v.largura && (v.largura < 120 || v.altura < 120)) throw erro('Vídeo muito pequeno: use pelo menos 120 px de largura e altura (ideal 1080 px).');
+      if (v.duracao && v.duracao < 1) throw erro('O vídeo precisa ter pelo menos 1 segundo.');
+      if (v.duracao && v.duracao > 14400) throw erro('O vídeo passa de 240 minutos.');
+      const { rows: [{ n }] } = await pool.query(`SELECT count(*)::int n FROM saas_midias WHERE cliente_id=$1 AND mime LIKE 'video/%'`, [req.cliente.id]);
+      if (n >= MAX_VIDEOS) throw erro(`Você chegou ao limite de ${MAX_VIDEOS} vídeos guardados deste cliente. Exclua os que não usa mais.`);
+      dados = { mime: v.mime, largura: v.largura || null, altura: v.altura || null, duracao: v.duracao || null };
+    }
+    nome = nome.replace(/[\u0000-\u001f/\\]/g, '').slice(0, 120) || (info ? 'imagem' : 'video');
     const { rows: [m] } = await pool.query(
-      'INSERT INTO saas_midias (conta_id, cliente_id, nome, mime, tamanho, largura, altura, dados) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, nome, mime, tamanho, largura, altura',
-      [req.conta.id, req.cliente.id, nome, info.mime, b.length, info.largura || null, info.altura || null, b]);
+      `INSERT INTO saas_midias (conta_id, cliente_id, nome, mime, tamanho, largura, altura, duracao, dados) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${COLS_MIDIA}`,
+      [req.conta.id, req.cliente.id, nome, dados.mime, b.length, dados.largura, dados.altura, dados.duracao, b]);
     res.json({ midia: metaMidia(m) });
   }));
+  // Entrega o arquivo (com suporte a Range, que o vídeo precisa para tocar e avançar). O cliente pode vir em ?cliente= para <img>/<video src>.
   app.get('/api/saas/midias/:id/arquivo', assinante, wrap(async (req, res) => {
     const { rows: [m] } = await pool.query('SELECT mime, dados FROM saas_midias WHERE id=$1 AND cliente_id=$2', [Number(req.params.id) || 0, req.cliente.id]);
-    if (!m) throw erro('Imagem não encontrada.', 404);
-    res.set({ 'Content-Type': m.mime, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' }).send(m.dados);
+    if (!m) throw erro('Arquivo não encontrado.', 404);
+    const total = m.dados.length;
+    res.set({ 'Content-Type': m.mime, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' });
+    const r = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+    if (r && (r[1] || r[2])) {
+      let ini = r[1] ? Number(r[1]) : Math.max(0, total - Number(r[2])); let fim = r[1] && r[2] ? Number(r[2]) : total - 1;
+      fim = Math.min(fim, total - 1);
+      if (ini > fim || ini >= total) return res.status(416).set('Content-Range', `bytes */${total}`).end();
+      return res.status(206).set({ 'Content-Range': `bytes ${ini}-${fim}/${total}`, 'Content-Length': String(fim - ini + 1) }).end(m.dados.subarray(ini, fim + 1));
+    }
+    res.send(m.dados);
   }));
   app.delete('/api/saas/midias/:id', assinante, semSuporte, wrap(async (req, res) => {
     const id = Number(req.params.id) || 0;
     const { rows: [uso] } = await pool.query(`SELECT 1 FROM saas_campanhas WHERE cliente_id=$1 AND status IN ('rascunho','erro') AND (spec->>'imagem_url'=$2 OR spec->'imagens_urls' ? $2) LIMIT 1`, [req.cliente.id, `midia:${id}`]);
-    if (uso) throw erro('Esta imagem está em um rascunho de campanha. Troque a imagem no rascunho antes de excluir.', 409);
+    if (uso) throw erro('Este arquivo está em um rascunho de campanha. Troque o criativo no rascunho antes de excluir.', 409);
     const r = await pool.query('DELETE FROM saas_midias WHERE id=$1 AND cliente_id=$2', [id, req.cliente.id]);
-    if (!r.rowCount) throw erro('Imagem não encontrada.', 404);
+    if (!r.rowCount) throw erro('Arquivo não encontrado.', 404);
     res.json({ ok: true });
   }));
 
@@ -496,9 +582,19 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     const briefing = String(req.body?.briefing || '').trim();
     if (briefing.length < 20) throw erro('Descreva a campanha: objetivo, quanto quer gastar por dia, cidades, público e o que está sendo anunciado.');
     if (await contarCampanhas(req.conta.id) >= MAX_CAMPANHAS) throw erro('Você chegou ao limite de campanhas guardadas. Exclua rascunhos antigos.');
+    // criativos já enviados na própria tela: entram no rascunho no lugar da imagem que a IA deixaria pendente
+    const tokens = [...new Set((Array.isArray(req.body?.midias) ? req.body.midias : []).map(String))].slice(0, 10);
+    let anexos = [];
+    if (tokens.length) {
+      if (!tokens.every((t) => /^midia:\d+$/.test(t))) throw erro('Criativo inválido. Envie o arquivo de novo.');
+      const { rows } = await pool.query('SELECT id FROM saas_midias WHERE cliente_id=$1 AND id = ANY($2::int[])', [req.cliente.id, tokens.map((t) => Number(t.slice(6)))]);
+      const ok = new Set(rows.map((x) => `midia:${x.id}`));
+      anexos = tokens.filter((t) => ok.has(t));
+      if (anexos.length !== tokens.length) throw erro('Um dos criativos enviados não existe mais. Envie de novo.');
+    }
     await reservarIa(pool, req.conta);
     let r;
-    try { r = await rascunhoIa(pool, req.conta, req.cliente.nome || req.conta.empresa, briefing); } catch (e) { await devolverIa(pool, req.conta); throw e; }
+    try { r = await rascunhoIa(pool, req.conta, req.cliente.nome || req.conta.empresa, briefing, anexos); } catch (e) { await devolverIa(pool, req.conta); throw e; }
     const { rows: [c] } = await pool.query(
       `INSERT INTO saas_campanhas (conta_id, cliente_id, plataforma, spec, pendencias, briefing) VALUES ($1,$5,'meta',$2,$3,$4) RETURNING *`,
       [req.conta.id, r.spec, JSON.stringify(r.pend), briefing.slice(0, 6000), req.cliente.id]);
