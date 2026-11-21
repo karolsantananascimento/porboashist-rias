@@ -757,7 +757,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(r.status === 200 && r.corpo.display === 'standalone' && r.corpo.icons.length === 3 && r.corpo.start_url.startsWith('/assinante'), 'manifesto do app');
     for (const ic of r.corpo.icons) { const x = await req(null, 'GET', ic.src); ok(x.status === 200, `ícone ${ic.src} existe`); }
     r = await req(null, 'GET', '/sw.js'); ok(r.status === 200 && /\/api\//.test(r.corpo.raw), 'service worker não guarda chamadas da API');
-    r = await req(null, 'GET', '/'); ok((r.corpo.raw.match(/data-instalar/g) || []).length === 4, 'home tem o botão Baixar app (topo, destaque, final e rodapé)');
+    r = await req(null, 'GET', '/'); ok((r.corpo.raw.match(/<[a-z][^>]*data-instalar/g) || []).length === 4, 'home tem o botão Baixar app (topo, destaque, final e rodapé)');
     r = await req(null, 'GET', '/pwa.js'); ok(/Adicionar à Tela de Início/.test(r.corpo.raw) && /controllerchange/.test(r.corpo.raw), 'guia de instalação do iPhone e atualização automática');
     r = await req(null, 'GET', '/offline.html'); ok(r.status === 200, 'tela sem internet');
     for (const pg of ['/assinante', '/entrar', '/']) { r = await req(null, 'GET', pg); ok(/rel="manifest"/.test(r.corpo.raw || '') && /\/pwa\.js/.test(r.corpo.raw || ''), `${pg} liga o manifesto e o pwa.js`); }
@@ -845,6 +845,10 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req('adm', 'GET', '/api/me'); ok(r.status !== 500, 'o login de administradora continua funcionando');
     r = await req(null, 'GET', '/health'); ok(r.status === 200 && r.corpo.ok === true, 'rota /health responde sem login');
     r = await req(null, 'GET', '/fonts/Manrope.woff2'); ok(r.status === 200, 'fonte WOFF2 leve disponível');
+    r = await req(null, 'GET', '/llms.txt'); ok(r.status === 200 && /^# MidIAut/m.test(r.corpo.raw || '') && /\]\(https?:\/\//.test(r.corpo.raw || ''), 'llms.txt em Markdown com título e links');
+    r = await req(null, 'GET', '/.well-known/ard.json'); ok(r.status === 200 && Array.isArray(r.corpo.entries) && r.corpo.entries.every((e) => /^urn:air:[^:]+:[^:]+:[^:]+$/.test(e.identifier) && e.displayName && e.type && !!e.url !== !!e.data), 'manifesto ARD válido');
+    r = await req(null, 'GET', '/arquivo-que-nao-existe.json'); ok(r.status === 404, 'arquivo inexistente devolve 404 (não a página do painel)');
+    r = await req(null, 'GET', '/'); ok((r.corpo.raw || '').includes('google-site-verification') && (r.corpo.raw || '').includes('<style>'), 'home com verificação do Google e CSS embutido');
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
   }

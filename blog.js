@@ -102,7 +102,7 @@ function registrarPublico(app, { pool, wrap }) {
     const u = [['/', fs.statSync(path.join(__dirname, 'public', 'midiaut.html')).mtime], ['/blog', rows[0]?.updated_at || null], ...rows.map((p) => [`/blog/${p.slug}`, p.updated_at])];
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${u.map(([l, d]) => `<url><loc>${esc(b + l)}</loc>${d ? `<lastmod>${new Date(d).toISOString().slice(0, 10)}</lastmod>` : ''}</url>`).join('')}</urlset>`);
   }));
-  app.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nAllow: /\nAllow: /blog\nDisallow: /api/\nDisallow: /assinante\nSitemap: ${baseDe(req)}/sitemap.xml\n`));
+  app.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nAllow: /\nAllow: /blog\nDisallow: /api/\nDisallow: /assinante\nSitemap: ${baseDe(req)}/sitemap.xml\nAgentmap: ${baseDe(req)}/.well-known/ard.json\n`));
 }
 
 function registrar(app, { pool, wrap, soAdmin }) {
