@@ -8,7 +8,15 @@ const { cifrar, decifrar } = require('./cofre');
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(require('compression')()); // gzip em HTML, CSS, JS e JSON: páginas bem menores no celular
+app.use(require('compression')());
+app.use((req, res, next) => { // cabeçalhos de segurança (sem CSP rígida, para não quebrar login do Google/Meta nem o GA4)
+  if ((req.headers['x-forwarded-proto'] || req.protocol) === 'https') res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+}); // gzip em HTML, CSS, JS e JSON: páginas bem menores no celular
 app.use(express.json({ limit: '5mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch((e) => {
@@ -676,13 +684,68 @@ app.use((err, req, res, next) => {
 // Site de vendas da MidIAut (raiz /, com planos R$ 370 / 760 / 950 + pacote BI); os endereços antigos continuam apontando para ele
 require('./blog').registrarPublico(app, { pool, wrap });
 // A página de vendas sai com endereços absolutos (canonical, og:url, og:image) e o FAQ também em dados estruturados, para o Google e as redes sociais
-const htmlVendas = fs.readFileSync(path.join(__dirname, 'public', 'midiaut.html'), 'utf8');
+const cssVendas = fs.readFileSync(path.join(__dirname, 'public', 'midiaut.css'), 'utf8');
+const htmlVendas = fs.readFileSync(path.join(__dirname, 'public', 'midiaut.html'), 'utf8')
+  .replace('<link rel="stylesheet" href="/midiaut.css">', () => `<style>${cssVendas}</style>`); // CSS dentro do HTML: a página pinta sem esperar outro arquivo
 const faqVendas = [...htmlVendas.matchAll(/<details><summary>(.*?)<\/summary><p>(.*?)<\/p><\/details>/g)].map((m) => ({ '@type': 'Question', name: m[1].replace(/<[^>]+>/g, ''), acceptedAnswer: { '@type': 'Answer', text: m[2].replace(/<[^>]+>/g, '') } }));
 const paginaVendas = (req, res) => {
   const base = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
   const dados = [{ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqVendas }, { '@context': 'https://schema.org', '@type': 'Organization', name: 'MidIAut', url: `${base}/`, logo: `${base}/brand/midiaut/icone-512.png` }, { '@context': 'https://schema.org', '@type': 'WebSite', name: 'MidIAut', url: `${base}/`, inLanguage: 'pt-BR' }];
   res.type('html').send(htmlVendas.replaceAll('{{BASE}}', base).replace('</head>', `<script type="application/ld+json">${JSON.stringify(dados).replace(/</g, '\\u003c')}</script>\n</head>`));
 };
+// ---- Descoberta por agentes de IA: /llms.txt (resumo em Markdown) e manifesto ARD (/.well-known/ard.json) ----
+const baseDoPedido = (req) => `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+app.get('/llms.txt', (req, res) => {
+  const b = baseDoPedido(req);
+  res.type('text/markdown; charset=utf-8').set('Cache-Control', 'public, max-age=3600').send(`# MidIAut
+
+> MidIAut é uma plataforma brasileira de gestão de tráfego pago com IA. Ela monta campanhas de Meta Ads (Facebook e Instagram) e Google Ads a partir de uma descrição em linguagem natural; a pessoa revisa tudo e decide quando ativar. Nenhuma campanha vai ao ar sem aprovação.
+
+## Para começar
+
+- [Página inicial](${b}/): visão geral, funcionalidades, planos e perguntas frequentes.
+- [Criar conta grátis ou entrar](${b}/entrar): o plano Grátis não exige cartão.
+- [Blog](${b}/blog): artigos sobre tráfego pago, Google Ads e Meta Ads com IA.
+
+## O que a MidIAut faz
+
+- Cria rascunhos de campanha no Meta Ads e no Google Ads com IA; as campanhas nascem pausadas e só são ativadas pela pessoa.
+- Valida a configuração antes de criar e aponta pendências.
+- Mostra investimento, impressões, cliques e conversões dos últimos sete dias, conforme os dados das contas conectadas.
+- Atende empresários que anunciam por conta própria, gestores de tráfego com vários clientes e agências.
+
+## Planos (valores em reais, por mês)
+
+- Grátis: R$ 0, 1 campanha por mês e 3 rascunhos com IA.
+- Solo: R$ 370, 10 campanhas por mês.
+- Agência: R$ 760, 3 clientes e 30 campanhas por mês.
+- Escala: R$ 950, 5 clientes e 50 campanhas por mês.
+- Pacote de BI: R$ 50 por mês, opcional em qualquer plano.
+- Teste de 7 dias sem cartão nos planos pagos.
+
+## Descoberta
+
+- [Mapa do site](${b}/sitemap.xml)
+- [Manifesto ARD](${b}/.well-known/ard.json)
+`);
+});
+const manifestoARD = (req) => ({
+  specVersion: '1.0',
+  host: { displayName: 'MidIAut', identifier: 'midiaut.space' },
+  entries: [{
+    identifier: 'urn:air:midiaut.space:docs:visao-geral',
+    displayName: 'MidIAut: visão geral, funcionalidades e planos',
+    description: 'Resumo em Markdown da plataforma de gestão de tráfego pago com IA (Meta Ads e Google Ads), com links e planos.',
+    type: 'text/markdown',
+    url: `${baseDoPedido(req)}/llms.txt`,
+    representativeQueries: [
+      'ferramenta de IA para criar campanhas no Meta Ads e Google Ads',
+      'quanto custa uma plataforma de gestão de tráfego pago com IA',
+      'software para gestor de tráfego atender vários clientes',
+    ],
+  }],
+});
+app.get(['/.well-known/ard.json', '/.well-known/ai-catalog.json'], (req, res) => res.type('application/json').set('Cache-Control', 'public, max-age=3600').json(manifestoARD(req)));
 app.get('/midiaut', (req, res) => res.redirect(301, '/'));
 // A raiz do site é a página de vendas; o painel interno fica em /sistema (convites antigos com ?convite= continuam abrindo o painel)
 // Verificação leve para monitor externo (mantém o plano grátis do Render acordado). Não toca no banco.
@@ -693,9 +756,10 @@ app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, arq) => { // imagens, vídeo e fontes ficam em cache por 7 dias; HTML, CSS e JS sempre revalidam (304 barato)
-    if (/\.(png|jpe?g|webp|svg|ico|mp4|woff2?)$/i.test(arq)) res.setHeader('Cache-Control', 'public, max-age=604800');
+    if (/\.(png|jpe?g|webp|svg|ico|mp4|woff2?|ttf)$/i.test(arq)) res.setHeader('Cache-Control', 'public, max-age=604800');
   },
 }));
+app.get(/^\/.well-known\/|\.[a-z0-9]{2,5}$/i, (req, res) => res.status(404).type('text/plain').send('Não encontrado')); // arquivo inexistente: 404 de verdade, não a página do painel
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;

@@ -1,6 +1,6 @@
 // Service worker da MidIAut: guarda o visual do app para abrir rápido e mostra uma tela amigável sem internet.
 // Nunca guarda dados da conta: tudo em /api passa direto pela rede.
-const VERSAO = 'midiaut-v4';
+const VERSAO = 'midiaut-v5';
 const BASICO = ['/offline.html', '/brand/midiaut/icone-192.png', '/brand/midiaut/favicon.svg'];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(BASICO)).then(() => self.skipWaiting())); });
