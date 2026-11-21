@@ -1,5 +1,5 @@
 /* Identidade MidIAut: tema escuro grafite com verde-lima, compartilhado pelo sistema interno e pela área do assinante */
-@font-face { font-family: Manrope; src: url("/fonts/Manrope.ttf") format("truetype"); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: Manrope; src: url("/fonts/Manrope.woff2") format("woff2"), url("/fonts/Manrope.ttf") format("truetype"); font-weight: 200 800; font-display: swap; }
 :root {
   --bg: #17191D; --surface: #1E2127; --surface-2: #262A31; --ink: #FFFFFF; --ink-2: #A8AEBA; --ink-3: #777E8B;
   --line: #2E333B; --accent: #B6FF45; --accent-soft: rgba(182,255,69,.14); --ok: #B6FF45; --ok-soft: rgba(182,255,69,.14);

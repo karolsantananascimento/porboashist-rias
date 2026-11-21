@@ -1,6 +1,6 @@
 /* MidIAut: identidade visual (landing, cadastro e entrada).
    Preto grafite #17191D, cinza técnico #777E8B, verde-lima digital #B6FF45, branco #FFFFFF. Tipografia Manrope. */
-@font-face { font-family: Manrope; src: url("/fonts/Manrope.ttf") format("truetype"); font-weight: 200 800; font-style: normal; font-display: swap; }
+@font-face { font-family: Manrope; src: url("/fonts/Manrope.woff2") format("woff2"), url("/fonts/Manrope.ttf") format("truetype"); font-weight: 200 800; font-style: normal; font-display: swap; }
 :root {
   --grafite: #17191D; --grafite-2: #1E2127; --grafite-3: #262A31; --linha: #2E333B;
   --cinza: #777E8B; --texto-2: #A8AEBA; --lima: #B6FF45; --lima-2: #C8FF6B; --branco: #FFFFFF;
