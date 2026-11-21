@@ -734,7 +734,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req(null, 'GET', '/blog/' + post.slug); ok(r.status === 404, 'rascunho não aparece no site');
     r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: post.titulo, status: 'publicado' }); ok(r.status === 400, 'não publica sem resumo e texto');
     r = await req('adm', 'POST', '/api/site/previa', { corpo: '## Oi\n<script>alert(1)</script> **forte** [x](javascript:alert(1)) [ok](https://exemplo.com)\n- a\n- b' });
-    ok(/<h3>Oi<\/h3>/.test(r.corpo.html) && !/<script/.test(r.corpo.html) && !/href="javascript/.test(r.corpo.html) && /<strong>forte<\/strong>/.test(r.corpo.html) && /<ul>/.test(r.corpo.html) && /href="https:\/\/exemplo.com"/.test(r.corpo.html), 'Markdown vira HTML e escapa script e links perigosos');
+    ok(/<h2>Oi<\/h2>/.test(r.corpo.html) && !/<script/.test(r.corpo.html) && !/href="javascript/.test(r.corpo.html) && /<strong>forte<\/strong>/.test(r.corpo.html) && /<ul>/.test(r.corpo.html) && /href="https:\/\/exemplo.com"/.test(r.corpo.html), 'Markdown vira HTML e escapa script e links perigosos');
     r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Como criar anúncios no Instagram', resumo: 'Passo a passo simples.', corpo: '## Comece\nTexto <b>cru</b>.', capa_url: 'http://inseguro.com/a.jpg', status: 'publicado' });
     ok(r.status === 400, 'capa precisa ser https');
     r = await req('adm', 'PUT', `/api/site/posts/${post.id}`, { titulo: 'Como criar anúncios no Instagram', resumo: 'Passo a passo simples.', corpo: '## Comece\nTexto <b>cru</b>.', status: 'publicado' });

@@ -18,6 +18,7 @@ function inline(t) {
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
   return h;
 }
+// O título do artigo já é o <h1>: ## vira <h2> e ### vira <h3>.
 function markdown(src) {
   const linhas = String(src || '').replace(/\r/g, '').split('\n'); const out = []; let par = []; let lista = null;
   const fechaPar = () => { if (par.length) { out.push(`<p>${inline(par.join(' '))}</p>`); par = []; } };
@@ -25,7 +26,7 @@ function markdown(src) {
   for (const l of linhas) {
     let m;
     if (!l.trim()) { fechaPar(); fechaLista(); continue; }
-    if ((m = /^(#{1,3})\s+(.*)$/.exec(l))) { fechaPar(); fechaLista(); const n = m[1].length + 1; out.push(`<h${n}>${inline(m[2])}</h${n}>`); continue; }
+    if ((m = /^(#{1,3})\s+(.*)$/.exec(l))) { fechaPar(); fechaLista(); const n = Math.max(2, m[1].length); out.push(`<h${n}>${inline(m[2])}</h${n}>`); continue; }
     if (/^---+$/.test(l.trim())) { fechaPar(); fechaLista(); out.push('<hr>'); continue; }
     if ((m = /^>\s?(.*)$/.exec(l))) { fechaPar(); fechaLista(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); continue; }
     if ((m = /^\s*[-*]\s+(.*)$/.exec(l))) { fechaPar(); if (lista !== 'ul') { fechaLista(); out.push('<ul>'); lista = 'ul'; } out.push(`<li>${inline(m[1])}</li>`); continue; }
