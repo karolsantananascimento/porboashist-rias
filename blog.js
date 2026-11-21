@@ -147,7 +147,7 @@ function registrar(app, { pool, wrap, soAdmin }) {
 
 // Publica os artigos iniciais (blog-seed.js) uma única vez cada; se a administradora apagar ou editar, nada é recriado.
 async function semear(pool) {
-  for (const a of require('./blog-seed')) {
+  for (const a of [...require('./blog-seed'), ...require('./blog-seed-2')]) {
     const c = await pool.connect();
     try {
       await c.query('BEGIN');

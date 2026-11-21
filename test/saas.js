@@ -742,8 +742,8 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     r = await req(null, 'GET', '/blog/' + post.slug);
     ok(r.status === 200 && /<h1>Como criar anúncios no Instagram<\/h1>/.test(r.corpo.raw) && /&lt;b&gt;cru&lt;\/b&gt;/.test(r.corpo.raw) && /BlogPosting/.test(r.corpo.raw) && /rel="canonical"/.test(r.corpo.raw), 'artigo público com SEO e texto escapado');
     {
-      const seeds = require('../blog-seed'); const slugs = seeds.map((a) => a.slug);
-      ok(seeds.length === 6, 'seis artigos iniciais de SEO');
+      const seeds = [...require('../blog-seed'), ...require('../blog-seed-2')]; const slugs = seeds.map((a) => a.slug);
+      ok(seeds.length === 9, 'nove artigos iniciais de SEO');
       r = await req(null, 'GET', '/sitemap.xml'); ok(slugs.every((sl) => r.corpo.raw.includes('/blog/' + sl)), 'sitemap lista os artigos iniciais');
       ok(seeds.every((a) => a.seo_titulo.length <= 60 && a.seo_desc.length >= 100 && a.seo_desc.length <= 160), 'títulos SEO até 60 e descrições entre 100 e 160 caracteres');
       const links = seeds.flatMap((a) => [...a.corpo.matchAll(/\]\(\/blog\/([a-z0-9-]+)\)/g)].map((m) => m[1]));
