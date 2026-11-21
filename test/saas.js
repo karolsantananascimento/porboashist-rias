@@ -843,6 +843,7 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
     ok(!!meu, 'o perfil aparece na lista de assinantes');
     r = await req('adm', 'DELETE', `/api/saas/admin/assinantes/${meu.id}`); ok(r.status === 409, 'o perfil da administradora não pode ser excluído');
     r = await req('adm', 'GET', '/api/me'); ok(r.status !== 500, 'o login de administradora continua funcionando');
+    r = await req(null, 'GET', '/health'); ok(r.status === 200 && r.corpo.ok === true, 'rota /health responde sem login');
   } catch (e) {
     console.error('ERRO NO TESTE', e); falhas++;
   }

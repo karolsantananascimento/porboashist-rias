@@ -684,6 +684,8 @@ const paginaVendas = (req, res) => {
 };
 app.get('/midiaut', (req, res) => res.redirect(301, '/'));
 // A raiz do site é a página de vendas; o painel interno fica em /sistema (convites antigos com ?convite= continuam abrindo o painel)
+// Verificação leve para monitor externo (mantém o plano grátis do Render acordado). Não toca no banco.
+app.get('/health', (req, res) => { res.set('Cache-Control', 'no-store'); res.json({ ok: true }); });
 app.get('/', (req, res, next) => (req.query.convite ? res.sendFile(path.join(__dirname, 'public', 'index.html')) : paginaVendas(req, res, next)));
 app.get(['/midiaut.html', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.redirect(301, '/'));
 app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
