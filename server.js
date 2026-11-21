@@ -8,6 +8,7 @@ const { cifrar, decifrar } = require('./cofre');
 
 const app = express();
 app.set('trust proxy', 1);
+app.use(require('compression')()); // gzip em HTML, CSS, JS e JSON: páginas bem menores no celular
 app.use(express.json({ limit: '5mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 const wrap = (fn) => (req, res, next) => fn(req, res, next).catch((e) => {
@@ -690,7 +691,11 @@ app.get('/', (req, res, next) => (req.query.convite ? res.sendFile(path.join(__d
 app.get(['/midiaut.html', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.redirect(301, '/'));
 app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, arq) => { // imagens, vídeo e fontes ficam em cache por 7 dias; HTML, CSS e JS sempre revalidam (304 barato)
+    if (/\.(png|jpe?g|webp|svg|ico|mp4|woff2?)$/i.test(arq)) res.setHeader('Cache-Control', 'public, max-age=604800');
+  },
+}));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
