@@ -230,3 +230,10 @@ form > .dica { margin: 0; }
 @media (max-width: 560px) { .topo-links { gap: 10px; } .topo-links .voltar { display: none; } }
 button.entrar { background: none; border: 0; cursor: pointer; font-family: inherit; }
 html, body { overflow-x: clip; max-width: 100%; }
+
+/* Artigos do blog na página de vendas (links internos para o Google e para o visitante) */
+.artigos-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
+.artigo-cartao { display: block; background: #1E2127; border: 1px solid #2E333B; border-radius: 14px; padding: 20px; color: inherit; text-decoration: none; transition: border-color .15s; }
+.artigo-cartao:hover { border-color: var(--lima); }
+.artigo-cartao h3 { margin: 0 0 8px; font-size: 18px; line-height: 1.3; color: var(--branco); }
+.artigo-cartao p { margin: 0; color: var(--texto-2); font-size: 14px; }

@@ -38,7 +38,21 @@ function markdown(src) {
 }
 const minutos = (md) => Math.max(1, Math.round(String(md || '').split(/\s+/).filter(Boolean).length / 200));
 
-const CSS = `@font-face{font-family:Manrope;src:url(/fonts/Manrope.ttf);font-weight:200 800;font-display:swap}
+// Perguntas frequentes do artigo (seção "## Perguntas frequentes" com linhas "**Pergunta?** Resposta") viram FAQPage nos dados estruturados
+function faqDe(md) {
+  const sec = /\n##\s+(?:Perguntas frequentes|FAQ|Dúvidas frequentes)[^\n]*\n([\s\S]*?)(?=\n##\s|$)/i.exec(`\n${String(md || '').replace(/\r/g, '')}`);
+  if (!sec) return [];
+  const limpa = (t) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\*\*?([^*]+)\*\*?/g, '$1').trim();
+  return sec[1].split(/\n\s*\n/).map((b) => /^\*\*(.+?\?)\*\*\s*([\s\S]+)$/.exec(b.trim())).filter(Boolean)
+    .map((m) => ({ '@type': 'Question', name: limpa(m[1]), acceptedAnswer: { '@type': 'Answer', text: limpa(m[2].replace(/\n/g, ' ')) } }));
+}
+const palavras = (md) => String(md || '').split(/\s+/).filter(Boolean).length;
+const ORG = (b) => ({ '@type': 'Organization', name: 'MidIAut', url: `${b}/`, logo: { '@type': 'ImageObject', url: `${b}/brand/midiaut/icone-512.png` } });
+const migalhas = (b, itens) => ({ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: itens.map(([nome, url], i) => ({ '@type': 'ListItem', position: i + 1, name: nome, item: `${b}${url}` })) });
+
+const CSS = `@font-face{font-family:Manrope;src:url(/fonts/Manrope.woff2) format('woff2'),url(/fonts/Manrope.ttf) format('truetype');font-weight:200 800;font-display:swap}
+.migalha{font-size:14px;color:#777E8B;margin:0 0 18px}.migalha a{color:#A8AEBA;text-decoration:none}.migalha a:hover{color:#B6FF45}
+.relacionados{margin-top:48px}.relacionados h2{font-size:24px;margin:0 0 16px}
 *{box-sizing:border-box}body{margin:0;background:#17191D;color:#E8EAEE;font:17px/1.7 Manrope,system-ui,sans-serif}
 a{color:#B6FF45}header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;border-bottom:1px solid #2E333B;position:sticky;top:0;background:rgba(23,25,29,.92);backdrop-filter:blur(8px)}
 .marca{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-weight:800;font-size:20px}.marca img{height:30px}.marca i{color:#B6FF45;font-style:normal}
@@ -53,10 +67,13 @@ ul,ol{padding-left:22px}hr{border:0;border-top:1px solid #2E333B;margin:2em 0}
 .fim{margin-top:48px;background:#1E2127;border:1px solid #2E333B;border-radius:16px;padding:26px;text-align:center}.fim p{margin:0 0 14px;color:#A8AEBA}
 footer{border-top:1px solid #2E333B;padding:24px;text-align:center;color:#777E8B;font-size:14px}footer a{color:#A8AEBA}`;
 
-function pagina({ titulo, descricao, canonico, corpo, tipo = 'website', capa, jsonld }) {
+function pagina({ titulo, descricao, canonico, corpo, tipo = 'website', capa, jsonld, indexar = true }) {
   return `<!doctype html><html lang="pt-BR"><head><!-- Google Tag Manager --><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-PZX4VV6R');</script><!-- End Google Tag Manager --><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)}</title><meta name="description" content="${esc(descricao)}"><link rel="canonical" href="${esc(canonico)}">
-<meta name="theme-color" content="#17191D"><link rel="icon" href="/brand/midiaut/favicon.svg">
+<meta name="robots" content="${indexar ? 'index, follow, max-image-preview:large, max-snippet:-1' : 'noindex, follow'}">
+<link rel="preload" href="/fonts/Manrope.woff2" as="font" type="font/woff2" crossorigin>
+<meta name="theme-color" content="#17191D"><link rel="icon" href="/brand/midiaut/favicon.svg"><link rel="alternate" type="application/rss+xml" title="Blog MidIAut" href="/blog/rss.xml">
+<meta property="og:site_name" content="MidIAut"><meta property="og:locale" content="pt_BR"><meta name="twitter:card" content="summary_large_image">
 <meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:type" content="${tipo}"><meta property="og:url" content="${esc(canonico)}"><meta property="og:image" content="${esc(capa || new URL('/brand/midiaut/og.png', canonico).href)}">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}<style>${CSS}</style></head><body><!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PZX4VV6R" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript><!-- End Google Tag Manager (noscript) -->
 <header class="top"><a class="marca" href="/"><img src="/brand/midiaut/simbolo.svg" alt="" width="34" height="30"><span>Mid<i>IA</i>ut</span></a><nav><a href="/blog" style="margin-right:18px;color:#A8AEBA;text-decoration:none">Blog</a><a class="cta" href="/cadastro?plano=testar">Testar grátis</a></nav></header>
@@ -84,18 +101,35 @@ function registrarPublico(app, { pool, wrap }) {
     const lista = rows.length ? rows.map((p) => `<a class="cartao" href="/blog/${esc(p.slug)}"><small>${esc(dataBr(p.publicado_em))} · ${minutos(p.corpo)} min de leitura</small><h2>${esc(p.titulo)}</h2><p>${esc(p.resumo)}</p></a>`).join('') : '<p class="lede">Os primeiros artigos chegam em breve.</p>';
     res.type('html').send(pagina({
       titulo: 'Blog MidIAut | Tráfego pago, Google Ads e Meta Ads com IA', descricao: 'Artigos sobre gestão de tráfego pago, Google Ads, Meta Ads e automação com inteligência artificial.', canonico: `${b}/blog`,
-      corpo: `<main><h1>Blog</h1><p class="lede">Tráfego pago, Google Ads, Meta Ads e automação com IA.</p><br>${lista}</main>`,
+      jsonld: [
+        { '@context': 'https://schema.org', '@type': 'Blog', name: 'Blog MidIAut', url: `${b}/blog`, inLanguage: 'pt-BR', publisher: ORG(b), blogPost: rows.map((p) => ({ '@type': 'BlogPosting', headline: p.titulo, url: `${b}/blog/${p.slug}`, datePublished: p.publicado_em })) },
+        migalhas(b, [['Início', '/'], ['Blog', '/blog']]),
+      ],
+      corpo: `<main><nav class="migalha" aria-label="Você está em"><a href="/">Início</a> › Blog</nav><h1>Blog de tráfego pago com IA</h1><p class="lede">Guias práticos de Google Ads, Meta Ads (Facebook e Instagram) e automação de campanhas com inteligência artificial.</p><br>${lista}</main>`,
     }));
+  }));
+  // Feed RSS: ajuda leitores de feed e buscadores a descobrir artigos novos
+  app.get('/blog/rss.xml', wrap(async (req, res) => {
+    const b = baseDe(req); const { rows } = await pool.query(`SELECT titulo, slug, resumo, publicado_em FROM site_posts WHERE status='publicado' ORDER BY publicado_em DESC LIMIT 50`);
+    res.type('application/rss+xml').set('Cache-Control', 'public, max-age=3600').send(`<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>Blog MidIAut</title><link>${esc(b)}/blog</link><description>Tráfego pago, Google Ads, Meta Ads e automação com IA.</description><language>pt-BR</language>${rows.map((p) => `<item><title>${esc(p.titulo)}</title><link>${esc(`${b}/blog/${p.slug}`)}</link><guid>${esc(`${b}/blog/${p.slug}`)}</guid><pubDate>${new Date(p.publicado_em).toUTCString()}</pubDate><description>${esc(p.resumo)}</description></item>`).join('')}</channel></rss>`);
   }));
   app.get('/blog/:slug', wrap(async (req, res) => {
     const { rows: [p] } = await pool.query(`SELECT * FROM site_posts WHERE slug=$1 AND status='publicado'`, [String(req.params.slug).slice(0, 100)]);
-    if (!p) return res.status(404).type('html').send(pagina({ titulo: 'Artigo não encontrado | MidIAut', descricao: 'Artigo não encontrado.', canonico: `${baseDe(req)}/blog`, corpo: '<main><h1>Artigo não encontrado</h1><p class="lede">Esse artigo não existe ou saiu do ar.</p><p><a href="/blog">Ver todos os artigos</a></p></main>' }));
+    if (!p) return res.status(404).type('html').send(pagina({ titulo: 'Artigo não encontrado | MidIAut', descricao: 'Artigo não encontrado.', canonico: `${baseDe(req)}/blog`, indexar: false, corpo: '<main><h1>Artigo não encontrado</h1><p class="lede">Esse artigo não existe ou saiu do ar.</p><p><a href="/blog">Ver todos os artigos</a></p></main>' }));
     const b = baseDe(req); const url = `${b}/blog/${p.slug}`;
-    const jsonld = { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: p.titulo, description: p.seo_desc || p.resumo, datePublished: p.publicado_em, dateModified: p.updated_at, mainEntityOfPage: url, image: p.capa_url || undefined, author: { '@type': 'Organization', name: 'MidIAut' }, publisher: { '@type': 'Organization', name: 'MidIAut' } };
+    // "Leia também": outros artigos publicados, para o leitor (e o Google) seguirem para páginas relacionadas
+    const { rows: outros } = await pool.query(`SELECT titulo, slug, resumo FROM site_posts WHERE status='publicado' AND id<>$1 ORDER BY publicado_em DESC LIMIT 3`, [p.id]);
+    const faq = faqDe(p.corpo);
+    const jsonld = [
+      { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: p.titulo, description: p.seo_desc || p.resumo, datePublished: p.publicado_em, dateModified: p.updated_at, mainEntityOfPage: { '@type': 'WebPage', '@id': url }, url, inLanguage: 'pt-BR', wordCount: palavras(p.corpo), image: p.capa_url || `${b}/brand/midiaut/og.png`, author: { '@type': 'Organization', name: p.autor || 'Equipe MidIAut', url: `${b}/` }, publisher: ORG(b) },
+      migalhas(b, [['Início', '/'], ['Blog', '/blog'], [p.titulo, `/blog/${p.slug}`]]),
+      ...(faq.length ? [{ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq }] : []),
+    ];
+    const leia = outros.length ? `<section class="relacionados" aria-labelledby="t-leia"><h2 id="t-leia">Leia também</h2>${outros.map((o) => `<a class="cartao" href="/blog/${esc(o.slug)}"><h3 style="margin:0 0 6px;font-size:19px">${esc(o.titulo)}</h3><p>${esc(o.resumo)}</p></a>`).join('')}</section>` : '';
     res.type('html').send(pagina({
       titulo: p.seo_titulo || `${p.titulo} | MidIAut`, descricao: p.seo_desc || p.resumo || p.titulo, canonico: url, tipo: 'article', capa: p.capa_url || undefined, jsonld,
-      corpo: `<main><article><p class="meta"><a href="/blog">← Blog</a> · ${esc(dataBr(p.publicado_em))} · ${minutos(p.corpo)} min de leitura</p><h1>${esc(p.titulo)}</h1>${p.resumo ? `<p class="lede">${esc(p.resumo)}</p>` : ''}${p.capa_url ? `<img class="capa" src="${esc(p.capa_url)}" alt="">` : ''}${markdown(p.corpo)}</article>
-<div class="fim"><p><b>Crie campanhas de Google e Meta em minutos.</b><br>Teste a MidIAut por 7 dias, sem cartão.</p><a class="cta" href="/cadastro?plano=testar">Testar grátis</a></div></main>`,
+      corpo: `<main><article><nav class="migalha" aria-label="Você está em"><a href="/">Início</a> › <a href="/blog">Blog</a></nav><p class="meta"><time datetime="${new Date(p.publicado_em).toISOString().slice(0, 10)}">${esc(dataBr(p.publicado_em))}</time> · ${minutos(p.corpo)} min de leitura · ${esc(p.autor || 'Equipe MidIAut')}</p><h1>${esc(p.titulo)}</h1>${p.resumo ? `<p class="lede">${esc(p.resumo)}</p>` : ''}${p.capa_url ? `<img class="capa" src="${esc(p.capa_url)}" alt="${esc(p.titulo)}">` : ''}${markdown(p.corpo)}</article>
+<div class="fim"><p><b>Crie campanhas de Google e Meta em minutos.</b><br>Teste a MidIAut por 7 dias, sem cartão.</p><a class="cta" href="/cadastro?plano=testar">Testar grátis</a></div>${leia}</main>`,
     }));
   }));
   app.get('/sitemap.xml', wrap(async (req, res) => {

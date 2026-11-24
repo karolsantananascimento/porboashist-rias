@@ -688,11 +688,35 @@ const cssVendas = fs.readFileSync(path.join(__dirname, 'public', 'midiaut.css'),
 const htmlVendas = fs.readFileSync(path.join(__dirname, 'public', 'midiaut.html'), 'utf8')
   .replace('<link rel="stylesheet" href="/midiaut.css">', () => `<style>${cssVendas}</style>`); // CSS dentro do HTML: a página pinta sem esperar outro arquivo
 const faqVendas = [...htmlVendas.matchAll(/<details><summary>(.*?)<\/summary><p>(.*?)<\/p><\/details>/g)].map((m) => ({ '@type': 'Question', name: m[1].replace(/<[^>]+>/g, ''), acceptedAnswer: { '@type': 'Answer', text: m[2].replace(/<[^>]+>/g, '') } }));
-const paginaVendas = (req, res) => {
-  const base = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-  const dados = [{ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqVendas }, { '@context': 'https://schema.org', '@type': 'Organization', name: 'MidIAut', url: `${base}/`, logo: `${base}/brand/midiaut/icone-512.png` }, { '@context': 'https://schema.org', '@type': 'WebSite', name: 'MidIAut', url: `${base}/`, inLanguage: 'pt-BR' }];
-  res.type('html').send(htmlVendas.replaceAll('{{BASE}}', base).replace('</head>', `<script type="application/ld+json">${JSON.stringify(dados).replace(/</g, '\\u003c')}</script>\n</head>`));
+// Últimos artigos do blog na página de vendas (cache de 10 min): links internos da página mais forte do site para o blog
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let artigosCache = { em: 0, html: '' };
+async function artigosVendas() {
+  if (Date.now() - artigosCache.em < 10 * 60 * 1000) return artigosCache.html;
+  try {
+    const { rows } = await pool.query(`SELECT titulo, slug, resumo FROM site_posts WHERE status='publicado' ORDER BY publicado_em DESC LIMIT 6`);
+    const html = rows.length ? `<section class="bloco" id="artigos" aria-labelledby="t-artigos"><div class="miolo"><p class="rotulo">Blog</p><h2 id="t-artigos" class="titulo">Guias de tráfego pago <em>com IA</em>.</h2><div class="artigos-grade">${rows.map((p) => `<a class="artigo-cartao" href="/blog/${escHtml(p.slug)}"><h3>${escHtml(p.titulo)}</h3><p>${escHtml(p.resumo)}</p></a>`).join('')}</div><p style="margin-top:20px"><a class="botao vazado" href="/blog">Ver todos os artigos</a></p></div></section>` : '';
+    artigosCache = { em: Date.now(), html };
+  } catch { /* sem banco: a página sai sem a seção */ }
+  return artigosCache.html;
+}
+const paginaVendas = async (req, res, next) => {
+  try {
+    const base = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+    const ofertas = Object.entries(saas.PLANOS).map(([id, p]) => ({ '@type': 'Offer', name: `Plano ${p.nome}`, price: String(p.preco), priceCurrency: 'BRL', url: `${base}/#planos`, category: id === 'gratis' ? 'free' : 'subscription' }));
+    const dados = [
+      { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqVendas },
+      { '@context': 'https://schema.org', '@type': 'Organization', name: 'MidIAut', url: `${base}/`, logo: `${base}/brand/midiaut/icone-512.png` },
+      { '@context': 'https://schema.org', '@type': 'WebSite', name: 'MidIAut', url: `${base}/`, inLanguage: 'pt-BR' },
+      { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'MidIAut', url: `${base}/`, applicationCategory: 'BusinessApplication', applicationSubCategory: 'Gestão de tráfego pago com IA', operatingSystem: 'Web', inLanguage: 'pt-BR', description: 'Plataforma de gestão de tráfego pago com inteligência artificial: cria campanhas no Google Ads e no Meta Ads (Facebook e Instagram) a partir de um briefing, com revisão antes de ativar.', offers: ofertas },
+    ];
+    const html = htmlVendas.replaceAll('{{BASE}}', base).replace('<!--ARTIGOS-->', await artigosVendas())
+      .replace('</head>', `<script type="application/ld+json">${JSON.stringify(dados).replace(/</g, '\\u003c')}</script>\n</head>`);
+    res.type('html').send(html);
+  } catch (e) { next(e); }
 };
+// Painel interno e endereços desconhecidos não entram no Google (evita "soft 404" e páginas do sistema no índice)
+const semIndice = (res) => res.set('X-Robots-Tag', 'noindex, nofollow');
 // ---- Descoberta por agentes de IA: /llms.txt (resumo em Markdown) e manifesto ARD (/.well-known/ard.json) ----
 const baseDoPedido = (req) => `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
 app.get('/llms.txt', (req, res) => {
@@ -750,17 +774,18 @@ app.get('/midiaut', (req, res) => res.redirect(301, '/'));
 // A raiz do site é a página de vendas; o painel interno fica em /sistema (convites antigos com ?convite= continuam abrindo o painel)
 // Verificação leve para monitor externo (mantém o plano grátis do Render acordado). Não toca no banco.
 app.get('/health', (req, res) => { res.set('Cache-Control', 'no-store'); res.json({ ok: true }); });
-app.get('/', (req, res, next) => (req.query.convite ? res.sendFile(path.join(__dirname, 'public', 'index.html')) : paginaVendas(req, res, next)));
+app.get('/', (req, res, next) => (req.query.convite ? semIndice(res).sendFile(path.join(__dirname, 'public', 'index.html')) : paginaVendas(req, res, next)));
 app.get(['/midiaut.html', '/gestoragent', '/gestoragente', '/assinar', '/agente', '/agente-de-trafego'], (req, res) => res.redirect(301, '/'));
 app.get(['/cadastro', '/entrar'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'cadastro.html')));
 app.get('/assinante', (req, res) => res.sendFile(path.join(__dirname, 'public', 'assinante.html')));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, arq) => { // imagens, vídeo e fontes ficam em cache por 7 dias; HTML, CSS e JS sempre revalidam (304 barato)
     if (/\.(png|jpe?g|webp|svg|ico|mp4|woff2?|ttf)$/i.test(arq)) res.setHeader('Cache-Control', 'public, max-age=604800');
+    if (/\.html$/i.test(arq)) semIndice(res); // HTML solto (painel, cadastro, área do assinante) não é página de busca
   },
 }));
 app.get(/^\/.well-known\/|\.[a-z0-9]{2,5}$/i, (req, res) => res.status(404).type('text/plain').send('Não encontrado')); // arquivo inexistente: 404 de verdade, não a página do painel
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*', (req, res) => semIndice(res).sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 init()
