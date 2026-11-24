@@ -934,12 +934,19 @@ function registrar(app, { pool, wrap, soAdmin, gerarConvite, suporte }) {
     const sets = []; const vals = [c.id];
     const add = (sql, v) => { vals.push(v); sets.push(sql.replace('?', '$' + vals.length)); };
     if (typeof b.cortesia === 'boolean') add('cortesia=?', b.cortesia);
-    if (b.plano !== undefined) { if (!Object.hasOwn(PLANOS, b.plano)) throw erro('Plano inválido'); add('plano=?', b.plano); }
+    if (b.plano !== undefined) {
+      if (!Object.hasOwn(PLANOS, b.plano)) throw erro('Plano inválido');
+      add('plano=?', b.plano);
+      // Grátis é permanente (sem prazo de teste); só os planos pagos têm os dias de teste
+      const pagando = !!c.stripe_subscription_id || c.cortesia || c.status === 'bloqueada' || typeof b.bloqueada === 'boolean' || b.estender_dias !== undefined; // evita duas atribuições à mesma coluna
+      if (!pagando && b.plano === 'gratis' && c.plano !== 'gratis') { add('status=?', 'ativa'); add('trial_ate=?', null); }
+      if (!pagando && b.plano !== 'gratis' && c.plano === 'gratis') { add('status=?', 'trial'); add(`trial_ate = now() + (? || ' days')::interval`, String(TRIAL_DIAS)); }
+    }
     if (typeof b.bi === 'boolean') { add('bi=?', b.bi); add('bi_ate=?', null); }
     if (Number.isInteger(b.campanhas_extras_somar) && Math.abs(b.campanhas_extras_somar) <= 500) add('campanhas_extras = GREATEST(0, campanhas_extras + ?)', b.campanhas_extras_somar);
     if (typeof b.bloqueada === 'boolean') {
       // desbloquear devolve a conta à situação que ela teria: assinando (ativa) ou em teste
-      add('status=?', b.bloqueada ? 'bloqueada' : (c.stripe_subscription_id ? 'ativa' : 'trial'));
+      add('status=?', b.bloqueada ? 'bloqueada' : (c.stripe_subscription_id || (b.plano ?? c.plano) === 'gratis' ? 'ativa' : 'trial'));
     }
     if (Number.isInteger(b.estender_dias) && b.estender_dias > 0 && b.estender_dias <= 365) {
       add(`trial_ate = GREATEST(COALESCE(trial_ate, now()), now()) + (? || ' days')::interval`, String(b.estender_dias));

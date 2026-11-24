@@ -798,6 +798,12 @@ const webhook = (ev, sig) => { const corpo = JSON.stringify(ev); return req(null
       await db.query(`UPDATE saas_campanhas SET cota_mes=$2 WHERE conta_id=$1 AND status='criada_pausada'`, [cg.id, new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7)]);
       r = await req('g', 'POST', '/api/saas/assinar', {}); ok(r.status === 400, 'conta Grátis precisa escolher um plano pago ao assinar');
       r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade' }); ok(r.status === 400, 'Pix de mensalidade da conta Grátis exige plano');
+      // admin troca o plano: pago ganha os dias de teste, Grátis volta a ser permanente
+      r = await req('adm', 'PUT', `/api/saas/admin/assinantes/${cg.id}`, { plano: 'solo' });
+      ok(r.status === 200 && r.corpo.situacao.codigo === 'trial' && r.corpo.situacao.dias_trial === 7, 'Grátis → Solo pelo admin começa o teste de 7 dias');
+      r = await req('adm', 'PUT', `/api/saas/admin/assinantes/${cg.id}`, { plano: 'gratis' });
+      { const { rows: [x] } = await db.query('SELECT status, trial_ate FROM saas_contas WHERE id=$1', [cg.id]);
+        ok(r.corpo.situacao.codigo === 'gratis' && x.status === 'ativa' && x.trial_ate === null, 'Solo → Grátis pelo admin tira o prazo de teste'); }
       r = await req('g', 'POST', '/api/saas/pix/informar', { tipo: 'mensalidade', plano: 'agencia' }); const pg = r.corpo.pedido;
       ok(r.status === 200 && pg.plano === 'agencia', 'Pix para subir do Grátis ao Agência');
       r = await req('adm', 'POST', `/api/saas/admin/pix/${pg.id}/confirmar`); ok(r.status === 200, 'administradora confirma');
