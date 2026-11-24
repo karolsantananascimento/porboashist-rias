@@ -54,11 +54,11 @@ ul,ol{padding-left:22px}hr{border:0;border-top:1px solid #2E333B;margin:2em 0}
 footer{border-top:1px solid #2E333B;padding:24px;text-align:center;color:#777E8B;font-size:14px}footer a{color:#A8AEBA}`;
 
 function pagina({ titulo, descricao, canonico, corpo, tipo = 'website', capa, jsonld }) {
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="pt-BR"><head><!-- Google Tag Manager --><script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-PZX4VV6R');</script><!-- End Google Tag Manager --><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(titulo)}</title><meta name="description" content="${esc(descricao)}"><link rel="canonical" href="${esc(canonico)}">
 <meta name="theme-color" content="#17191D"><link rel="icon" href="/brand/midiaut/favicon.svg">
 <meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(descricao)}"><meta property="og:type" content="${tipo}"><meta property="og:url" content="${esc(canonico)}"><meta property="og:image" content="${esc(capa || new URL('/brand/midiaut/og.png', canonico).href)}">
-${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}<style>${CSS}</style></head><body>
+${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, '\\u003c')}</script>` : ''}<style>${CSS}</style></head><body><!-- Google Tag Manager (noscript) --><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PZX4VV6R" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript><!-- End Google Tag Manager (noscript) -->
 <header class="top"><a class="marca" href="/"><img src="/brand/midiaut/simbolo.svg" alt="" width="34" height="30"><span>Mid<i>IA</i>ut</span></a><nav><a href="/blog" style="margin-right:18px;color:#A8AEBA;text-decoration:none">Blog</a><a class="cta" href="/cadastro?plano=testar">Testar grátis</a></nav></header>
 ${corpo}
 <footer>© MidIAut · Tráfego em piloto automático. · <a href="/">Conheça a plataforma</a></footer></body></html>`;
