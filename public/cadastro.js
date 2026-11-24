@@ -121,7 +121,9 @@ $('#fLogin').addEventListener('submit', async (e) => {
   try {
     const p = await fetch('/api/saas/publico').then((r) => r.json());
     if (p.preco) { $('#preco').textContent = p.preco; $('#preco').classList.remove('hidden'); }
-    if (p.trial_dias) { $('#teste').textContent = `${p.trial_dias} dias para testar, sem cartão`; $('#teste').classList.remove('hidden'); }
+    // O teste de dias vale só para planos pagos; o Grátis é permanente
+    const txtTeste = intencao === 'gratis' ? 'Sempre grátis, sem cartão e sem prazo' : (p.trial_dias ? `${p.trial_dias} dias para testar, sem cartão` : '');
+    if (txtTeste) { $('#teste').textContent = txtTeste; $('#teste').classList.remove('hidden'); }
     if (p.termos_url) $('#termos').href = p.termos_url; else $('#termos').replaceWith(document.createTextNode('termos de uso'));
   } catch { $('#termos').replaceWith(document.createTextNode('termos de uso')); }
   // Quem já está logado vai direto para a área certa
